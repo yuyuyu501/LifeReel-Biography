@@ -1,0 +1,175 @@
+name: lifereel-biography
+
+services:
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    environment:
+      APP_ENV: production
+      DATABASE_URL: postgresql+psycopg://lifereel:lifereel@postgres:5432/lifereel
+      REDIS_URL: redis://redis:6379/0
+      STORAGE_BACKEND: s3
+      LOCAL_STORAGE_PATH: /data/private
+      S3_ENDPOINT_URL: http://minio:9000
+      S3_ACCESS_KEY: lifereel
+      S3_SECRET_KEY: ${MINIO_ROOT_PASSWORD:?Set MINIO_ROOT_PASSWORD in .env}
+      S3_BUCKET: lifereel-private
+      S3_SERVER_SIDE_ENCRYPTION: ${S3_SERVER_SIDE_ENCRYPTION:-}
+      API_ACCESS_KEY: ${API_ACCESS_KEY:?Set API_ACCESS_KEY in .env}
+      AUTH_TOKEN_SECRET: ${AUTH_TOKEN_SECRET:?Set AUTH_TOKEN_SECRET in .env}
+      AUTH_COOKIE_SECURE: ${AUTH_COOKIE_SECURE:-false}
+      BOOTSTRAP_OWNER_EMAIL: ${BOOTSTRAP_OWNER_EMAIL:?Set BOOTSTRAP_OWNER_EMAIL in .env}
+      BOOTSTRAP_OWNER_PASSWORD: ${BOOTSTRAP_OWNER_PASSWORD:?Set BOOTSTRAP_OWNER_PASSWORD in .env}
+      BOOTSTRAP_OWNER_NAME: ${BOOTSTRAP_OWNER_NAME:-家庭管理员}
+      MAX_EVIDENCE_IMAGE_BYTES: ${MAX_EVIDENCE_IMAGE_BYTES:-20971520}
+      MAX_EVIDENCE_DOCUMENT_BYTES: ${MAX_EVIDENCE_DOCUMENT_BYTES:-52428800}
+      MAX_EVIDENCE_AUDIO_BYTES: ${MAX_EVIDENCE_AUDIO_BYTES:-524288000}
+      MAX_EVIDENCE_VIDEO_BYTES: ${MAX_EVIDENCE_VIDEO_BYTES:-2147483648}
+      AUTO_CREATE_SCHEMA: "false"
+      LLM_PROVIDER: ${LLM_PROVIDER:-mock}
+      ASR_PROVIDER: ${ASR_PROVIDER:-mock}
+      VIDEO_PROVIDER: ${VIDEO_PROVIDER:-mock}
+      IMAGE_PROVIDER: ${IMAGE_PROVIDER:-mock}
+      VOICE_PROVIDER: ${VOICE_PROVIDER:-mock}
+      OPENAI_COMPATIBLE_BASE_URL: ${OPENAI_COMPATIBLE_BASE_URL:-}
+      OPENAI_COMPATIBLE_API_KEY: ${OPENAI_COMPATIBLE_API_KEY:-}
+      OPENAI_COMPATIBLE_MODEL: ${OPENAI_COMPATIBLE_MODEL:-}
+      INTERVIEW_LLM_MODEL: ${INTERVIEW_LLM_MODEL:-}
+      MEMORY_LLM_MODEL: ${MEMORY_LLM_MODEL:-}
+      SCRIPT_LLM_MODEL: ${SCRIPT_LLM_MODEL:-}
+      VISION_LLM_MODEL: ${VISION_LLM_MODEL:-}
+      ASR_MODEL: ${ASR_MODEL:-}
+      WHISPER_MODEL_PATH: ${WHISPER_MODEL_PATH:-}
+      WHISPER_DEVICE: ${WHISPER_DEVICE:-cpu}
+      WHISPER_COMPUTE_TYPE: ${WHISPER_COMPUTE_TYPE:-int8}
+      MEDIA_PROVIDER_NAME: ${MEDIA_PROVIDER_NAME:-generic-media}
+      MEDIA_PROVIDER_BASE_URL: ${MEDIA_PROVIDER_BASE_URL:-}
+      MEDIA_PROVIDER_API_KEY: ${MEDIA_PROVIDER_API_KEY:-}
+      MEDIA_PROVIDER_POLL_SECONDS: ${MEDIA_PROVIDER_POLL_SECONDS:-2}
+      MEDIA_PROVIDER_TIMEOUT_SECONDS: ${MEDIA_PROVIDER_TIMEOUT_SECONDS:-900}
+    ports:
+      - "8000:8000"
+    dns:
+      - ${CONTAINER_DNS_SERVER:-223.5.5.5}
+    volumes:
+      - private-data:/data/private
+      - ./data/models/whisper-small:/models/whisper-small:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    restart: unless-stopped
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    ports:
+      - "5173:80"
+    environment:
+      API_ACCESS_KEY: ${API_ACCESS_KEY:?Set API_ACCESS_KEY in .env}
+      NGINX_CLIENT_MAX_BODY_SIZE: ${NGINX_CLIENT_MAX_BODY_SIZE:-2050m}
+      NGINX_ENVSUBST_FILTER: API_ACCESS_KEY|NGINX_CLIENT_MAX_BODY_SIZE
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    restart: unless-stopped
+
+  worker:
+    build:
+      context: .
+      dockerfile: apps/worker/Dockerfile
+    environment:
+      REDIS_URL: redis://redis:6379/0
+      API_INTERNAL_URL: http://api:8000
+      API_ACCESS_KEY: ${API_ACCESS_KEY:?Set API_ACCESS_KEY in .env}
+    dns:
+      - ${CONTAINER_DNS_SERVER:-223.5.5.5}
+    depends_on:
+      redis:
+        condition: service_healthy
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import os, redis; assert redis.from_url(os.environ['REDIS_URL']).ping()"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  postgres:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_DB: lifereel
+      POSTGRES_USER: lifereel
+      POSTGRES_PASSWORD: lifereel
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U lifereel -d lifereel"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+    restart: unless-stopped
+
+  redis:
+    image: redis:7.4-alpine
+    command: redis-server --appendonly yes
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+    restart: unless-stopped
+
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: lifereel
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?Set MINIO_ROOT_PASSWORD in .env}
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio-data:/data
+    restart: unless-stopped
+
+  minio-init:
+    image: minio/mc:latest
+    depends_on:
+      - minio
+    entrypoint: >
+      /bin/sh -c "
+      until mc alias set local http://minio:9000 lifereel $$MINIO_ROOT_PASSWORD; do sleep 2; done &&
+      mc mb --ignore-existing local/lifereel-private &&
+      mc anonymous set none local/lifereel-private
+      "
+    environment:
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?Set MINIO_ROOT_PASSWORD in .env}
+
+volumes:
+  private-data:
+  postgres-data:
+  redis-data:
+  minio-data:

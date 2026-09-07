@@ -1,0 +1,34 @@
+server {
+  listen 80;
+  server_name _;
+  root /usr/share/nginx/html;
+
+  location / {
+    try_files $uri $uri/ /index.html;
+  }
+
+  location = /v1/evidence/assets {
+    client_max_body_size ${NGINX_CLIENT_MAX_BODY_SIZE};
+    proxy_request_buffering off;
+    proxy_pass http://api:8000;
+    proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_set_header X-API-Key "${API_ACCESS_KEY}";
+    proxy_set_header X-Tenant-ID "";
+  }
+
+  location /v1/ {
+    proxy_pass http://api:8000;
+    proxy_connect_timeout 30s;
+    proxy_read_timeout 900s;
+    proxy_send_timeout 900s;
+    proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_set_header X-API-Key "${API_ACCESS_KEY}";
+    proxy_set_header X-Tenant-ID "";
+  }
+
+  location = /health {
+    proxy_pass http://api:8000/health;
+  }
+}

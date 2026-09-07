@@ -1,0 +1,17 @@
+{
+  "name": "岁忆影传",
+  "short_name": "岁忆影传",
+  "description": "从真实口述到可审阅的自传短剧",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f6f1e7",
+  "theme_color": "#315b57",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml"
+    }
+  ]
+}
+

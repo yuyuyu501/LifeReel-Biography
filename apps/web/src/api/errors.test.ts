@@ -1,0 +1,47 @@
+import { describe, expect, it } from "vitest";
+import { ApiError, apiErrorFromResponse, isApiError } from "./errors";
+
+describe("API 错误码本地化", () => {
+  it("把后端错误码转换为中文", () => {
+    const error = apiErrorFromResponse(401, {
+      error: { code: "AUTH_INVALID_CREDENTIALS" },
+    });
+
+    expect(error.code).toBe("AUTH_INVALID_CREDENTIALS");
+    expect(error.message).toBe("邮箱或密码不正确。");
+    expect(isApiError(error, "AUTH_INVALID_CREDENTIALS")).toBe(true);
+  });
+
+  it("未知错误码不会显示后端英文内容", () => {
+    const error = apiErrorFromResponse(500, {
+      error: { code: "UNKNOWN_PROVIDER_MESSAGE", context: { detail: "English failure" } },
+    });
+
+    expect(error.message).toBe("操作失败，请稍后重试。");
+    expect(error.message).not.toContain("English");
+  });
+
+  it("网络错误使用中文提示", () => {
+    expect(new ApiError("NETWORK_ERROR", 0).message).toBe("网络连接失败，请检查网络后重试。");
+  });
+
+  it("AI 工作流错误提示用户稍后重试", () => {
+    expect(new ApiError("INTERVIEW_LLM_REQUEST_FAILED", 502).message).toContain("等待片刻后重试");
+    expect(new ApiError("MEMORY_LLM_REQUEST_FAILED", 502).message).toContain("稍后重试");
+  });
+
+  it("前端校验也使用错误码映射", () => {
+    const error = new ApiError("EVIDENCE_ASSET_REQUIRED", 400);
+    expect(error.code).toBe("EVIDENCE_ASSET_REQUIRED");
+    expect(error.message).toBe("请先选择一份素材。");
+  });
+
+  it("根据错误上下文显示对应类型的上传上限", () => {
+    const error = new ApiError("EVIDENCE_FILE_TOO_LARGE", 413, {
+      kind: "video",
+      limit_bytes: 2 * 1024 ** 3,
+    });
+
+    expect(error.message).toBe("视频不能超过 2 GB。");
+  });
+});

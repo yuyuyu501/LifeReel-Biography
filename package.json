@@ -1,0 +1,31 @@
+{
+  "name": "lifereel-biography",
+  "version": "0.1.0",
+  "private": true,
+  "packageManager": "pnpm@11.19.0",
+  "scripts": {
+    "dev": "pnpm --parallel --filter @lifereel/web dev",
+    "build": "pnpm -r build",
+    "lint": "pnpm -r lint",
+    "test": "pnpm -r test",
+    "format": "pnpm -r format"
+  },
+  "description": "岁忆影传是一套面向个人与家庭的 AI 口述史与自传短剧平台。系统通过语音采访持续积累可信的生命记忆，在保留原始证据、来源和授权边界的前提下，生成可审校的单章或多章短视频剧本，并通过可替换的视频 API 生产短剧。",
+  "main": "index.js",
+  "directories": {
+    "doc": "docs"
+  },
+  "devDependencies": {},
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/yuyuyu501/LifeReel-Biography.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/yuyuyu501/LifeReel-Biography/issues"
+  },
+  "homepage": "https://github.com/yuyuyu501/LifeReel-Biography#readme"
+}

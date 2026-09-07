@@ -1,0 +1,29 @@
+from __future__ import annotations
+
+import secrets
+from typing import Annotated
+
+from fastapi import Header, Request, status
+
+from lifereel_api.core.config import get_settings
+from lifereel_api.core.errors import ApiError, ErrorCode
+
+
+def require_api_access(
+    request: Request,
+    x_api_key: Annotated[str | None, Header(alias="X-API-Key")] = None,
+) -> None:
+    settings = get_settings()
+    request.state.internal_access = False
+    if settings.is_development or request.url.path.startswith("/v1/public/"):
+        return
+    if request.url.path in {"/v1/auth/login", "/v1/auth/logout"}:
+        return
+    if not settings.api_access_key:
+        raise ApiError(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            code=ErrorCode.API_KEY_NOT_CONFIGURED,
+        )
+    if not x_api_key or not secrets.compare_digest(x_api_key, settings.api_access_key):
+        raise ApiError(status.HTTP_401_UNAUTHORIZED, ErrorCode.API_KEY_INVALID)
+    request.state.internal_access = True

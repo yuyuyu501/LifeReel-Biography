@@ -1,0 +1,21 @@
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[project]
+name = "lifereel-worker"
+version = "0.1.0"
+description = "LifeReel asynchronous job worker"
+requires-python = ">=3.12"
+dependencies = [
+  "httpx>=0.28,<1",
+  "pydantic-settings>=2.10,<3",
+  "redis>=6,<7",
+  "structlog>=25,<26"
+]
+
+[project.scripts]
+lifereel-worker = "lifereel_worker.main:run"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/lifereel_worker"]

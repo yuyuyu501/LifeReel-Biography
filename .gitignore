@@ -1,0 +1,50 @@
+# Environment and secrets
+.env
+.env.*
+!.env.example
+**/.env
+**/.env.*
+!**/.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
+*.egg-info/
+htmlcov/
+.coverage
+*.db
+*.sqlite
+*.sqlite3
+
+# Node
+node_modules/
+.pnpm-store/
+dist/
+coverage/
+*.tsbuildinfo
+
+# IDE / OS
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# Runtime data and media must never be committed
+data/
+uploads/
+media/
+*.webm
+*.wav
+*.mp3
+*.mp4
+*.mov
+*.m4a
+
+# Local tooling
+.docker/
+tmp/
