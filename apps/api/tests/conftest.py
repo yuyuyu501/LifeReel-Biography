@@ -26,6 +26,15 @@ from lifereel_api.main import app  # noqa: E402
 
 
 @pytest.fixture(autouse=True)
+def legacy_pricing(monkeypatch):
+    # Existing lifecycle regressions deliberately exercise the original tariff.
+    # test_standard_pricing overrides it to verify the new production catalogue.
+    monkeypatch.setattr(get_settings(), "billing_script_chapter_cents", 2)
+    monkeypatch.setattr(get_settings(), "billing_video_cents_per_second", 20)
+    monkeypatch.setattr(get_settings(), "billing_price_version", "trial-2026-09-per-update")
+
+
+@pytest.fixture(autouse=True)
 def clean_database() -> Generator[None, None, None]:
     Base.metadata.drop_all(bind=engine)
     Base.metadata.create_all(bind=engine)

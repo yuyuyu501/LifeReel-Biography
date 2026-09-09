@@ -115,7 +115,7 @@ export function PeoplePage() {
               <label>出生地<input value={birthplace} onChange={(e) => setBirthplace(e.target.value)} placeholder="福建泉州" /></label>
             </div>
             <label className="checkbox-label"><input type="checkbox" checked={isMinor} onChange={(e) => setIsMinor(e.target.checked)} /> 未成年人档案</label>
-            {isMinor && <label>监护人姓名<input required value={guardianName} onChange={(e) => setGuardianName(e.target.value)} placeholder="制作与发布前必须记录监护授权" /></label>}
+            {isMinor && <label>监护人姓名<input required value={guardianName} onChange={(e) => setGuardianName(e.target.value)} placeholder="请输入监护人姓名" /></label>}
             <ErrorNotice error={createPerson.error || updatePerson.error} />
             <div className="modal-actions">
               <button type="button" className="button secondary" onClick={() => { setOpen(false); resetForm(); }}>取消</button>

@@ -3,6 +3,7 @@ from fastapi import APIRouter, Depends
 from lifereel_api.core.security import require_api_access
 from lifereel_api.modules.auth.dependencies import enforce_write_role
 from lifereel_api.modules.auth.router import router as auth_router
+from lifereel_api.modules.billing.router import router as billing_router
 from lifereel_api.modules.evidence.router import router as evidence_router
 from lifereel_api.modules.governance.router import router as governance_router
 from lifereel_api.modules.identity.router import router as identity_router
@@ -20,6 +21,7 @@ api_router = APIRouter(
     dependencies=[Depends(require_api_access), Depends(enforce_write_role)],
 )
 api_router.include_router(auth_router)
+api_router.include_router(billing_router)
 api_router.include_router(evidence_router)
 api_router.include_router(identity_router)
 api_router.include_router(interview_router)

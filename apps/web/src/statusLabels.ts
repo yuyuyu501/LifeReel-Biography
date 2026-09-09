@@ -1,4 +1,7 @@
 const labels = {
+  WALLET_INSUFFICIENT_BALANCE: "钱包可用余额不足，请前往钱包查看。",
+  BILLING_STATE_INVALID: "扣费状态异常，请联系管理员。",
+  BILLING_BUSY: "当前章节正在生成，请稍后重试。",
   active: "进行中",
   paused: "已暂停",
   completed: "已完成",
@@ -37,6 +40,19 @@ const labels = {
   document: "文档",
   ready: "可用",
   "production.render": "影传视频生成",
+  VIDEO_PROVIDER_CONFIGURATION_INCOMPLETE: "视频服务配置不完整",
+  VIDEO_PROVIDER_REQUEST_FAILED: "视频服务暂时无法连接",
+  VIDEO_PROVIDER_TIMEOUT: "视频生成等待超时",
+  VIDEO_PROVIDER_OUTPUT_INVALID: "视频生成结果无效",
+  VIDEO_PROVIDER_FAILED: "视频生成失败",
+  VIDEO_PLAN_FAILED: "分镜 AI 暂时不可用，请稍后重试",
+  VIDEO_PLAN_INVALID: "分镜未完整保留剧本，请重试",
+  VIDEO_PLAN_CONFIGURATION_INCOMPLETE: "分镜 AI 尚未配置",
+  VIDEO_ASSEMBLY_UNAVAILABLE: "视频拼接工具不可用",
+  VIDEO_ASSEMBLY_FAILED: "视频拼接失败，已生成片段会保留",
+  VIDEO_DURATION_UNSUPPORTED: "章节时长超出支持范围",
+  VIDEO_DURATION_MISMATCH: "视频时长与分镜计划不符",
+  VIDEO_SUBMISSION_UNCERTAIN: "提交结果不确定，已停止自动重发，请先核对云端任务",
 } satisfies Record<string, string>;
 
 export function statusLabel(value: string | null | undefined, fallback = "未知状态") {
@@ -46,6 +62,9 @@ export function statusLabel(value: string | null | undefined, fallback = "未知
 
 export function providerLabel(value: string) {
   if (value === "mock" || value.startsWith("mock-")) return "本地模拟生成";
+  if (["volcengine-seedance", "volcengine-seedance-1.5"].includes(value)) {
+    return "火山方舟 Seedance";
+  }
   if (value === "openai-compatible") return "兼容接口服务";
   if (value.startsWith("generic-media")) return "媒体生成服务";
   return "已配置生成服务";

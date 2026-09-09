@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 
 from lifereel_api.core.config import get_settings
 from lifereel_api.core.errors import ApiError, ErrorCode
+from lifereel_api.modules.billing.usage import track_usage
 from lifereel_api.modules.evidence.models import EvidenceObservation, SourceAsset
 from lifereel_api.modules.identity.models import Person
 from lifereel_api.modules.interview.models import InterviewRound, InterviewSession
@@ -572,6 +573,7 @@ def _detect_year_conflicts(db: Session, tenant_id: UUID, subject_ids: set[UUID])
             )
 
 
+@track_usage("memory")
 def compile_memories(
     db: Session, tenant_id: UUID, payload: MemoryCompileRequest
 ) -> tuple[int, int, list[MemoryClaim]]:

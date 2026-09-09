@@ -3,7 +3,7 @@ from __future__ import annotations
 from functools import lru_cache
 from uuid import UUID
 
-from pydantic import field_validator
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -41,6 +41,11 @@ class Settings(BaseSettings):
     bootstrap_owner_email: str | None = None
     bootstrap_owner_password: str | None = None
     bootstrap_owner_name: str = "家庭管理员"
+    registration_enabled: bool = False
+    billing_price_version: str = "standard-2026-09-luna20"
+    billing_welcome_bonus_cents: int = Field(default=2000, ge=0, le=100000)
+    billing_video_cents_per_second: int = Field(default=80, ge=0, le=10000)
+    billing_script_chapter_cents: int = Field(default=40, ge=0, le=10000)
     max_evidence_image_bytes: int = 20 * 1024 * 1024
     max_evidence_document_bytes: int = 50 * 1024 * 1024
     max_evidence_audio_bytes: int = 500 * 1024 * 1024
@@ -69,6 +74,16 @@ class Settings(BaseSettings):
     media_provider_api_key: str | None = None
     media_provider_poll_seconds: float = 2.0
     media_provider_timeout_seconds: int = 900
+    volcengine_api_base_url: str = "https://ark.cn-beijing.volces.com/api/v3"
+    volcengine_api_key: str | None = None
+    volcengine_video_model: str = "doubao-seedance-2-0-mini-260615"
+    volcengine_video_resolution: str = "720p"
+    volcengine_video_ratio: str = "16:9"
+    volcengine_video_duration: int = 5
+    volcengine_video_generate_audio: bool = True
+    volcengine_video_watermark: bool = True
+    volcengine_video_poll_seconds: float = 10.0
+    volcengine_video_timeout_seconds: int = 900
 
     @field_validator("api_cors_origins", mode="before")
     @classmethod

@@ -10,6 +10,8 @@ from sqlalchemy.orm import Session
 
 from lifereel_api.core.config import get_settings
 from lifereel_api.core.errors import ApiError, ErrorCode
+from lifereel_api.modules.billing import service as billing
+from lifereel_api.modules.billing.usage import track_usage
 from lifereel_api.modules.evidence import service as evidence_service
 from lifereel_api.modules.evidence.models import EvidenceObservation, SourceAsset
 from lifereel_api.modules.interview import service as interview_service
@@ -356,6 +358,7 @@ def _new_claims_for_workflow(
     return list(db.scalars(statement.where(or_(*conditions)).order_by(MemoryClaim.created_at)))
 
 
+@track_usage("interview")
 def execute_turn(db: Session, tenant_id: UUID, workflow_id: UUID) -> InterviewTurnWorkflow:
     workflow = _get_workflow(db, tenant_id, workflow_id)
     if workflow.status == "completed":
@@ -371,8 +374,18 @@ def execute_turn(db: Session, tenant_id: UUID, workflow_id: UUID) -> InterviewTu
         job.attempt_count += 1
     db.commit()
 
+    billing_key = None
     try:
         session = interview_service.get_session(db, tenant_id, workflow.session_id)
+        script_request = ScriptGenerateRequest(
+            subject_id=session.subject_id,
+            chapter_id=session.chapter_id,
+            idempotency_key=workflow.id,
+            mode="single_chapter",
+            audience="family",
+        )
+        billing_key = script_service.reserve_interview_update(db, tenant_id, script_request)
+        db.commit()
         for asset_id in workflow.asset_ids:
             asset_uuid = UUID(asset_id)
             existing = db.scalar(
@@ -454,14 +467,12 @@ def execute_turn(db: Session, tenant_id: UUID, workflow_id: UUID) -> InterviewTu
             project, scenes, _ = script_service.generate_draft(
                 db,
                 tenant_id,
-                ScriptGenerateRequest(
-                    subject_id=session.subject_id,
-                    chapter_id=session.chapter_id,
-                    mode="single_chapter",
-                    audience="family",
-                ),
+                script_request,
                 update_brief=brief,
             )
+        else:
+            billing.transition(db, tenant_id, billing_key, False)
+            db.commit()
 
         next_question = interview_service.suggest_next_question(db, tenant_id, session.id)
         interview_service.add_round(
@@ -502,6 +513,8 @@ def execute_turn(db: Session, tenant_id: UUID, workflow_id: UUID) -> InterviewTu
         return workflow
     except ApiError as exc:
         db.rollback()
+        if billing_key:
+            billing.transition(db, tenant_id, billing_key, False)
         workflow = _get_workflow(db, tenant_id, workflow_id)
         workflow.status = "failed"
         workflow.error_code = exc.code.value
@@ -511,6 +524,8 @@ def execute_turn(db: Session, tenant_id: UUID, workflow_id: UUID) -> InterviewTu
         raise
     except Exception:
         db.rollback()
+        if billing_key:
+            billing.transition(db, tenant_id, billing_key, False)
         workflow = _get_workflow(db, tenant_id, workflow_id)
         workflow.status = "failed"
         workflow.error_code = ErrorCode.WORKER_ERROR.value

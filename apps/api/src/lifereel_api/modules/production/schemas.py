@@ -7,7 +7,9 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 class ProductionStart(BaseModel):
+    quoted_amount_cents: int | None = Field(default=None, ge=0)
     project_id: UUID
+    scene_id: UUID | None = None
     audience: str = Field(default="family", pattern="^(private|family|friends|public)$")
     provider: str | None = Field(default=None, max_length=64)
 

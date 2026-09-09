@@ -1,5 +1,6 @@
 import type { SourceAsset } from "@lifereel/contracts";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { ScriptPriceNotice } from "../components/ScriptPriceNotice";
 import {
   BookOpenText,
   Check,
@@ -236,6 +237,7 @@ export function InterviewRoomPage() {
       </div>
 
       <ErrorNotice error={submitTurn.error || complete.error || pause.error || retryWorkflow.error || workflowError} />
+      <ScriptPriceNotice />
       {workflowError && workflow?.job_id && (
         <div className="interview-retry-action">
           <button

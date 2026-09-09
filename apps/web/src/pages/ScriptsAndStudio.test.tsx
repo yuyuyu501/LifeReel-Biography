@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { beforeEach, vi } from "vitest";
 import { ScriptBookPage } from "./ScriptBookPage";
@@ -82,11 +82,17 @@ function renderPage(element: React.ReactNode, initialEntry: string, routePath = 
 }
 
 beforeEach(() => {
+  vi.spyOn(window, "confirm").mockReturnValue(true);
   vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
     const url = String(input);
+    if (url.endsWith("/v1/wallet")) return response({ paid_cents: 0, bonus_cents: 2000, frozen_cents: 0, available_cents: 2000, prices: { video_cents_per_second: 80, script_chapter_cents: 40 } });
     if (url.endsWith("/v1/persons")) return response([person]);
     if (url.endsWith("/v1/scripts")) return response([project]);
     if (url.endsWith("/v1/chapters")) return response([chapter]);
+    if (url.endsWith("/v1/production/settings")) return response({
+      provider: "volcengine-seedance", model: "doubao-seedance-1-0-pro-fast-251015",
+      resolution: "720p", ratio: "16:9", duration_seconds: 5, generate_audio: false,
+    });
     return response([]);
   }) as unknown as typeof fetch);
 });
@@ -127,7 +133,126 @@ test("keeps the script book focused on reading and generation", async () => {
 test("keeps the image studio focused on production", async () => {
   renderPage(<StudioPage />, "/studio");
   expect(await screen.findByRole("heading", { name: "影像制作" })).toBeInTheDocument();
-  expect(await screen.findByRole("button", { name: "生成影像" })).toBeDisabled();
+  expect(await screen.findByRole("button", { name: "生成影像" })).toBeEnabled();
+  expect(screen.queryByText("制作授权待补齐")).not.toBeInTheDocument();
+  expect(screen.queryByText("任务记录")).not.toBeInTheDocument();
+  expect(screen.getByText("5 秒")).toBeInTheDocument();
+  expect(screen.getByText("无声片段")).toBeInTheDocument();
   expect(screen.queryByText("待人工审核")).not.toBeInTheDocument();
   expect(screen.queryByRole("button", { name: "生成剧本" })).not.toBeInTheDocument();
+});
+
+test("switches chapters and submits only the selected chapter", async () => {
+  renderPage(<StudioPage />, "/studio");
+  await screen.findByRole("button", { name: "生成影像" });
+  fireEvent.click(screen.getByRole("tab", { name: "本章剧本" }));
+  expect(screen.getByText(project.scenes[0].narration)).toBeVisible();
+  fireEvent.click(screen.getByRole("button", { name: /02.*远行求学/ }));
+  expect(screen.getByText(project.scenes[1].narration)).toBeVisible();
+  expect(screen.queryByText(project.scenes[0].narration)).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole("tab", { name: "视频预览" }));
+  expect(screen.getByText(project.scenes[1].narration)).not.toBeVisible();
+  fireEvent.click(screen.getByRole("button", { name: "生成影像" }));
+  await waitFor(() => expect(fetch).toHaveBeenCalledWith(
+    expect.stringContaining("/v1/production/runs"),
+    expect.objectContaining({ method: "POST", body: JSON.stringify({
+      project_id: project.id, scene_id: "scene-2", audience: "family", quoted_amount_cents: 400,
+    }) }),
+  ));
+});
+
+test("canceling the quote does not submit or charge production", async () => {
+  vi.mocked(window.confirm).mockReturnValue(false);
+  renderPage(<StudioPage />, "/studio");
+  fireEvent.click(await screen.findByRole("button", { name: "生成影像" }));
+  expect(window.confirm).toHaveBeenCalledWith(expect.stringContaining("¥4.00"));
+  expect(vi.mocked(fetch).mock.calls.some(([, init]) => init?.method === "POST")).toBe(false);
+});
+
+test("script retry reuses its update ID and the next success uses a new ID", async () => {
+  const original = vi.mocked(fetch).getMockImplementation()!;
+  const requests: Array<{ idempotency_key: string }> = [];
+  vi.mocked(fetch).mockImplementation(async (input, init) => {
+    if (String(input).endsWith("/v1/scripts/generate")) {
+      requests.push(JSON.parse(String(init?.body)));
+      if (requests.length === 1) return { ok: false, status: 502, json: async () => ({ error: { code: "SCRIPT_LLM_REQUEST_FAILED" } }) } as Response;
+      return response(project);
+    }
+    return original(input, init);
+  });
+  renderPage(<ScriptBookPage />, "/scripts/person-1", "/scripts/:subjectId");
+  const button = await screen.findByRole("button", { name: "生成整本剧本" });
+  fireEvent.click(button);
+  await screen.findByRole("alert");
+  fireEvent.click(screen.getByRole("button", { name: "生成整本剧本" }));
+  await waitFor(() => expect(requests).toHaveLength(2));
+  await waitFor(() => expect(screen.getByRole("button", { name: "生成整本剧本" })).toBeEnabled());
+  expect(requests[0].idempotency_key).toBeTruthy();
+  expect(requests[1].idempotency_key).toBe(requests[0].idempotency_key);
+  fireEvent.click(screen.getByRole("button", { name: "生成整本剧本" }));
+  await waitFor(() => expect(requests).toHaveLength(3));
+  expect(requests[2].idempotency_key).not.toBe(requests[0].idempotency_key);
+});
+
+test("segmented production shows chapter duration and checkpoint progress", async () => {
+  const original = vi.mocked(fetch).getMockImplementation()!;
+  vi.mocked(fetch).mockImplementation(async (input, init) => {
+    if (String(input).endsWith("/v1/production/settings")) return response({
+      provider: "volcengine-seedance", model: "doubao-seedance-2-0-mini-260615",
+      resolution: "720p", ratio: "16:9", duration_seconds: 5, generate_audio: true,
+      mode: "segmented", max_segment_seconds: 15,
+    });
+    if (String(input).endsWith("/v1/production/runs")) return response([{
+      id: "run-segmented", project_id: project.id, status: "running",
+      provider: "volcengine-seedance", audience: "family", assets: [],
+      created_at: "2026-09-08T00:00:00Z",
+      output_manifest: { scene_id: "scene-1", stage: "generating", completed_segments: 1,
+        segments: [{ status: "completed" }, { status: "submitted" }] },
+    }]);
+    return original(input, init);
+  });
+  renderPage(<StudioPage />, "/studio");
+  expect(await screen.findByText("整章生成")).toBeVisible();
+  expect(screen.getByText("12 秒")).toBeVisible();
+  expect(screen.queryByText("5 秒")).not.toBeInTheDocument();
+  expect(screen.getByText("原生音频")).toBeVisible();
+  expect(await screen.findByText("已完成 1 / 2 段")).toBeVisible();
+  expect(screen.getByRole("button", { name: "正在生成" })).toBeDisabled();
+});
+
+test("changing family clears the previous chapter and video", async () => {
+  const original = vi.mocked(fetch).getMockImplementation()!;
+  vi.mocked(fetch).mockImplementation(async (input, init) => {
+    if (String(input).endsWith("/v1/persons")) return response([person, { ...person, id: "person-2", preferred_name: "另一位家人" }]);
+    return original(input, init);
+  });
+  renderPage(<StudioPage />, "/studio");
+  await screen.findByRole("button", { name: "生成影像" });
+  fireEvent.change(screen.getByLabelText("制作对象"), { target: { value: "person-2" } });
+  expect(screen.getByText("还没有可制作的章节")).toBeVisible();
+  expect(screen.queryByRole("button", { name: "生成影像" })).not.toBeInTheDocument();
+  expect(screen.queryByText(project.scenes[0].narration)).not.toBeInTheDocument();
+});
+
+test("compares a video with its saved script and isolates other chapters", async () => {
+  const original = vi.mocked(fetch).getMockImplementation()!;
+  vi.mocked(fetch).mockImplementation(async (input, init) => {
+    if (String(input).endsWith("/v1/production/runs")) return response([{
+      id: "run-1", project_id: project.id, status: "completed", provider: "volcengine-seedance",
+      audience: "family", assets: [], created_at: "2026-09-08T00:00:00Z",
+      output_manifest: {
+        scene_id: "scene-1", script_version: 1,
+        script_snapshot: [{ ...project.scenes[0], narration: "生成当时的旁白" }],
+      },
+    }]);
+    return original(input, init);
+  });
+  renderPage(<StudioPage />, "/studio");
+  await screen.findByRole("tab", { name: "本章剧本" });
+  fireEvent.click(screen.getByRole("tab", { name: "本章剧本" }));
+  expect(screen.getByText("生成当时的旁白")).toBeVisible();
+  expect(screen.getByText("生成时剧本")).toBeVisible();
+  fireEvent.click(screen.getByRole("button", { name: /02.*远行求学/ }));
+  expect(screen.queryByText("生成当时的旁白")).not.toBeInTheDocument();
+  expect(screen.getByText(project.scenes[1].narration)).toBeVisible();
 });

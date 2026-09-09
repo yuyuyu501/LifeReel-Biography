@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from fastapi import status
 from sqlalchemy import delete, select
@@ -10,6 +11,9 @@ from sqlalchemy.orm import Session
 
 from lifereel_api.core.config import get_settings
 from lifereel_api.core.errors import ApiError, ErrorCode
+from lifereel_api.modules.billing import service as billing
+from lifereel_api.modules.billing.models import Charge
+from lifereel_api.modules.billing.usage import track_usage
 from lifereel_api.modules.identity.models import Person
 from lifereel_api.modules.interview.chapter_prompts import (
     ChapterPromptProfile,
@@ -17,6 +21,7 @@ from lifereel_api.modules.interview.chapter_prompts import (
 )
 from lifereel_api.modules.interview.models import Chapter
 from lifereel_api.modules.memory.models import MemoryClaim
+from lifereel_api.modules.production.locking import execution_lock
 from lifereel_api.modules.script.models import ScriptProject, ScriptScene, ScriptShot
 from lifereel_api.modules.script.schemas import ScriptGenerateRequest
 from lifereel_api.providers.openai_compatible import OpenAICompatibleClient
@@ -268,11 +273,114 @@ def get_project(
     return project, scenes, shots
 
 
+def update_fingerprint(payload: ScriptGenerateRequest) -> str:
+    return hashlib.sha256(
+        json.dumps(
+            payload.model_dump(mode="json", exclude={"idempotency_key"}), sort_keys=True
+        ).encode()
+    ).hexdigest()
+
+
+def reserve_interview_update(db: Session, tenant_id: UUID, payload: ScriptGenerateRequest) -> str:
+    # Use the script's charge identity so preprocessing and generation share one reservation.
+    if payload.idempotency_key is None or payload.mode != "single_chapter":
+        raise ApiError(409, ErrorCode.BILLING_STATE_INVALID)
+    person = db.scalar(
+        select(Person).where(Person.id == payload.subject_id, Person.tenant_id == tenant_id)
+    )
+    if person is None:
+        raise ApiError(404, ErrorCode.SUBJECT_NOT_FOUND)
+    chapter = db.get(Chapter, payload.chapter_id) if payload.chapter_id else None
+    key = f"script-update:{payload.idempotency_key}:{payload.chapter_id or 'free'}"
+    charge = billing.reserve(
+        db, tenant_id, key, get_settings().billing_script_chapter_cents, "script",
+        f"{person.preferred_name or person.display_name} · "
+        f"{chapter.title if chapter else '自由采访'}",
+        {**billing.prices(), "request_fingerprint": update_fingerprint(payload)},
+    )
+    if charge.price_snapshot.get("request_fingerprint") != update_fingerprint(payload):
+        raise ApiError(409, ErrorCode.BILLING_STATE_INVALID)
+    return key
+
+
+@track_usage("script")
 def generate_draft(
+    db: Session, tenant_id: UUID, payload: ScriptGenerateRequest, update_brief: dict | None = None
+):
+    # One update can be retried, but a new update of the same chapter is a new charge.
+    with execution_lock(db, payload.subject_id) as acquired:
+        if not acquired:
+            raise ApiError(409, ErrorCode.BILLING_BUSY)
+        person = db.scalar(
+            select(Person).where(Person.id == payload.subject_id, Person.tenant_id == tenant_id)
+        )
+        if person is None:
+            raise ApiError(404, ErrorCode.SUBJECT_NOT_FOUND)
+        request_id = payload.idempotency_key or uuid4()
+        prefix = f"script-update:{request_id}:"
+        fingerprint = update_fingerprint(payload)
+        billing.lock_wallet(db, tenant_id)
+        previous = list(
+            db.scalars(
+                select(Charge).where(
+                    Charge.tenant_id == tenant_id,
+                    Charge.kind == "script",
+                    Charge.business_key.startswith(prefix),
+                )
+            )
+        )
+        if any(item.price_snapshot.get("request_fingerprint") != fingerprint for item in previous):
+            raise ApiError(409, ErrorCode.BILLING_STATE_INVALID)
+        if previous and all(item.status == "settled" for item in previous):
+            return get_project(db, tenant_id, UUID(previous[0].price_snapshot["result_project_id"]))
+        statement = select(MemoryClaim.chapter_id).where(
+            MemoryClaim.tenant_id == tenant_id,
+            MemoryClaim.subject_id == person.id,
+            MemoryClaim.review_status.not_in(["disputed", "private"]),
+        )
+        if payload.chapter_id:
+            statement = statement.where(MemoryClaim.chapter_id == payload.chapter_id)
+        chapter_ids = list(dict.fromkeys(db.scalars(statement)))
+        if not chapter_ids:
+            raise ApiError(409, ErrorCode.SCRIPT_MEMORIES_REQUIRED)
+        if payload.mode != "multi_chapter" or payload.chapter_id:
+            chapter_ids = [payload.chapter_id]
+        if previous and {item.business_key for item in previous} != {
+            f"{prefix}{chapter_id or 'free'}" for chapter_id in chapter_ids
+        }:
+            raise ApiError(409, ErrorCode.BILLING_STATE_INVALID)
+        keys = []
+        try:
+            for chapter_id in chapter_ids:
+                key = f"{prefix}{chapter_id or 'free'}"
+                chapter = db.get(Chapter, chapter_id) if chapter_id else None
+                billing.reserve(
+                    db,
+                    tenant_id,
+                    key,
+                    get_settings().billing_script_chapter_cents,
+                    "script",
+                    f"{person.preferred_name or person.display_name} · "
+                    f"{chapter.title if chapter else '自由采访'}",
+                    {**billing.prices(), "request_fingerprint": fingerprint},
+                )
+                keys.append(key)
+            db.commit()
+            return _generate_draft(db, tenant_id, payload, update_brief, billing_keys=keys)
+        except Exception:
+            db.rollback()
+            for key in keys:
+                billing.transition(db, tenant_id, key, False)
+            db.commit()
+            raise
+
+
+def _generate_draft(
     db: Session,
     tenant_id: UUID,
     payload: ScriptGenerateRequest,
     update_brief: dict | None = None,
+    billing_keys: list[str] | None = None,
 ) -> tuple[ScriptProject, list[ScriptScene], list[ScriptShot]]:
     subject = db.scalar(
         select(Person).where(Person.id == payload.subject_id, Person.tenant_id == tenant_id)
@@ -433,5 +541,15 @@ def generate_draft(
     project.source_claim_ids = list(
         dict.fromkeys(claim_id for scene in all_scenes for claim_id in scene.source_claim_ids)
     )
+    for key in billing_keys or []:
+        charge = db.scalar(
+            select(Charge).where(
+                Charge.tenant_id == tenant_id,
+                Charge.business_key == key,
+            )
+        )
+        charge.price_snapshot = {**charge.price_snapshot, "result_project_id": str(project.id)}
+        db.flush()
+        billing.transition(db, tenant_id, key, True)
     db.commit()
     return get_project(db, tenant_id, project.id)

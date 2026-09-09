@@ -17,6 +17,7 @@ from sqlalchemy.orm import Session
 
 from lifereel_api.core.config import get_settings
 from lifereel_api.core.errors import ApiError, ErrorCode
+from lifereel_api.modules.billing.usage import track_usage
 from lifereel_api.modules.evidence.models import (
     EvidenceObservation,
     SourceAsset,
@@ -326,6 +327,7 @@ def list_observations(db: Session, tenant_id: UUID, asset_id: UUID) -> list[Evid
     )
 
 
+@track_usage("evidence")
 def analyze_asset(db: Session, tenant_id: UUID, asset_id: UUID) -> EvidenceObservation:
     asset = get_asset(db, tenant_id, asset_id)
     settings = get_settings()

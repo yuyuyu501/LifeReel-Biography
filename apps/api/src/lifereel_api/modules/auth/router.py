@@ -9,11 +9,26 @@ from lifereel_api.core.config import get_settings
 from lifereel_api.core.database import get_db
 from lifereel_api.modules.auth import service
 from lifereel_api.modules.auth.dependencies import AuthContext, auth_context
-from lifereel_api.modules.auth.schemas import AuthUserRead, LoginRequest, LoginResponse
+from lifereel_api.modules.auth.schemas import (
+    AuthUserRead,
+    LoginRequest,
+    LoginResponse,
+    RegisterRequest,
+)
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 Db = Annotated[Session, Depends(get_db)]
 Context = Annotated[AuthContext, Depends(auth_context)]
+
+
+@router.get("/registration")
+def registration_settings() -> dict:
+    return {"enabled": get_settings().registration_enabled}
+
+
+@router.post("/register", response_model=AuthUserRead, status_code=201)
+def register(payload: RegisterRequest, db: Db):
+    return service.register(db, payload)
 
 
 @router.post("/login", response_model=LoginResponse)

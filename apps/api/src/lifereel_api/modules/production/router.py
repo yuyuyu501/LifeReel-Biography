@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, status
 from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
+from lifereel_api.core.config import get_settings
 from lifereel_api.core.database import get_db
 from lifereel_api.core.errors import ApiError, ErrorCode
 from lifereel_api.core.tenant import get_tenant_id
@@ -22,6 +23,26 @@ from lifereel_api.modules.production.schemas import (
 router = APIRouter(prefix="/production", tags=["production"])
 Db = Annotated[Session, Depends(get_db)]
 Tenant = Annotated[UUID, Depends(get_tenant_id)]
+
+
+@router.get("/settings")
+def production_settings(tenant_id: Tenant) -> dict:
+    settings = get_settings()
+    is_seedance = settings.video_provider in {"volcengine-seedance", "volcengine-seedance-1.5"}
+    return {
+        "provider": settings.video_provider,
+        "model": settings.volcengine_video_model if is_seedance else None,
+        "resolution": settings.volcengine_video_resolution if is_seedance else None,
+        "ratio": settings.volcengine_video_ratio if is_seedance else None,
+        "duration_seconds": settings.volcengine_video_duration if is_seedance else None,
+        "generate_audio": settings.volcengine_video_generate_audio if is_seedance else None,
+        "mode": (
+            "segmented"
+            if is_seedance and settings.volcengine_video_model.startswith("doubao-seedance-2-")
+            else "single_clip"
+        ),
+        "max_segment_seconds": 15,
+    }
 
 
 def to_read(run, assets) -> ProductionRunRead:

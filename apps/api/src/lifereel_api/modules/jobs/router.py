@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
 from lifereel_api.core.database import get_db
+from lifereel_api.core.errors import ApiError, ErrorCode
 from lifereel_api.core.tenant import get_tenant_id
 from lifereel_api.modules.jobs import service
 from lifereel_api.modules.jobs.schemas import JobFailure, JobRead
@@ -29,7 +30,11 @@ def job(job_id: UUID, db: Db, tenant_id: Tenant) -> JobRead:
 @router.post("/{job_id}/retry", response_model=JobRead)
 def retry(job_id: UUID, db: Db, tenant_id: Tenant) -> JobRead:
     job = service.retry_job(db, tenant_id, job_id)
-    service.enqueue(job)
+    try:
+        service.enqueue(job)
+    except Exception:
+        service.fail_job(db, tenant_id, job.id, "WORKER_ERROR", None)
+        raise ApiError(503, ErrorCode.WORKER_ERROR) from None
     return job
 
 

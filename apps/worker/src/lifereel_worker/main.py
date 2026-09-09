@@ -79,7 +79,7 @@ def handle(payload: dict[str, Any], settings: Settings) -> None:
                 "X-API-Key": settings.api_access_key,
                 "X-Tenant-ID": payload["tenant_id"],
             },
-            timeout=600,
+            timeout=1200,
         )
         response.raise_for_status()
 

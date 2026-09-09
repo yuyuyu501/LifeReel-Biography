@@ -17,7 +17,12 @@ def require_api_access(
     request.state.internal_access = False
     if settings.is_development or request.url.path.startswith("/v1/public/"):
         return
-    if request.url.path in {"/v1/auth/login", "/v1/auth/logout"}:
+    if request.url.path in {
+        "/v1/auth/login",
+        "/v1/auth/logout",
+        "/v1/auth/register",
+        "/v1/auth/registration",
+    }:
         return
     if not settings.api_access_key:
         raise ApiError(

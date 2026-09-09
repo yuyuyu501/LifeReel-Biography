@@ -9,6 +9,7 @@ import { PeoplePage } from "./pages/PeoplePage";
 import { ScriptBookPage } from "./pages/ScriptBookPage";
 import { ScriptLibraryPage } from "./pages/ScriptLibraryPage";
 import { StudioPage } from "./pages/StudioPage";
+import { WalletPage } from "./pages/WalletPage";
 import { LoginPage } from "./pages/LoginPage";
 import { PublicReelPage } from "./pages/PublicReelPage";
 import { api } from "./api/client";
@@ -32,6 +33,7 @@ function ProtectedApp() {
         <Route path="/scripts" element={<ScriptLibraryPage />} />
         <Route path="/scripts/:subjectId" element={<ScriptBookPage />} />
         <Route path="/studio" element={<StudioPage />} />
+        <Route path="/wallet" element={<WalletPage />} />
       </Routes>
     </AppShell>
   );

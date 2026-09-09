@@ -1,4 +1,4 @@
-import { BookHeart, BookOpenText, Film, Home, LockKeyhole, LogOut, Mic2, UsersRound } from "lucide-react";
+import { BookHeart, BookOpenText, Film, Home, LockKeyhole, LogOut, Mic2, UsersRound, Wallet } from "lucide-react";
 import type { PropsWithChildren } from "react";
 import { Link, NavLink, useLocation, useNavigate } from "react-router-dom";
 import { api } from "../api/client";
@@ -11,6 +11,7 @@ const items = [
   { to: "/memories", label: "记忆", icon: BookHeart, secondary: true },
   { to: "/scripts", label: "剧本", icon: BookOpenText },
   { to: "/studio", label: "影像", icon: Film },
+  { to: "/wallet", label: "钱包", icon: Wallet, secondary: true },
 ];
 
 export function AppShell({ children }: PropsWithChildren) {
@@ -22,7 +23,7 @@ export function AppShell({ children }: PropsWithChildren) {
     try {
       await api.logout();
     } finally {
-      queryClient.removeQueries({ queryKey: ["auth-me"] });
+      queryClient.clear();
       navigate("/login", { replace: true });
     }
   }
@@ -52,7 +53,7 @@ export function AppShell({ children }: PropsWithChildren) {
             <LockKeyhole size={17} />
             <div>
               <strong>家庭私密空间</strong>
-              <small>内容默认不公开，制作与发布前必须确认授权。</small>
+              <small>内容默认不公开，发布前需确认授权。</small>
             </div>
           </div>
           <button className="logout-button" onClick={logout}><LogOut size={16} /> 退出登录</button>
@@ -68,7 +69,10 @@ export function AppShell({ children }: PropsWithChildren) {
             <span className="workspace-label">当前工作区</span>
             <strong>{currentSection?.label ?? "生命档案"}</strong>
           </div>
-          <Link className="workspace-security" to="/memories" aria-label="记忆档案" title="记忆档案"><BookHeart size={17} /><span>记忆档案</span></Link>
+          <nav className="workspace-links" aria-label="账户与档案">
+            <Link className="workspace-security mobile-wallet" to="/wallet" aria-label="钱包" title="钱包"><Wallet size={17} /><span>钱包</span></Link>
+            
+          </nav>
         </header>
         <main className="main-content" id="main-content">{children}</main>
       </div>

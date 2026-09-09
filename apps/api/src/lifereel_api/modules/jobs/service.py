@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 
 from lifereel_api.core.config import get_settings
 from lifereel_api.core.errors import ApiError, ErrorCode
+from lifereel_api.modules.billing import service as billing
 from lifereel_api.modules.jobs.models import Job
 
 
@@ -52,11 +53,41 @@ def get_job(db: Session, tenant_id: UUID, job_id: UUID) -> Job:
 
 def retry_job(db: Session, tenant_id: UUID, job_id: UUID) -> Job:
     job = get_job(db, tenant_id, job_id)
+    if job.kind == "production.render":
+        from lifereel_api.modules.production.locking import execution_lock
+        from lifereel_api.modules.production.models import ProductionRun
+
+        run = db.scalar(
+            select(ProductionRun).where(
+                ProductionRun.tenant_id == tenant_id, ProductionRun.job_id == job.id
+            )
+        )
+        if run is not None:
+            with execution_lock(db, run.id) as acquired:
+                if not acquired:
+                    raise ApiError(409, ErrorCode.JOB_RETRY_NOT_ALLOWED)
+                db.refresh(job)
+                db.refresh(run)
+                return _retry_job(db, tenant_id, job_id)
+    return _retry_job(db, tenant_id, job_id)
+
+
+def _retry_job(db: Session, tenant_id: UUID, job_id: UUID) -> Job:
+    job = get_job(db, tenant_id, job_id)
     if job.status not in {"failed", "cancelled"}:
         raise ApiError(status.HTTP_409_CONFLICT, ErrorCode.JOB_RETRY_NOT_ALLOWED)
-    job.status = "queued"
-    job.error_code = None
-    job.error_message = None
+    if job.kind == "production.render":
+        from lifereel_api.modules.production.models import ProductionRun
+
+        run = db.scalar(
+            select(ProductionRun).where(
+                ProductionRun.tenant_id == tenant_id, ProductionRun.job_id == job.id
+            )
+        )
+        if run is not None and run.status != "completed":
+            billing.video_reserve(db, run)
+            run.status = "queued"
+            run.error_message = None
     if job.kind == "interview.turn.process":
         from lifereel_api.modules.interview.models import InterviewTurnWorkflow
 
@@ -69,12 +100,37 @@ def retry_job(db: Session, tenant_id: UUID, job_id: UUID) -> Job:
         if workflow is not None:
             workflow.status = "queued"
             workflow.error_code = None
+    job.status = "queued"
+    job.error_code = None
+    job.error_message = None
     db.commit()
     db.refresh(job)
     return job
 
 
 def fail_job(
+    db: Session, tenant_id: UUID, job_id: UUID, error_code: str, error_message: str | None
+) -> Job:
+    job = get_job(db, tenant_id, job_id)
+    if job.kind == "production.render":
+        from lifereel_api.modules.production.locking import execution_lock
+        from lifereel_api.modules.production.models import ProductionRun
+
+        run = db.scalar(
+            select(ProductionRun).where(
+                ProductionRun.job_id == job.id, ProductionRun.tenant_id == tenant_id
+            )
+        )
+        if run:
+            with execution_lock(db, run.id) as acquired:
+                if not acquired:
+                    return job
+                db.refresh(job)
+                return _fail_job(db, tenant_id, job_id, error_code, error_message)
+    return _fail_job(db, tenant_id, job_id, error_code, error_message)
+
+
+def _fail_job(
     db: Session,
     tenant_id: UUID,
     job_id: UUID,
@@ -88,6 +144,18 @@ def fail_job(
         job.status = "failed"
         job.error_code = error_code
         job.error_message = (error_message or error_code)[:4000]
+        if job.kind == "production.render":
+            from lifereel_api.modules.production.models import ProductionRun
+
+            run = db.scalar(
+                select(ProductionRun).where(
+                    ProductionRun.tenant_id == tenant_id, ProductionRun.job_id == job.id
+                )
+            )
+            if run is not None and run.status != "completed":
+                run.status = "failed"
+                run.error_message = error_code
+                billing.video_finish(db, run, False)
         db.commit()
         db.refresh(job)
     return job

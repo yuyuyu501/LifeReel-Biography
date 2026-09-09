@@ -5,12 +5,13 @@ import {
   FileCheck2,
   Sparkles,
 } from "lucide-react";
-import { type FormEvent, useEffect, useMemo, useState } from "react";
+import { type FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { api } from "../api/client";
 import { EmptyState } from "../components/EmptyState";
 import { ErrorNotice, QueryState } from "../components/QueryState";
 import { hasQueryIssue } from "../queryHelpers";
+import { ScriptPriceNotice } from "../components/ScriptPriceNotice";
 
 export function ScriptBookPage() {
   const { subjectId = "" } = useParams();
@@ -22,6 +23,7 @@ export function ScriptBookPage() {
   const [mode, setMode] = useState<"single_chapter" | "multi_chapter">("multi_chapter");
   const [chapterId, setChapterId] = useState("");
   const [selectedSceneId, setSelectedSceneId] = useState("");
+  const generationRequest = useRef<{ fingerprint: string; id: string } | null>(null);
 
   const person = people.data?.find((item) => item.id === subjectId);
   const personScripts = useMemo(
@@ -48,21 +50,29 @@ export function ScriptBookPage() {
   const generate = useMutation({
     mutationFn: api.generateScript,
     onSuccess: async (updatedProject) => {
+      generationRequest.current = null;
       setTitle("");
       setSelectedSceneId(updatedProject.scenes[0]?.id ?? "");
       await queryClient.invalidateQueries({ queryKey: ["scripts"] });
     },
+    onSettled: () => queryClient.invalidateQueries({ queryKey: ["wallet"] }),
   });
 
   function submit(event: FormEvent) {
     event.preventDefault();
-    generate.mutate({
+    if (generate.isPending) return;
+    const payload = {
       subject_id: subjectId,
       title: title || undefined,
       mode,
-      audience: "family",
+      audience: "family" as const,
       chapter_id: mode === "single_chapter" ? chapterId : undefined,
-    });
+    };
+    const fingerprint = JSON.stringify(payload);
+    if (generationRequest.current?.fingerprint !== fingerprint) {
+      generationRequest.current = { fingerprint, id: crypto.randomUUID() };
+    }
+    generate.mutate({ ...payload, idempotency_key: generationRequest.current.id });
   }
 
   if (hasQueryIssue([people, chapters, scripts])) {
@@ -96,6 +106,7 @@ export function ScriptBookPage() {
           <span className="generator-note"><Sparkles size={16} /> 采访内容会持续优化章节</span>
         </div>
         <form onSubmit={submit}>
+          <ScriptPriceNotice />
           <label>剧本名称<input value={title} onChange={(event) => setTitle(event.target.value)} placeholder={project?.title || `${displayName}的生命片段`} /></label>
           <fieldset>
             <legend>生成结构</legend>

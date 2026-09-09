@@ -8,6 +8,7 @@ from alembic import context
 from lifereel_api.core.config import get_settings
 from lifereel_api.core.database import Base
 from lifereel_api.modules.auth import models as auth_models  # noqa: F401
+from lifereel_api.modules.billing import models as billing_models  # noqa: F401
 from lifereel_api.modules.evidence import models as evidence_models  # noqa: F401
 from lifereel_api.modules.governance import models as governance_models  # noqa: F401
 from lifereel_api.modules.identity import models as identity_models  # noqa: F401

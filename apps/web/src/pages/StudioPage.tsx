@@ -1,5 +1,6 @@
+import type { ProductionRun, ScriptProject, ScriptScene } from "@lifereel/contracts";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Ban, FileCheck2, Film, Play, RefreshCw, Send, ShieldCheck } from "lucide-react";
+import { Ban, BookOpen, Check, Film, Play, RefreshCw, Send } from "lucide-react";
 import { useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { api, generatedAssetUrl } from "../api/client";
@@ -7,138 +8,160 @@ import { EmptyState } from "../components/EmptyState";
 import { ErrorNotice, QueryState } from "../components/QueryState";
 import { hasQueryIssue } from "../queryHelpers";
 import { providerLabel, statusLabel } from "../statusLabels";
+import { money } from "./WalletPage";
+
+function matchesChapter(run: ProductionRun, project: ScriptProject, scene: ScriptScene) {
+  if (run.project_id !== project.id) return false;
+  const manifest = run.output_manifest;
+  if (manifest?.scene_id === scene.id || run.assets.some((asset) => asset.scene_id === scene.id)) return true;
+  const snapshot = manifest?.script_snapshot;
+  if (snapshot) return snapshot.length === 1 && !!scene.chapter_id && snapshot[0].chapter_id === scene.chapter_id;
+  // Old whole-book renders are unambiguous only for a single-chapter book.
+  return !manifest?.scene_id && project.scenes.length === 1;
+}
+
+function seconds(value: unknown) {
+  return typeof value === "number" && Number.isFinite(value) && value > 0 ? `${Number(value.toFixed(2))} 秒` : "未提供";
+}
 
 export function StudioPage() {
   const queryClient = useQueryClient();
   const [searchParams] = useSearchParams();
   const [subjectId, setSubjectId] = useState("");
+  const [sceneId, setSceneId] = useState("");
+  const [runId, setRunId] = useState("");
+  const [view, setView] = useState<"video" | "script">("video");
+  const [media, setMedia] = useState<{ id: string; duration: number; width: number; height: number } | null>(null);
+  const [mediaError, setMediaError] = useState("");
   const people = useQuery({ queryKey: ["persons"], queryFn: api.listPersons });
   const scripts = useQuery({ queryKey: ["scripts"], queryFn: api.listScripts });
-  const productionRuns = useQuery({ queryKey: ["production-runs"], queryFn: api.listProductionRuns });
+  const settings = useQuery({ queryKey: ["production-settings"], queryFn: api.productionSettings });
+  const wallet = useQuery({ queryKey: ["wallet"], queryFn: api.wallet, refetchInterval: 10000 });
+  const productionRuns = useQuery({
+    queryKey: ["production-runs"], queryFn: api.listProductionRuns,
+    refetchInterval: (query) => query.state.data?.some((run) => ["queued", "running"].includes(run.status)) ? 3000 : false,
+  });
   const publications = useQuery({ queryKey: ["publications"], queryFn: api.listPublications });
-  const consents = useQuery({ queryKey: ["consents"], queryFn: () => api.listConsents() });
-  const jobs = useQuery({ queryKey: ["jobs"], queryFn: api.listJobs });
-
   const requestedProject = scripts.data?.find((project) => project.id === searchParams.get("project"));
   const effectiveSubjectId = subjectId || requestedProject?.subject_id || people.data?.find((person) => person.is_subject)?.id || "";
-  const subject = people.data?.find((person) => person.id === effectiveSubjectId);
-  const subjectScripts = scripts.data?.filter((project) => project.subject_id === effectiveSubjectId) ?? [];
-  const subjectProjectIds = new Set(subjectScripts.map((project) => project.id));
-  const subjectRuns = productionRuns.data?.filter((run) => subjectProjectIds.has(run.project_id)) ?? [];
-  const subjectJobs = jobs.data?.filter((job) => subjectProjectIds.has(String(job.payload.project_id ?? ""))) ?? [];
-  const subjectConsents = consents.data?.filter((consent) => consent.subject_id === effectiveSubjectId) ?? [];
-  const requiredConsentTypes = ["production", "portrait", "publication", ...(subject?.is_minor ? ["guardian"] : [])];
-  const hasRequiredConsents = requiredConsentTypes.every((type) => subjectConsents.some((consent) => consent.consent_type === type && consent.scope === "family" && consent.status === "granted"));
-
-  const grantConsents = useMutation({
-    mutationFn: async () => {
-      if (!subject) return;
-      for (const consentType of requiredConsentTypes) {
-        const alreadyGranted = subjectConsents.some((item) => item.consent_type === consentType && item.scope === "family" && item.status === "granted");
-        if (!alreadyGranted) {
-          await api.createConsent({
-            subject_id: subject.id,
-            consent_type: consentType as "production" | "portrait" | "publication" | "guardian",
-            scope: "family",
-            granted_by: subject.is_minor && consentType === "guardian" ? subject.guardian_name || "监护人" : "当前用户确认",
-            evidence_note: "通过影像制作页记录；正式环境需关联电子签署证据。",
-          });
-        }
-      }
-    },
-    onSuccess: async () => queryClient.invalidateQueries({ queryKey: ["consents"] }),
-  });
-  const revokeConsent = useMutation({
-    mutationFn: api.revokeConsent,
-    onSuccess: async () => queryClient.invalidateQueries({ queryKey: ["consents"] }),
-  });
+  const entries = (scripts.data ?? []).filter((project) => project.subject_id === effectiveSubjectId)
+    .flatMap((project) => [...project.scenes].sort((a, b) => a.order_index - b.order_index).map((scene) => ({ project, scene })));
+  const selected = entries.find(({ scene }) => scene.id === sceneId) ?? entries[0];
+  const chapterRuns = selected ? (productionRuns.data ?? []).filter((run) => matchesChapter(run, selected.project, selected.scene)) : [];
+  const activeRun = chapterRuns.find((run) => run.id === runId) ?? chapterRuns[0];
+  const activeAsset = activeRun?.assets.find((asset) => asset.mime_type.startsWith("video/"));
+  const publication = publications.data?.find((item) => item.production_run_id === activeRun?.id && item.status === "published");
+  const isGenerating = chapterRuns.some((run) => ["queued", "running"].includes(run.status));
+  const displayedScene = activeRun?.output_manifest?.script_snapshot?.[0] ?? selected?.scene;
+  const actualMedia = media?.id === activeAsset?.id ? media : null;
+  const parameters = activeAsset?.generation_parameters;
+  const segmented = settings.data?.mode === "segmented";
+  const quote = wallet.data?.prices && selected ? (segmented ? selected.scene.duration_seconds : settings.data?.duration_seconds ?? selected.scene.duration_seconds) * wallet.data.prices.video_cents_per_second : undefined;
+  const progress = activeRun?.output_manifest;
+  const progressText = activeRun?.status === "running" && progress?.stage
+    ? progress.stage === "planning" ? "正在规划分镜"
+      : progress.stage === "assembling" ? "正在拼接整章视频"
+        : `已完成 ${progress.completed_segments ?? 0} / ${progress.segments?.length ?? 0} 段`
+    : null;
+  const refresh = () => queryClient.invalidateQueries({ queryKey: ["production-runs"] });
   const produce = useMutation({
-    mutationFn: (projectId: string) => api.startProduction({ project_id: projectId, audience: "family" }),
-    onSuccess: async () => Promise.all([
-      queryClient.invalidateQueries({ queryKey: ["production-runs"] }),
-      queryClient.invalidateQueries({ queryKey: ["jobs"] }),
-    ]),
+    mutationFn: ({ project, scene }: { project: ScriptProject; scene: ScriptScene }) => api.startProduction({ project_id: project.id, scene_id: scene.id, audience: "family", quoted_amount_cents: quote }),
+    onSuccess: async (run) => { setRunId(run.id); setView("video"); await queryClient.invalidateQueries({ queryKey: ["wallet"] }); await refresh(); },
   });
-  const publish = useMutation({
-    mutationFn: (runId: string) => api.publish(runId, "family"),
-    onSuccess: async () => queryClient.invalidateQueries({ queryKey: ["publications"] }),
-  });
-  const withdraw = useMutation({
-    mutationFn: api.withdrawPublication,
-    onSuccess: async () => queryClient.invalidateQueries({ queryKey: ["publications"] }),
-  });
-  const retryJob = useMutation({
-    mutationFn: api.retryJob,
-    onSuccess: async () => Promise.all([
-      queryClient.invalidateQueries({ queryKey: ["jobs"] }),
-      queryClient.invalidateQueries({ queryKey: ["production-runs"] }),
-    ]),
-  });
+  const publish = useMutation({ mutationFn: (id: string) => api.publish(id, "family"), onSuccess: () => queryClient.invalidateQueries({ queryKey: ["publications"] }) });
+  const withdraw = useMutation({ mutationFn: api.withdrawPublication, onSuccess: () => queryClient.invalidateQueries({ queryKey: ["publications"] }) });
+  const retry = useMutation({ mutationFn: api.retryJob, onSuccess: async () => {
+    await queryClient.invalidateQueries({ queryKey: ["wallet"] });
+    await refresh();
+  } });
+  const queries = [people, scripts, settings, productionRuns, publications, wallet];
 
-  const requiredQueries = [people, scripts, productionRuns, publications, consents, jobs];
-  const actionError = grantConsents.error || revokeConsent.error || produce.error || publish.error || withdraw.error || retryJob.error;
-
-  return (
-    <div className="page film-studio-page">
-      <header className="page-title-row">
-        <div>
-          <span className="eyebrow">从人物剧本到家庭成片</span>
-          <h1>影像制作</h1>
-          <p className="page-intro">这里只处理已经写好的剧本、制作授权、视频生成和家庭发布。新剧本请回到人物书册中创建。</p>
-        </div>
-        <Link className="button secondary" to={effectiveSubjectId ? `/scripts/${effectiveSubjectId}` : "/scripts"}>返回剧本书册</Link>
-      </header>
-
-      {hasQueryIssue(requiredQueries) ? <QueryState queries={requiredQueries} loadingText="正在准备影像制作台……" /> : <>
-        <ErrorNotice error={actionError} />
-        <div className="film-subject-bar">
-          <label>制作对象
-            <select value={effectiveSubjectId} onChange={(event) => setSubjectId(event.target.value)}>
-              {people.data?.filter((person) => person.is_subject).map((person) => <option key={person.id} value={person.id}>{person.preferred_name || person.display_name}</option>)}
-            </select>
-          </label>
-          <div className={hasRequiredConsents ? "film-readiness ready" : "film-readiness"}>
-            <ShieldCheck size={20} />
-            <div><strong>{hasRequiredConsents ? "制作授权已齐全" : "制作授权待补齐"}</strong><small>{subject?.preferred_name || subject?.display_name || "当前人物"} · 家人可见</small></div>
-          </div>
-          {!hasRequiredConsents && <button className="button primary" disabled={!subject || grantConsents.isPending} onClick={() => grantConsents.mutate()}><FileCheck2 size={17} /> 记录制作授权</button>}
-        </div>
-
-        <section className="section-block compact">
-          <div className="section-heading"><div><span className="eyebrow">制作入口</span><h2>选择人物剧本</h2></div><p>剧本已有内容且人物授权齐全后，即可开始生成影像。</p></div>
-          {subjectScripts.length ? <div className="film-script-list">{subjectScripts.map((project) => {
-            const seconds = project.scenes.reduce((total, scene) => total + scene.duration_seconds, 0);
-            const canProduce = project.scenes.length > 0 && hasRequiredConsents;
-            return <article key={project.id} className={canProduce ? "ready" : ""}>
-              <div className="film-script-icon"><Film size={20} /></div>
-              <div><strong>{project.title}</strong><small>{project.scenes.length} 个章节 · 约 {seconds} 秒</small></div>
-              {project.scenes.length ? <button className="button primary small" disabled={!hasRequiredConsents || produce.isPending} onClick={() => produce.mutate(project.id)}><Play size={15} /> 生成影像</button> : <Link className="button secondary small" to={`/scripts/${project.subject_id}`}>继续整理剧本</Link>}
-            </article>;
-          })}</div> : <EmptyState icon={Film} title="还没有可制作的剧本" description="先进入这位家人的书册，生成剧本章节。" />}
+  return <div className="page film-studio-page">
+    <header className="page-title-row studio-title">
+      <div><span className="eyebrow">人生影像</span><h1>影像制作</h1></div>
+      <Link className="button secondary" to={effectiveSubjectId ? `/scripts/${effectiveSubjectId}` : "/scripts"}><BookOpen size={17} aria-hidden="true" /> 返回剧本书册</Link>
+    </header>
+    {hasQueryIssue(queries) ? <QueryState queries={queries} loadingText="正在准备影像制作台……" /> : <>
+      <ErrorNotice error={produce.error || publish.error || withdraw.error || retry.error} />
+      <div className="studio-workspace">
+        <aside className="studio-catalog" aria-label="制作章节">
+          <label>制作对象<select value={effectiveSubjectId} onChange={(event) => { setSubjectId(event.target.value); setSceneId(""); setRunId(""); }}>
+            {!people.data?.some((person) => person.is_subject) && <option value="">暂无家人</option>}
+            {people.data?.filter((person) => person.is_subject).map((person) => <option key={person.id} value={person.id}>{person.preferred_name || person.display_name}</option>)}
+          </select></label>
+          <div className="studio-catalog-heading"><h2>章节剧本</h2><span>{entries.length} 章</span></div>
+          <nav className="studio-chapters" aria-label="章节列表">
+            {entries.map(({ project, scene }, index) => {
+              const run = productionRuns.data?.find((item) => matchesChapter(item, project, scene));
+              return <button key={scene.id} aria-current={selected?.scene.id === scene.id ? "true" : undefined} onClick={() => { setSceneId(scene.id); setRunId(""); }}>
+                <span className="studio-chapter-number">{String(index + 1).padStart(2, "0")}</span>
+                <span><strong>{scene.heading}</strong><small>剧本约 {scene.duration_seconds} 秒</small><small className="studio-chapter-status">{run ? statusLabel(run.status) : "尚未生成"}</small></span>
+                {run?.status === "completed" && <Check size={16} aria-hidden="true" />}
+              </button>;
+            })}
+          </nav>
+          {!entries.length && <p className="studio-muted">暂无章节剧本</p>}
+        </aside>
+        <section className="studio-detail" aria-label="章节影像工作台">
+          {selected ? <>
+            <div className="studio-parameters">
+              <div className="studio-selection-heading"><div><span className="eyebrow">当前章节</span><h2>{selected.scene.heading}</h2></div><span className="studio-mode-label">{segmented ? "整章生成" : "试生成片段"}</span></div>
+              <dl className="studio-specs" aria-label="视频参数">
+                <div className="studio-model"><dt>生成模型</dt><dd>{settings.data?.model || providerLabel(settings.data?.provider ?? "")}</dd></div>
+                <div><dt>目标画质</dt><dd>{settings.data?.resolution ?? "由服务决定"}</dd></div>
+                <div><dt>画面比例</dt><dd>{settings.data?.ratio ?? "由服务决定"}</dd></div>
+                <div><dt>目标时长</dt><dd>{seconds(segmented ? selected.scene.duration_seconds : settings.data?.duration_seconds)}</dd></div>
+                <div><dt>声音</dt><dd>{settings.data?.generate_audio === true ? "原生音频" : settings.data?.generate_audio === false ? "无声片段" : "由服务决定"}</dd></div>
+              </dl>
+              {quote !== undefined && <p className="wallet-note">本次报价 {money(quote)} · 可用 {money(wallet.data!.available_cents)} · 成功扣款，失败解冻。<Link to="/wallet">查看钱包</Link></p>}
+              <div className="studio-generate-row"><span className="studio-muted">剧本预估 {seconds(selected.scene.duration_seconds)}</span><button className="button primary" disabled={produce.isPending || isGenerating || quote === undefined} onClick={() => {
+                if (quote !== undefined && window.confirm(`本次生成报价 ${money(quote)}，先冻结额度，成功后扣款，失败解冻。是否继续？`)) produce.mutate(selected);
+              }}><Play size={16} aria-hidden="true" /> {isGenerating ? "正在生成" : "生成影像"}</button></div>
+            </div>
+            <div className="studio-preview-toolbar">
+              <div role="tablist" aria-label="预览内容" className="studio-tabs" onKeyDown={(event) => {
+                if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+                event.preventDefault();
+                const next = event.key === "Home" ? "video" : event.key === "End" ? "script" : view === "video" ? "script" : "video";
+                setView(next);
+                document.getElementById(`studio-tab-${next}`)?.focus();
+              }}>
+                <button id="studio-tab-video" role="tab" aria-selected={view === "video"} aria-controls="studio-panel-video" tabIndex={view === "video" ? 0 : -1} onClick={() => setView("video")}><Film size={17} aria-hidden="true" /> 视频预览</button>
+                <button id="studio-tab-script" role="tab" aria-selected={view === "script"} aria-controls="studio-panel-script" tabIndex={view === "script" ? 0 : -1} onClick={() => setView("script")}><BookOpen size={17} aria-hidden="true" /> 本章剧本</button>
+              </div>
+              {activeRun && <span className={`run-status ${activeRun.status}`} role="status">{statusLabel(activeRun.status)}</span>}
+            </div>
+            {chapterRuns.length > 1 && <label className="studio-version">生成版本<select value={activeRun?.id} onChange={(event) => setRunId(event.target.value)}>{chapterRuns.map((run, index) => <option key={run.id} value={run.id}>{index === 0 ? "最新 · " : ""}{new Date(run.created_at).toLocaleString("zh-CN")} · {statusLabel(run.status)}</option>)}</select></label>}
+            {progressText && <p className="studio-muted" role="status">{progressText}</p>}
+            <div id="studio-panel-video" role="tabpanel" aria-labelledby="studio-tab-video" hidden={view !== "video"}>
+              {activeRun?.error_message && <div className="notice error" role="alert">{statusLabel(activeRun.error_message, "视频生成失败，请稍后重试。")}{activeRun.job_id && <button className="button secondary small" disabled={retry.isPending} onClick={() => {
+                const savedQuote = activeRun.output_manifest?.billing_quote;
+                if (!savedQuote || window.confirm(`重试按原报价 ${money(savedQuote.amount_cents)} 冻结额度，成功后扣款，失败解冻。是否继续？`)) retry.mutate(activeRun.job_id!);
+              }}><RefreshCw size={15} aria-hidden="true" /> 重新尝试</button>}</div>}
+              <div className="studio-screen">
+                {activeAsset ? <video key={activeAsset.id} aria-label={`${selected.scene.heading}视频`} controls playsInline preload="metadata" src={generatedAssetUrl(activeAsset.id)} onLoadedMetadata={(event) => {
+                  const video = event.currentTarget;
+                  setMedia({ id: activeAsset.id, duration: video.duration, width: video.videoWidth, height: video.videoHeight });
+                  setMediaError("");
+                }} onError={() => setMediaError(activeAsset.id)} /> : <EmptyState icon={Film} title={isGenerating ? "正在生成本章影像" : activeRun?.status === "failed" ? "本次生成未完成" : "本章尚无影像"} description={isGenerating ? "等待生成结果" : ""} />}
+              </div>
+              {activeAsset && mediaError === activeAsset.id && <div className="notice error" role="alert">视频加载失败，请检查网络后重试。</div>}
+              {activeAsset && <div className="studio-output-meta"><span>实际时长 {seconds(actualMedia?.duration)}</span><span>实际尺寸 {actualMedia ? `${actualMedia.width} × ${actualMedia.height}` : "读取中"}</span><span>{parameters?.generate_audio === false ? "无声" : parameters?.generate_audio === true ? "有声" : "声音信息未提供"}</span></div>}
+              {activeAsset && <div className="studio-publish-row">{publication ? <><span className="studio-muted">已发布给家人</span><button className="button secondary small danger" disabled={withdraw.isPending} onClick={() => withdraw.mutate(publication.id)}><Ban size={15} aria-hidden="true" /> 撤回发布</button></> : <button className="button secondary small" disabled={publish.isPending || activeRun?.status !== "completed"} onClick={() => activeRun && publish.mutate(activeRun.id)}><Send size={16} aria-hidden="true" /> 发布给家人</button>}</div>}
+            </div>
+            <div id="studio-panel-script" role="tabpanel" aria-labelledby="studio-tab-script" hidden={view !== "script"}>
+              <article className="studio-script">
+                <div className="studio-script-caption"><span>{activeRun?.output_manifest?.script_snapshot ? "生成时剧本" : "当前剧本"}</span><span>预估 {seconds(displayedScene?.duration_seconds)}</span></div>
+                {activeRun && !activeRun.output_manifest?.script_snapshot && <p className="notice">此历史视频未保存剧本快照，以下为当前章节内容。</p>}
+                {activeRun?.output_manifest?.script_version != null && activeRun.output_manifest.script_version !== selected.project.version_number && <p className="notice">剧本已更新，以下保留本次视频生成时的内容。</p>}
+                <h3>{displayedScene?.heading}</h3>
+                <h4>旁白</h4><p>{displayedScene?.narration || "暂无旁白"}</p>
+                <h4>画面描述</h4><p>{displayedScene?.visual_prompt || "暂无画面描述"}</p>
+              </article>
+            </div>
+          </> : <EmptyState icon={BookOpen} title="还没有可制作的章节" description="" />}
         </section>
-
-        {subjectRuns.length ? <section className="section-block compact">
-          <div className="section-heading"><div><span className="eyebrow">生产与发布</span><h2>成片任务</h2></div></div>
-          <div className="production-grid">{subjectRuns.map((run) => {
-            const publication = publications.data?.find((item) => item.production_run_id === run.id && item.status === "published");
-            return <article className="production-card" key={run.id}>
-              <div><span className={`run-status ${run.status}`}>{statusLabel(run.status)}</span><h3>{scripts.data?.find((item) => item.id === run.project_id)?.title || "影传成片"}</h3><p>生成服务：{providerLabel(run.provider)} · 范围：{statusLabel(run.audience)}</p></div>
-              {run.assets[0]?.mime_type === "video/mp4" && <video controls preload="metadata" src={generatedAssetUrl(run.assets[0].id)} />}
-              {publication ? <div className="publication-actions"><div className="notice success">家庭访问令牌：{publication.access_token.slice(0, 10)}…</div><button className="button secondary small danger" disabled={withdraw.isPending} onClick={() => withdraw.mutate(publication.id)}><Ban size={15} /> 撤回发布</button></div> : <button className="button primary small" disabled={publish.isPending || run.status !== "completed"} onClick={() => publish.mutate(run.id)}><Send size={16} /> 发布给家人</button>}
-            </article>;
-          })}</div>
-        </section> : null}
-
-        {subjectConsents.length ? <section className="section-block compact">
-          <div className="section-heading"><div><span className="eyebrow">隐私与使用边界</span><h2>本人物授权</h2></div></div>
-          <div className="management-list">{subjectConsents.map((consent) => <article key={consent.id}><div><strong>{statusLabel(consent.consent_type, "其他授权")}</strong><small>{statusLabel(consent.scope)} · {statusLabel(consent.status)}</small></div>{consent.status === "granted" && <button className="button secondary small danger" disabled={revokeConsent.isPending} onClick={() => revokeConsent.mutate(consent.id)}><Ban size={15} /> 撤销授权</button>}</article>)}</div>
-        </section> : null}
-
-        {subjectJobs.length ? <section className="section-block compact">
-          <div className="section-heading"><div><span className="eyebrow">后台处理</span><h2>任务记录</h2></div></div>
-          <div className="management-list">{subjectJobs.map((job) => <article key={job.id}><div><strong>{statusLabel(job.kind, "后台任务")}</strong><small>{statusLabel(job.status)} · 已尝试 {job.attempt_count} 次{job.error_code ? ` · ${statusLabel(job.error_code, "处理失败")}` : ""}</small></div>{["failed", "cancelled"].includes(job.status) && <button className="button secondary small" disabled={retryJob.isPending} onClick={() => retryJob.mutate(job.id)}><RefreshCw size={15} /> 重试</button>}</article>)}</div>
-        </section> : null}
-      </>}
-    </div>
-  );
+      </div>
+    </>}
+  </div>;
 }

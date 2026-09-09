@@ -121,12 +121,12 @@ def test_one_active_script_is_continuously_regenerated(client) -> None:
     }
 
     assert all("review_status" not in scene for scene in second["scenes"])
-    production_blocked = client.post(
+    production = client.post(
         "/v1/production/runs",
         json={"project_id": second["id"], "audience": "family", "provider": "mock"},
     )
-    assert production_blocked.status_code == 409
-    assert production_blocked.json()["error"]["code"] == "PRODUCTION_CONSENT_REQUIRED"
+    assert production.status_code == 201
+    assert production.json()["status"] == "completed"
 
 
 def test_document_observation_compiles_into_traceable_memory(client) -> None:

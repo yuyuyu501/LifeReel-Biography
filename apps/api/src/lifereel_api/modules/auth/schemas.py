@@ -18,6 +18,10 @@ class AuthUserRead(BaseModel):
     role: str
 
 
+class RegisterRequest(LoginRequest):
+    display_name: str = Field(min_length=1, max_length=80)
+
+
 class LoginResponse(BaseModel):
     expires_in: int
     user: AuthUserRead

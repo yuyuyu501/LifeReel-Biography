@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session, selectinload
 
 from lifereel_api.core.config import get_settings
 from lifereel_api.core.errors import ApiError, ErrorCode
+from lifereel_api.modules.billing.usage import track_usage
 from lifereel_api.modules.evidence.models import SourceAsset
 from lifereel_api.modules.identity.models import Person
 from lifereel_api.modules.interview.chapter_prompts import get_chapter_prompt_profile
@@ -319,6 +320,7 @@ def answer_round(
     return round_
 
 
+@track_usage("question")
 def suggest_next_question(db: Session, tenant_id: UUID, session_id: UUID) -> dict[str, str]:
     session = get_session(db, tenant_id, session_id)
     answered = [item for item in session.rounds if item.answer_text]

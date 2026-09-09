@@ -31,6 +31,7 @@ def test_text_turn_updates_chapter_script_and_creates_next_question(client) -> N
     assert workflow["next_question"]
     assert workflow["script_brief"]["chapter_id"] == chapter["id"]
     assert workflow["script_brief"]["new_facts"]
+    assert client.get("/v1/wallet").json()["available_cents"] == 1998
 
     workspace = client.get(f"/v1/interviews/{session['id']}/workspace")
     assert workspace.status_code == 200
@@ -61,6 +62,44 @@ def test_text_turn_updates_chapter_script_and_creates_next_question(client) -> N
     assert repeated.json()["id"] == workflow["id"]
     final_workspace = client.get(f"/v1/interviews/{session['id']}/workspace").json()
     assert len(final_workspace["session"]["rounds"]) == 3
+    assert client.get("/v1/wallet").json()["available_cents"] == 1996
+    assert client.get("/v1/wallet/ledger?event=consume").json()["total"] == 2
+
+
+def test_followup_retry_does_not_regenerate_or_charge_script_again(client, monkeypatch):
+    from lifereel_api.core.errors import ApiError, ErrorCode
+    from lifereel_api.modules.interview import service as interviews
+    from lifereel_api.modules.script import service as scripts
+
+    _, _, session = _start(client)
+    original = interviews.suggest_next_question
+
+    def fail(*args, **kwargs):
+        raise ApiError(502, ErrorCode.INTERVIEW_LLM_REQUEST_FAILED)
+
+    monkeypatch.setattr(interviews, "suggest_next_question", fail)
+    response = client.post(
+        f"/v1/interviews/{session['id']}/turns",
+        json={
+            "round_id": session["rounds"][-1]["id"],
+            "answer_text": "1968年，我出生在泉州，和父母一起生活。",
+            "asset_ids": [],
+            "idempotency_key": "followup-retry-test",
+        },
+    )
+    assert response.status_code == 502
+    workspace = client.get(f"/v1/interviews/{session['id']}/workspace").json()
+    assert workspace["script"]
+    assert client.get("/v1/wallet").json()["available_cents"] == 1998
+    monkeypatch.setattr(interviews, "suggest_next_question", original)
+    monkeypatch.setattr(scripts, "_generate_draft", fail)
+    workflow_id = workspace["latest_workflow"]["id"]
+    result = client.post(f"/v1/internal/interview-turns/{workflow_id}/execute")
+    assert result.status_code == 200
+    assert result.json()["status"] == "completed"
+    after = client.get(f"/v1/interviews/{session['id']}/workspace").json()
+    assert after["script"]["version_number"] == workspace["script"]["version_number"]
+    assert client.get("/v1/wallet").json()["available_cents"] == 1998
 
 
 def test_document_attachment_is_linked_analyzed_and_used_by_script(client) -> None:
@@ -123,4 +162,3 @@ def test_turn_rejects_asset_from_another_subject(client) -> None:
 
     assert response.status_code == 404
     assert response.json() == {"error": {"code": "EVIDENCE_ASSET_NOT_FOUND"}}
-

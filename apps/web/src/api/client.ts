@@ -1,4 +1,5 @@
 import type {
+  WalletSummary, WalletEntry, WalletPage, ProviderUsage,
   Chapter,
   InterviewSession,
   InterviewTurnWorkflow,
@@ -15,6 +16,7 @@ import type {
   PersonCreate,
   PersonUpdate,
   ProductionRun,
+  ProductionSettings,
   Publication,
   ConsentGrant,
   EvidenceObservation,
@@ -52,6 +54,13 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export const api = {
+  wallet: () => request<WalletSummary>("/v1/wallet"),
+  walletLedger: (page = 1, event = "") => request<WalletPage<WalletEntry>>(`/v1/wallet/ledger?page=${page}${event ? `&event=${event}` : ""}`),
+  providerUsage: (page = 1) => request<WalletPage<ProviderUsage>>(`/v1/wallet/usage?page=${page}`),
+  registration: () => request<{ enabled: boolean }>("/v1/auth/registration"),
+  register: (email: string, password: string, display_name: string) => request("/v1/auth/register", {
+    method: "POST", body: JSON.stringify({ email, password, display_name }),
+  }),
   login: (email: string, password: string) =>
     request<{ expires_in: number; user: { display_name: string; role: string } }>(
       "/v1/auth/login",
@@ -123,6 +132,7 @@ export const api = {
   listScripts: () => request<ScriptProject[]>("/v1/scripts"),
   generateScript: (payload: {
     subject_id: string;
+    idempotency_key?: string;
     title?: string;
     mode: "single_chapter" | "multi_chapter";
     audience: "private" | "family" | "friends" | "public";
@@ -200,8 +210,11 @@ export const api = {
   revokeConsent: (consentId: string) =>
     request<ConsentGrant>(`/v1/consents/${consentId}/revoke`, { method: "POST" }),
   listProductionRuns: () => request<ProductionRun[]>("/v1/production/runs"),
+  productionSettings: () => request<ProductionSettings>("/v1/production/settings"),
   startProduction: (payload: {
+    quoted_amount_cents?: number;
     project_id: string;
+    scene_id?: string;
     audience: "private" | "family" | "friends" | "public";
     provider?: string;
   }) =>

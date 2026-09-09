@@ -1,5 +1,11 @@
-def test_consent_production_publication_and_withdrawal(client) -> None:
-    person = client.post("/v1/persons", json={"display_name": "陈阿姨"}).json()
+import pytest
+
+
+@pytest.mark.parametrize("is_minor", [False, True])
+def test_production_without_consent_and_separate_publication(client, is_minor) -> None:
+    person = client.post(
+        "/v1/persons", json={"display_name": "陈阿姨", "is_minor": is_minor}
+    ).json()
     chapter = client.get("/v1/chapters").json()[0]
     interview = client.post(
         "/v1/interviews",
@@ -15,26 +21,6 @@ def test_consent_production_publication_and_withdrawal(client) -> None:
         "/v1/scripts/generate",
         json={"subject_id": person["id"], "mode": "single_chapter", "audience": "family"},
     ).json()
-
-    blocked = client.post(
-        "/v1/production/runs",
-        json={"project_id": script["id"], "audience": "family", "provider": "mock"},
-    )
-    assert blocked.status_code == 409
-    assert blocked.json()["error"]["code"] == "PRODUCTION_CONSENT_REQUIRED"
-
-    for consent_type in ("production", "portrait", "publication"):
-        consent = client.post(
-            "/v1/consents",
-            json={
-                "subject_id": person["id"],
-                "consent_type": consent_type,
-                "scope": "family",
-                "granted_by": "陈阿姨本人",
-                "evidence_note": "测试环境书面确认",
-            },
-        )
-        assert consent.status_code == 201
 
     production = client.post(
         "/v1/production/runs",
@@ -73,6 +59,16 @@ def test_consent_production_publication_and_withdrawal(client) -> None:
         "/v1/publications",
         json={"production_run_id": run["id"], "audience": "family"},
     )
+    assert publication.status_code == 409
+    assert publication.json()["error"]["code"] == "PUBLICATION_CONSENT_REQUIRED"
+    consent = client.post("/v1/consents", json={
+        "subject_id": person["id"], "consent_type": "publication", "scope": "family",
+        "granted_by": "陈阿姨本人", "evidence_note": "测试环境书面确认",
+    })
+    assert consent.status_code == 201
+    publication = client.post(
+        "/v1/publications", json={"production_run_id": run["id"], "audience": "family"}
+    )
     assert publication.status_code == 201
     published = publication.json()
     public_lookup = client.get(f"/v1/public/{published['access_token']}")
@@ -86,4 +82,4 @@ def test_consent_production_publication_and_withdrawal(client) -> None:
     assert withdrawn.json()["status"] == "withdrawn"
     assert client.get(f"/v1/public/{published['access_token']}").status_code == 404
     assert client.get(f"/v1/public/{published['access_token']}/content").status_code == 404
-    assert len(client.get("/v1/audit").json()) >= 6
+    assert len(client.get("/v1/audit").json()) >= 3

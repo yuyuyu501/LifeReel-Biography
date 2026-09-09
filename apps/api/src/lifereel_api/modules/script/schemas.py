@@ -12,6 +12,7 @@ class ScriptGenerateRequest(BaseModel):
     mode: str = Field(default="single_chapter", pattern="^(single_chapter|multi_chapter)$")
     audience: str = Field(default="family", pattern="^(private|family|friends|public)$")
     chapter_id: UUID | None = None
+    idempotency_key: UUID | None = None
 
 
 class ScriptSceneRead(BaseModel):

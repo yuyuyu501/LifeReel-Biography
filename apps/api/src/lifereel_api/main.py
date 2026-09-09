@@ -12,6 +12,7 @@ from lifereel_api.core.database import Base, SessionLocal, engine
 from lifereel_api.core.errors import install_error_handlers
 from lifereel_api.core.seed import seed_foundation
 from lifereel_api.modules.auth import models as auth_models  # noqa: F401
+from lifereel_api.modules.billing import models as billing_models  # noqa: F401
 from lifereel_api.modules.evidence import models as evidence_models  # noqa: F401
 from lifereel_api.modules.governance import models as governance_models  # noqa: F401
 from lifereel_api.modules.identity import models as identity_models  # noqa: F401

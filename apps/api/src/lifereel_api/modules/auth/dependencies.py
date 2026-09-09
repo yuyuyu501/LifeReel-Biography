@@ -33,6 +33,8 @@ def auth_context(
     if request.url.path.startswith("/v1/public/") or request.url.path in {
         "/v1/auth/login",
         "/v1/auth/logout",
+        "/v1/auth/register",
+        "/v1/auth/registration",
     }:
         return AuthContext(None, settings.default_tenant_id, "public")
     bearer_token = None
@@ -76,9 +78,11 @@ def enforce_write_role(
 ) -> None:
     if request.method in {"GET", "HEAD", "OPTIONS"}:
         return
-    if request.url.path in {"/v1/auth/login", "/v1/auth/logout"} or request.url.path.startswith(
-        "/v1/public/"
-    ):
+    if request.url.path in {
+        "/v1/auth/login",
+        "/v1/auth/logout",
+        "/v1/auth/register",
+    } or request.url.path.startswith("/v1/public/"):
         return
     if context.role not in {"owner", "editor", "worker"}:
         raise ApiError(status.HTTP_403_FORBIDDEN, ErrorCode.AUTH_READ_ONLY)

@@ -43,7 +43,5 @@ def workspace(session_id: UUID, db: Db, tenant_id: Tenant) -> InterviewWorkspace
     "/internal/interview-turns/{workflow_id}/execute",
     response_model=InterviewTurnWorkflowRead,
 )
-def execute_turn(
-    workflow_id: UUID, db: Db, tenant_id: Tenant
-) -> InterviewTurnWorkflowRead:
+def execute_turn(workflow_id: UUID, db: Db, tenant_id: Tenant) -> InterviewTurnWorkflowRead:
     return service.execute_turn(db, tenant_id, workflow_id)

@@ -320,16 +320,37 @@ export interface GeneratedAsset {
 export interface ProductionRun {
   id: UUID;
   project_id: UUID;
+  job_id?: UUID | null;
   status: string;
   provider: string;
   audience: string;
   estimated_cost: number;
   actual_cost: number;
-  output_manifest: Record<string, unknown> | null;
+  output_manifest: (Record<string, unknown> & {
+    scene_id?: UUID | null;
+    script_version?: number;
+    script_snapshot?: ScriptScene[];
+    stage?: "planning" | "generating" | "assembling" | "completed";
+    completed_segments?: number;
+    segments?: Array<{ status: string; duration_seconds: number; narration: string }>;
+    target_duration_seconds?: number;
+    billing_quote?: { amount_cents: number; target_seconds: number; version: string; title: string };
+  }) | null;
   error_message: string | null;
   created_at: string;
   updated_at: string;
   assets: GeneratedAsset[];
+}
+
+export interface ProductionSettings {
+  mode?: "segmented" | "single_clip";
+  max_segment_seconds?: number;
+  provider: string;
+  model: string | null;
+  resolution: string | null;
+  ratio: string | null;
+  duration_seconds: number | null;
+  generate_audio: boolean | null;
 }
 
 export interface Publication {
@@ -343,3 +364,21 @@ export interface Publication {
   withdrawn_at: string | null;
   created_at: string;
 }
+export interface WalletSummary {
+  paid_cents: number;
+  bonus_cents: number;
+  frozen_cents: number;
+  available_cents: number;
+  prices: { version: string; video_cents_per_second: number; script_chapter_cents: number;
+    welcome_bonus_cents: number; payment_enabled: boolean; script_billing_mode: string };
+}
+export interface WalletEntry {
+  id: string; charge_id: string | null; event: "bonus" | "reserve" | "consume" | "release";
+  title: string; amount_cents: number; available_after_cents: number;
+  paid_delta: number; bonus_delta: number; frozen_delta: number; created_at: string;
+}
+export interface ProviderUsage {
+  id: string; model: string; operation: string; status: string; created_at: string;
+  usage: Record<string, unknown>; duration_ms: number; provider_request_id: string | null;
+}
+export interface WalletPage<T> { total: number; page: number; page_size: number; items: T[] }

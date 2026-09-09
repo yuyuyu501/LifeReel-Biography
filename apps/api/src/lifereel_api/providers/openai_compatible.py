@@ -3,11 +3,13 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+import time
 from pathlib import Path
 from typing import Any
 
 import httpx
 
+from lifereel_api.modules.billing.usage import record
 from lifereel_api.providers.base import ProviderCapabilities
 
 
@@ -36,14 +38,35 @@ class OpenAICompatibleClient:
         }
         if json_output:
             payload["response_format"] = {"type": "json_object"}
-        response = httpx.post(
-            f"{self.base_url}/chat/completions",
-            headers={**self.headers, "Content-Type": "application/json"},
-            json=payload,
-            timeout=60,
+        started = time.monotonic()
+        data = {}
+        try:
+            response = httpx.post(
+                f"{self.base_url}/chat/completions",
+                headers={**self.headers, "Content-Type": "application/json"},
+                json=payload,
+                timeout=60,
+            )
+            response.raise_for_status()
+            data = response.json()
+            content = data["choices"][0]["message"]["content"]
+        except Exception as exc:
+            record(
+                self.model,
+                "failed",
+                data.get("usage") or {},
+                int((time.monotonic() - started) * 1000),
+                error=type(exc).__name__,
+            )
+            raise
+        record(
+            self.model,
+            "succeeded",
+            data.get("usage") or {},
+            int((time.monotonic() - started) * 1000),
+            data.get("id"),
         )
-        response.raise_for_status()
-        return response.json()["choices"][0]["message"]["content"]
+        return content
 
     def chat(self, system: str, user: str) -> str:
         return self._chat(
@@ -87,15 +110,35 @@ class OpenAICompatibleClient:
         )
 
     def transcribe(self, filename: str, content: bytes, mime_type: str) -> str:
-        response = httpx.post(
-            f"{self.base_url}/audio/transcriptions",
-            headers=self.headers,
-            data={"model": self.model},
-            files={"file": (Path(filename).name, content, mime_type)},
-            timeout=180,
+        started = time.monotonic()
+        try:
+            response = httpx.post(
+                f"{self.base_url}/audio/transcriptions",
+                headers=self.headers,
+                data={"model": self.model},
+                files={"file": (Path(filename).name, content, mime_type)},
+                timeout=180,
+            )
+            response.raise_for_status()
+            result = response.json()
+            text = result["text"]
+        except Exception as exc:
+            record(
+                self.model,
+                "failed",
+                {},
+                int((time.monotonic() - started) * 1000),
+                error=type(exc).__name__,
+            )
+            raise
+        record(
+            self.model,
+            "succeeded",
+            result.get("usage") or {},
+            int((time.monotonic() - started) * 1000),
+            result.get("id"),
         )
-        response.raise_for_status()
-        return response.json()["text"]
+        return text
 
     @staticmethod
     def idempotency_key(content: bytes, model: str) -> str:
