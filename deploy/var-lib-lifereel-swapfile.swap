@@ -1,0 +1,8 @@
+[Unit]
+Description=LifeReel 4 GiB swap
+
+[Swap]
+What=/var/lib/lifereel/swapfile
+
+[Install]
+WantedBy=swap.target

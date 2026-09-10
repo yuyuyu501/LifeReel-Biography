@@ -112,10 +112,10 @@ def advance(db: Session, run: ProductionRun) -> ProviderOutput | None:
                 info = probe_video(clip, config["generate_audio"])
                 if abs(info["duration_seconds"] - segment["duration_seconds"]) > 1:
                     raise VideoProviderError("VIDEO_DURATION_MISMATCH")
-                    key = (
-                        f"LifeReel-Biography/generated/{run.tenant_id}/{run.id}/"
-                        f"segment-{index}.mp4"
-                    )
+                key = (
+                    f"LifeReel-Biography/generated/{run.tenant_id}/{run.id}/"
+                    f"segment-{index}.mp4"
+                )
                 storage.put(key, output.content)
                 segment.update(
                     {

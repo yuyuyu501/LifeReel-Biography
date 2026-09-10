@@ -1,0 +1,122 @@
+name: lifereel-production
+
+x-runtime: &runtime
+  restart: unless-stopped
+  logging:
+    driver: json-file
+    options:
+      max-size: "10m"
+      max-file: "3"
+
+services:
+  postgres:
+    <<: *runtime
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_DB: lifereel
+      POSTGRES_USER: lifereel
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    mem_limit: 1200m
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U lifereel -d lifereel"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  redis:
+    <<: *runtime
+    image: redis:7.4-alpine
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory", "192mb", "--maxmemory-policy", "noeviction"]
+    volumes:
+      - redis-data:/data
+    mem_limit: 384m
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  api:
+    <<: *runtime
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    env_file: .env
+    environment:
+      APP_ENV: production
+      DATABASE_URL: postgresql+psycopg://lifereel:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}@postgres:5432/lifereel
+      REDIS_URL: redis://redis:6379/0
+      AUTO_CREATE_SCHEMA: "false"
+      EXECUTE_MOCK_JOBS_INLINE: "false"
+      STORAGE_BACKEND: s3
+      WHISPER_DEVICE: cpu
+      WHISPER_COMPUTE_TYPE: int8
+      WHISPER_MODEL_PATH: /models/whisper-small
+      LOCAL_STORAGE_PATH: /data/private
+      MANUAL_WECHAT_QR_PATH: /data/payments/wechat-qr.png
+      OMP_NUM_THREADS: "2"
+      OPENBLAS_NUM_THREADS: "2"
+    volumes:
+      - private-data:/data/private
+      - ./data/models/whisper-small:/models/whisper-small:ro
+      - ./data/payments:/data/payments:ro
+    mem_limit: 4g
+    cpus: 3
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/ready')"]
+      interval: 10s
+      timeout: 5s
+      start_period: 45s
+      retries: 20
+
+  worker:
+    <<: *runtime
+    build:
+      context: .
+      dockerfile: apps/worker/Dockerfile
+    environment:
+      REDIS_URL: redis://redis:6379/0
+      API_INTERNAL_URL: http://api:8000
+      API_ACCESS_KEY: ${API_ACCESS_KEY:?Set API_ACCESS_KEY}
+    mem_limit: 256m
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import redis; assert redis.from_url('redis://redis:6379/0').ping()"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+  web:
+    <<: *runtime
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    ports:
+      - "127.0.0.1:5173:80"
+    environment:
+      API_ACCESS_KEY: ${API_ACCESS_KEY:?Set API_ACCESS_KEY}
+      NGINX_CLIENT_MAX_BODY_SIZE: ${NGINX_CLIENT_MAX_BODY_SIZE:-2050m}
+      NGINX_ENVSUBST_FILTER: API_ACCESS_KEY|NGINX_CLIENT_MAX_BODY_SIZE
+    mem_limit: 128m
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+volumes:
+  postgres-data:
+  redis-data:
+  private-data:
