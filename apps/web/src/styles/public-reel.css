@@ -1,0 +1,59 @@
+/* public-reel: base styles, then responsive overrides. */
+
+.public-reel {
+  width: min(820px, calc(100% - 40px));
+  min-height: 100vh;
+  margin: 0 auto;
+  padding: 42px 0 70px;
+}
+.public-brand {
+  margin-bottom: 70px;
+  padding-bottom: 17px;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  border-bottom: 1px solid var(--line);
+  color: var(--green);
+  font-size: 16px;
+  font-weight: 700;
+}
+.public-reel h1 {
+  margin-bottom: 12px;
+  font-size: 42px;
+}
+.public-reel .lead {
+  max-width: 720px;
+  color: var(--muted);
+  font-size: 15px;
+}
+.public-reel video {
+  width: 100%;
+  max-height: 70vh;
+  margin: 22px 0;
+  border-radius: 5px;
+  background: #101715;
+  box-shadow: var(--shadow-md);
+}
+.public-safety {
+  padding: 13px 14px;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  border: 1px solid #b8d8cf;
+  border-radius: 4px;
+  color: var(--green-dark);
+  background: var(--green-soft);
+  font-size: 12px;
+}
+@media (max-width: 620px) {
+  .public-reel {
+    width: min(100% - 24px, 520px);
+    padding-top: 24px;
+  }
+  .public-brand {
+    margin-bottom: 48px;
+  }
+  .public-reel h1 {
+    font-size: 32px;
+  }
+}

@@ -1,8 +1,18 @@
 from __future__ import annotations
 
+from datetime import datetime
 from uuid import UUID
 
-from sqlalchemy import JSON, CheckConstraint, ForeignKey, Integer, String, UniqueConstraint, Uuid
+from sqlalchemy import (
+    JSON,
+    CheckConstraint,
+    DateTime,
+    ForeignKey,
+    Integer,
+    String,
+    UniqueConstraint,
+    Uuid,
+)
 from sqlalchemy.orm import Mapped, mapped_column
 
 from lifereel_api.core.database import Base
@@ -77,3 +87,25 @@ class UsageEvent(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     duration_ms: Mapped[int] = mapped_column(Integer)
     provider_request_id: Mapped[str | None] = mapped_column(String(200))
     error_code: Mapped[str | None] = mapped_column(String(80))
+
+
+class RechargeOrder(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    __tablename__ = "recharge_orders"
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "request_id"),
+        UniqueConstraint("verified_reference"),
+        CheckConstraint("amount_cents BETWEEN 1 AND 20000", name="recharge_amount"),
+        CheckConstraint(
+            "status IN ('pending', 'submitted', 'credited', 'rejected', 'cancelled')",
+            name="recharge_status",
+        ),
+    )
+    tenant_id: Mapped[UUID] = mapped_column(Uuid, ForeignKey("wallets.tenant_id"), index=True)
+    request_id: Mapped[UUID] = mapped_column(Uuid)
+    amount_cents: Mapped[int] = mapped_column(Integer)
+    status: Mapped[str] = mapped_column(String(20), default="pending")
+    payer_reference: Mapped[str | None] = mapped_column(String(64))
+    verified_reference: Mapped[str | None] = mapped_column(String(64))
+    reviewed_by: Mapped[str | None] = mapped_column(String(100))
+    review_note: Mapped[str | None] = mapped_column(String(300))
+    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

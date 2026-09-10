@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { beforeEach, vi } from "vitest";
 import App from "./App";
@@ -53,5 +53,5 @@ test("redirects the old material page to the memory archive", async () => {
   );
   expect(await screen.findByRole("heading", { name: "记忆档案" })).toBeInTheDocument();
   expect(screen.queryByRole("link", { name: /^素材/ })).not.toBeInTheDocument();
-  expect(screen.getByRole("link", { name: /记忆档案/ })).toHaveAttribute("href", "/memories");
+  expect(within(screen.getByRole("navigation", { name: "个人资料" })).getByRole("link", { name: "记忆" })).toHaveAttribute("href", "/memories");
 });

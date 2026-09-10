@@ -1,0 +1,340 @@
+/* studio: base styles, then responsive overrides. */
+
+.film-studio-page {
+  padding-top: 24px;
+}
+.film-studio-page .studio-title {
+  min-height: 64px;
+  margin-bottom: 16px;
+  border-bottom: 0;
+}
+.film-studio-page .studio-title h1 {
+  margin-bottom: 0;
+  font-size: 28px;
+}
+.studio-title > .button {
+  margin-bottom: 0;
+}
+.studio-workspace {
+  display: grid;
+  grid-template-columns: minmax(200px, 260px) minmax(0, 1fr);
+  border-block: 1px solid var(--line);
+  min-height: 600px;
+}
+.studio-catalog {
+  min-width: 0;
+  padding: 24px 20px 24px 0;
+  border-right: 1px solid var(--line);
+}
+.studio-catalog label {
+  display: grid;
+  gap: 10px;
+  color: var(--muted);
+  font-size: 13px;
+}
+.studio-catalog select,
+.studio-version select {
+  min-height: 44px;
+  padding: 0 12px;
+  border: 1px solid var(--line-strong);
+  border-radius: 4px;
+  color: var(--ink);
+  background: var(--paper);
+  font-size: 14px;
+}
+.studio-catalog select {
+  width: 100%;
+  min-width: 0;
+}
+.studio-catalog-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin: 28px 0 12px;
+}
+.studio-catalog-heading h2 {
+  margin: 0;
+  font-size: 16px;
+}
+.studio-catalog-heading > span {
+  font-size: 12px;
+  color: var(--muted);
+}
+.studio-chapters {
+  display: grid;
+  gap: 4px;
+}
+.studio-chapters button {
+  display: grid;
+  grid-template-columns: 26px minmax(0, 1fr) 16px;
+  gap: 8px;
+  width: 100%;
+  padding: 16px 10px;
+  min-height: 80px;
+  text-align: left;
+  color: var(--ink);
+  background: transparent;
+  border: 0;
+  border-left: 3px solid transparent;
+  transition: background 0.18s ease;
+}
+.studio-chapters button:hover {
+  background: var(--fog);
+}
+.studio-chapters button[aria-current] {
+  border-left-color: var(--green);
+  background: var(--green-soft);
+}
+.studio-chapters strong {
+  display: block;
+  font-size: 14px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+.studio-chapters small {
+  display: block;
+  margin-top: 5px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.studio-chapter-number {
+  font-size: 12px;
+  line-height: 24px;
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+}
+.studio-chapters svg {
+  margin-top: 4px;
+  color: var(--green);
+}
+.studio-detail {
+  min-width: 0;
+  padding: 24px 0 24px 28px;
+}
+.studio-selection-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: start;
+  gap: 16px;
+}
+.studio-selection-heading h2 {
+  font-size: 22px;
+  margin: 6px 0 0;
+  overflow-wrap: anywhere;
+}
+.studio-mode-label {
+  color: var(--warning);
+  background: var(--warning-soft);
+  border-radius: 4px;
+  padding: 5px 8px;
+  font-size: 12px;
+  flex-shrink: 0;
+}
+.studio-specs {
+  display: grid;
+  grid-template-columns: minmax(160px, 2fr) repeat(4, minmax(0, 1fr));
+  gap: 16px;
+  margin: 20px 0;
+}
+.studio-specs dt {
+  color: var(--muted);
+  font-size: 12px;
+  margin-bottom: 7px;
+}
+.studio-specs dd {
+  margin: 0;
+  color: var(--ink);
+  font-size: 14px;
+  overflow-wrap: anywhere;
+}
+.studio-generate-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding-bottom: 20px;
+}
+.studio-muted {
+  color: var(--muted);
+  font-size: 13px;
+}
+.studio-preview-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  border-block: 1px solid var(--line);
+  margin-bottom: 20px;
+}
+.studio-tabs {
+  display: flex;
+  min-width: 0;
+}
+.studio-tabs button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 48px;
+  padding: 12px 16px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  color: var(--muted);
+  background: transparent;
+  font-size: 14px;
+}
+.studio-tabs button[aria-selected="true"] {
+  color: var(--green);
+  border-bottom-color: var(--green);
+  font-weight: 600;
+}
+.studio-tabs button:hover {
+  background: var(--fog);
+}
+.studio-version {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  font-size: 12px;
+  color: var(--muted);
+  margin-bottom: 16px;
+}
+.studio-version select {
+  min-width: 0;
+  max-width: 100%;
+}
+.studio-screen {
+  display: grid;
+  place-items: center;
+  height: clamp(240px, 42dvh, 460px);
+  width: 100%;
+  background: var(--fog);
+  overflow: hidden;
+  border-radius: 4px;
+}
+.studio-screen video {
+  display: block;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  min-width: 0;
+  object-fit: contain;
+  background: var(--ink);
+}
+.studio-screen .empty-state {
+  border: 0;
+  background: transparent;
+  padding: 20px;
+}
+.studio-output-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 20px;
+  padding: 14px 0;
+  font-size: 12px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.studio-publish-row {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  justify-content: flex-end;
+  padding-top: 12px;
+}
+.studio-script {
+  padding: 24px 28px;
+  min-height: 360px;
+  background: var(--paper);
+}
+.studio-script-caption {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--muted);
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 16px;
+  margin-bottom: 24px;
+}
+.studio-script h3 {
+  font-size: 22px;
+}
+.studio-script h4 {
+  color: var(--green);
+  font-size: 13px;
+  margin: 24px 0 10px;
+}
+.studio-script p {
+  font-size: 15px;
+  line-height: 2;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.studio-detail .notice {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+}
+@media (max-width: 1100px) {
+  .studio-workspace {
+    grid-template-columns: 200px minmax(0, 1fr);
+  }
+  .studio-detail {
+    padding-left: 20px;
+  }
+  .studio-specs {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+  .studio-specs .studio-model {
+    grid-column: 1 / -1;
+  }
+}
+@media (max-width: 900px) {
+  .film-studio-page {
+    padding-top: 28px;
+  }
+}
+@media (max-width: 760px) {
+  .studio-workspace {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .studio-catalog {
+    padding: 20px 0;
+    border-right: 0;
+    border-bottom: 1px solid var(--line);
+  }
+  .studio-chapters {
+    max-height: 240px;
+    overflow-y: auto;
+  }
+  .studio-detail {
+    padding: 20px 0;
+  }
+  .studio-specs {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .studio-script {
+    padding: 20px 16px;
+  }
+  .studio-selection-heading h2 {
+    font-size: 20px;
+  }
+  .studio-tabs button {
+    padding-inline: 10px;
+  }
+  .studio-screen {
+    height: auto;
+    aspect-ratio: 16 / 9;
+  }
+}
+@media (max-width: 620px) {
+  .film-studio-page .page-title-row .page-intro {
+    margin: 8px 0 0;
+  }
+  .film-studio-page {
+    padding-top: 22px;
+  }
+}

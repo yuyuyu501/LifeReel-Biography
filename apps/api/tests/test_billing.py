@@ -30,7 +30,7 @@ def test_welcome_bonus_once_no_fake_recharge(client):
     assert ledger["items"][0]["event"] == "bonus"
     assert (
         client.post("/v1/wallet/recharge", json={"amount_cents": 100000, "paid": True}).status_code
-        == 503
+        == 422
     )
     assert client.get("/v1/wallet").json()["available_cents"] == 2000
 

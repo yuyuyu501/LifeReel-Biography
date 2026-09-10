@@ -1,0 +1,147 @@
+/* global: base styles, then responsive overrides. */
+@import url("https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;600;700&display=swap");
+
+:root {
+  font-family: "Noto Sans SC", "Microsoft YaHei", "PingFang SC", sans-serif;
+  color: #18201e;
+  background: #f5f7f4;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  --ink: #18201e;
+  --ink-soft: #33413d;
+  --green: #126b5d;
+  --green-dark: #0b4f45;
+  --green-soft: #e2efeb;
+  --vermilion: #c84c38;
+  --vermilion-soft: #f8e8e4;
+  --paper: #ffffff;
+  --canvas: #f5f7f4;
+  --fog: #edf1ee;
+  --muted: #5f6b67;
+  --line: #d8deda;
+  --line-strong: #bac5c0;
+  --warning: #9a5b18;
+  --warning-soft: #fff3d9;
+  --danger: #ad3f35;
+  --danger-soft: #fae7e4;
+  --shadow-sm: 0 1px 2px rgba(19, 32, 28, 0.06);
+  --shadow-md: 0 12px 30px rgba(19, 32, 28, 0.1);
+  --radius: 6px;
+}
+
+* {
+  box-sizing: border-box;
+}
+html {
+  scroll-behavior: smooth;
+}
+body {
+  margin: 0;
+  min-width: 320px;
+  min-height: 100vh;
+  background: var(--canvas);
+}
+button,
+input,
+textarea,
+select {
+  font: inherit;
+}
+button,
+a,
+select,
+input[type="checkbox"],
+input[type="file"] {
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+a {
+  color: inherit;
+  text-decoration: none;
+}
+h1,
+h2,
+h3,
+p,
+dl,
+dd {
+  margin-top: 0;
+}
+h1,
+h2,
+h3 {
+  color: var(--ink);
+  font-weight: 700;
+  letter-spacing: 0;
+}
+h1 {
+  font-size: 34px;
+  line-height: 1.25;
+}
+h2 {
+  font-size: 22px;
+  line-height: 1.35;
+}
+h3 {
+  font-size: 17px;
+  line-height: 1.45;
+}
+p {
+  line-height: 1.75;
+}
+svg {
+  flex: 0 0 auto;
+}
+:focus-visible {
+  outline: 3px solid rgba(18, 107, 93, 0.35);
+  outline-offset: 3px;
+}
+::selection {
+  color: #fff;
+  background: var(--green);
+}
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+.skip-link {
+  position: fixed;
+  z-index: 100;
+  top: 10px;
+  left: 10px;
+  padding: 10px 14px;
+  color: #fff;
+  background: var(--green);
+  transform: translateY(-150%);
+}
+.skip-link:focus {
+  transform: translateY(0);
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@media (max-width: 620px) {
+  h1 {
+    font-size: 27px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

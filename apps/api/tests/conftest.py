@@ -16,6 +16,7 @@ os.environ["ASR_PROVIDER"] = "mock"
 os.environ["IMAGE_PROVIDER"] = "mock"
 os.environ["VIDEO_PROVIDER"] = "mock"
 os.environ["VOICE_PROVIDER"] = "mock"
+os.environ["MANUAL_WECHAT_ENABLED"] = "false"
 
 from lifereel_api.core.config import get_settings  # noqa: E402
 

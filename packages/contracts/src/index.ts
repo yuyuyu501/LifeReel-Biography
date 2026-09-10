@@ -365,6 +365,7 @@ export interface Publication {
   created_at: string;
 }
 export interface WalletSummary {
+  recharge?: { mode: "disabled" | "manual_wechat"; min_cents: number; max_cents: number };
   paid_cents: number;
   bonus_cents: number;
   frozen_cents: number;
@@ -373,7 +374,7 @@ export interface WalletSummary {
     welcome_bonus_cents: number; payment_enabled: boolean; script_billing_mode: string };
 }
 export interface WalletEntry {
-  id: string; charge_id: string | null; event: "bonus" | "reserve" | "consume" | "release";
+  id: string; charge_id: string | null; event: "bonus" | "reserve" | "consume" | "release" | "recharge";
   title: string; amount_cents: number; available_after_cents: number;
   paid_delta: number; bonus_delta: number; frozen_delta: number; created_at: string;
 }
@@ -382,3 +383,12 @@ export interface ProviderUsage {
   usage: Record<string, unknown>; duration_ms: number; provider_request_id: string | null;
 }
 export interface WalletPage<T> { total: number; page: number; page_size: number; items: T[] }
+export interface RechargeOrder {
+  id: string;
+  amount_cents: number;
+  status: "pending" | "submitted" | "credited" | "rejected" | "cancelled";
+  payer_reference: string | null;
+  review_note: string | null;
+  created_at: string;
+  reviewed_at: string | null;
+}
