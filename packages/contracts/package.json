@@ -2,6 +2,7 @@
   "name": "@lifereel/contracts",
   "version": "0.1.0",
   "private": true,
+  "license": "Apache-2.0",
   "type": "module",
   "main": "src/index.ts",
   "types": "src/index.ts",
@@ -16,4 +17,3 @@
     "typescript": "^5.9.2"
   }
 }
-

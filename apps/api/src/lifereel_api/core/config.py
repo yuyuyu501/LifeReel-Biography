@@ -25,6 +25,9 @@ class Settings(BaseSettings):
     database_url: str = "sqlite:///./lifereel-dev.db"
     redis_url: str = "redis://localhost:6379/0"
     s3_endpoint_url: str = "http://localhost:9000"
+    s3_region_name: str | None = None
+    s3_addressing_style: str = "auto"
+    oss_direct_upload_enabled: bool = False
     s3_access_key: str = "lifereel"
     s3_secret_key: str = "change-me-in-production"
     s3_bucket: str = "lifereel-private"

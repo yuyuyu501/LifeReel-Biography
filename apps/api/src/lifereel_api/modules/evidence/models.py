@@ -49,6 +49,30 @@ class SourceAsset(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     captured_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
+class EvidenceUpload(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    __tablename__ = "evidence_uploads"
+
+    tenant_id: Mapped[UUID] = mapped_column(
+        Uuid, ForeignKey("tenants.id", ondelete="CASCADE"), index=True
+    )
+    subject_id: Mapped[UUID] = mapped_column(
+        Uuid, ForeignKey("persons.id", ondelete="CASCADE")
+    )
+    interview_session_id: Mapped[UUID | None] = mapped_column(
+        Uuid, ForeignKey("interview_sessions.id", ondelete="SET NULL"), nullable=True
+    )
+    original_filename: Mapped[str] = mapped_column(String(255))
+    mime_type: Mapped[str] = mapped_column(String(120))
+    kind: Mapped[str] = mapped_column(String(32))
+    byte_size: Mapped[int] = mapped_column(BigInteger)
+    consent_scope: Mapped[str] = mapped_column(String(32))
+    storage_key: Mapped[str] = mapped_column(String(512), unique=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    asset_id: Mapped[UUID | None] = mapped_column(
+        Uuid, ForeignKey("source_assets.id", ondelete="SET NULL"), nullable=True
+    )
+
+
 class Transcript(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "transcripts"
     __table_args__ = (

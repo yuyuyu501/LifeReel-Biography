@@ -13,8 +13,11 @@ from sqlalchemy.orm import Session
 from lifereel_api.core.database import get_db
 from lifereel_api.core.errors import ApiError, ErrorCode
 from lifereel_api.core.tenant import get_tenant_id
-from lifereel_api.modules.evidence import service
+from lifereel_api.modules.evidence import direct_uploads, service
 from lifereel_api.modules.evidence.schemas import (
+    DirectUploadComplete,
+    DirectUploadCreate,
+    DirectUploadRead,
     EvidenceObservationRead,
     SourceAssetRead,
     TranscriptCreate,
@@ -97,6 +100,27 @@ async def upload_asset(
         consent_scope,
         file,
     )
+
+
+@router.post("/assets/direct-upload", response_model=DirectUploadRead)
+def direct_upload(payload: DirectUploadCreate, db: Db, tenant_id: Tenant) -> DirectUploadRead:
+    return direct_uploads.prepare(db, tenant_id, payload)
+
+
+@router.get("/upload-settings")
+def upload_settings(tenant_id: Tenant) -> dict[str, bool]:
+    return {"direct_upload": direct_uploads.enabled()}
+
+
+@router.post(
+    "/assets/complete-direct-upload",
+    response_model=SourceAssetRead,
+    status_code=status.HTTP_201_CREATED,
+)
+def complete_direct_upload(
+    payload: DirectUploadComplete, db: Db, tenant_id: Tenant
+) -> SourceAssetRead:
+    return direct_uploads.complete(db, tenant_id, payload.upload_id)
 
 
 @router.get("/assets", response_model=list[SourceAssetRead])

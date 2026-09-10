@@ -157,7 +157,9 @@ async def create_asset(
         return existing
 
     safe_suffix = Path(upload.filename or "evidence.bin").suffix.lower()[:12]
-    storage_key = f"{tenant_id}/{subject_id}/{digest[:2]}/{digest}{safe_suffix}"
+    storage_key = (
+        f"LifeReel-Biography/evidence/{tenant_id}/{subject_id}/{digest[:2]}/{digest}{safe_suffix}"
+    )
     private_storage().put_file(storage_key, upload.file)
     asset = SourceAsset(
         tenant_id=tenant_id,

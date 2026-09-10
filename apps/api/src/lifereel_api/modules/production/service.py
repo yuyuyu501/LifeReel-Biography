@@ -259,7 +259,10 @@ def _execute_run(db: Session, tenant_id: UUID, run_id: UUID) -> ProductionRun:
                 ],
             )
         digest = hashlib.sha256(output.content).hexdigest()
-        storage_key = f"{tenant_id}/generated/{run.id}/{digest}.{output.extension}"
+        storage_key = (
+            f"LifeReel-Biography/generated/{tenant_id}/{run.id}/"
+            f"{digest}.{output.extension}"
+        )
         private_storage().put(storage_key, output.content)
         asset = GeneratedAsset(
             tenant_id=tenant_id,

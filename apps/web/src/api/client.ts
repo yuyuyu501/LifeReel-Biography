@@ -148,13 +148,49 @@ export const api = {
       method: "POST",
       body: JSON.stringify(payload),
     }),
-  uploadEvidence: (payload: {
+  uploadEvidence: async (payload: {
     subjectId: string;
     interviewSessionId?: string;
     kind: "audio" | "photo" | "video" | "document";
     consentScope?: "private" | "family" | "friends" | "public";
     file: File;
   }) => {
+    const settings = await request<{ direct_upload: boolean }>("/v1/evidence/upload-settings");
+    if (settings.direct_upload) {
+      const permit = await request<{
+        upload_id: string;
+        url: string;
+        fields: Record<string, string>;
+        expires_at: string;
+      }>("/v1/evidence/assets/direct-upload", {
+        method: "POST",
+        body: JSON.stringify({
+          subject_id: payload.subjectId,
+          interview_session_id: payload.interviewSessionId,
+          kind: payload.kind,
+          consent_scope: payload.consentScope ?? "private",
+          original_filename: payload.file.name,
+          mime_type: payload.file.type,
+          byte_size: payload.file.size,
+        }),
+      });
+      const directForm = new FormData();
+      for (const [key, value] of Object.entries(permit.fields)) directForm.append(key, value);
+      // OSS requires the file field last. Do not send application cookies or headers.
+      directForm.append("file", payload.file);
+      let uploaded: Response;
+      try {
+        uploaded = await fetch(permit.url, {
+          method: "POST", credentials: "omit", body: directForm,
+        });
+      } catch {
+        throw new ApiError("EVIDENCE_UPLOAD_FAILED", 0);
+      }
+      if (!uploaded.ok) throw new ApiError("EVIDENCE_UPLOAD_FAILED", uploaded.status);
+      return request<SourceAsset>("/v1/evidence/assets/complete-direct-upload", {
+        method: "POST", body: JSON.stringify({ upload_id: permit.upload_id }),
+      });
+    }
     const form = new FormData();
     form.set("subject_id", payload.subjectId);
     if (payload.interviewSessionId) form.set("interview_session_id", payload.interviewSessionId);

@@ -23,6 +23,27 @@ class SourceAssetRead(BaseModel):
     created_at: datetime
 
 
+class DirectUploadCreate(BaseModel):
+    subject_id: UUID
+    interview_session_id: UUID | None = None
+    kind: str = Field(pattern="^(audio|photo|video|document)$")
+    original_filename: str = Field(min_length=1, max_length=255)
+    mime_type: str = Field(max_length=120)
+    byte_size: int = Field(gt=0)
+    consent_scope: str = Field(default="private", pattern="^(private|family|friends|public)$")
+
+
+class DirectUploadRead(BaseModel):
+    upload_id: UUID
+    url: str
+    fields: dict[str, str]
+    expires_at: datetime
+
+
+class DirectUploadComplete(BaseModel):
+    upload_id: UUID
+
+
 class TranscriptCreate(BaseModel):
     text: str = Field(min_length=1)
     language: str = Field(default="zh-CN", max_length=24)

@@ -138,4 +138,6 @@ pnpm --filter @lifereel/web build
 
 ## License
 
-项目许可证尚待仓库所有者确认。正式开源或商用前请补充 `LICENSE`。
+本项目源代码采用 [Apache License 2.0](LICENSE) 许可。
+
+第三方依赖和素材仍适用其各自的许可证；用户上传的录音、照片、文档、视频及由此产生的内容不因本项目的代码许可证而改变其权利归属。

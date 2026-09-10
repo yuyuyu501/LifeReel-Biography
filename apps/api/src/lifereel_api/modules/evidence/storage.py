@@ -7,6 +7,7 @@ from tempfile import NamedTemporaryFile
 from typing import BinaryIO
 
 import boto3
+from botocore.config import Config as BotoConfig
 
 from lifereel_api.core.config import get_settings
 
@@ -68,8 +69,15 @@ class S3PrivateStorage:
         self.client = boto3.client(
             "s3",
             endpoint_url=settings.s3_endpoint_url,
+            region_name=settings.s3_region_name,
             aws_access_key_id=settings.s3_access_key,
             aws_secret_access_key=settings.s3_secret_key,
+            config=BotoConfig(
+                signature_version="s3v4",
+                s3={"addressing_style": settings.s3_addressing_style},
+                request_checksum_calculation="when_required",
+                response_checksum_validation="when_required",
+            ),
         )
 
     def put_file(self, storage_key: str, content: BinaryIO) -> None:
