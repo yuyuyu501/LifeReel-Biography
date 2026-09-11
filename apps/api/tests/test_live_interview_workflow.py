@@ -292,3 +292,121 @@ def test_turn_rejects_asset_from_another_subject(client) -> None:
 
     assert response.status_code == 404
     assert response.json() == {"error": {"code": "EVIDENCE_ASSET_NOT_FOUND"}}
+
+
+def test_failed_script_allows_continuation_and_blocks_stale_retry(client, monkeypatch):
+    from lifereel_api.core.errors import ApiError, ErrorCode
+    from lifereel_api.modules.script import service as scripts
+
+    _, _, session = _start(client)
+    generate = scripts.generate_draft
+
+    def fail(*args, **kwargs):
+        raise ApiError(502, ErrorCode.SCRIPT_LLM_RESPONSE_INVALID)
+
+    monkeypatch.setattr(scripts, "generate_draft", fail)
+    response = client.post(
+        f"/v1/interviews/{session['id']}/turns",
+        json={"answer_text": "我叫林秀兰。", "idempotency_key": "failed-original"},
+    )
+    assert response.status_code == 502
+    before = client.get(f"/v1/interviews/{session['id']}/workspace").json()
+    failed = before["latest_workflow"]
+    assert failed["status"] == "failed"
+    monkeypatch.setattr(scripts, "generate_draft", generate)
+    response = client.post(
+        f"/v1/interviews/{session['id']}/turns",
+        json={
+            "answer_text": "现在我已经退休，和老伴住在杭州，平时喜欢写毛笔字。",
+            "idempotency_key": "continue-after-failure",
+        },
+    )
+    assert response.status_code == 202
+    assert response.json()["status"] == "completed"
+    after = client.get(f"/v1/interviews/{session['id']}/workspace").json()
+    assert after["session"]["rounds"][0]["answer_text"] == "我叫林秀兰。"
+    assert "已经退休" in after["session"]["rounds"][1]["answer_text"]
+    assert after["script"]
+    balance = client.get("/v1/wallet").json()["available_cents"]
+    retry = client.post(f"/v1/jobs/{failed['job_id']}/retry")
+    assert retry.status_code == 409
+    assert retry.json()["error"]["code"] == "JOB_RETRY_NOT_ALLOWED"
+    stale = client.post(f"/v1/internal/interview-turns/{failed['id']}/execute")
+    assert stale.status_code == 409
+    final = client.get(f"/v1/interviews/{session['id']}/workspace").json()
+    assert final["script"] == after["script"]
+    assert final["session"]["rounds"] == after["session"]["rounds"]
+    assert client.get("/v1/wallet").json()["available_cents"] == balance
+
+
+def test_latest_failed_turn_can_retry_but_blocks_competing_submission(client, monkeypatch):
+    from lifereel_api.core.errors import ApiError, ErrorCode
+    from lifereel_api.modules.jobs import service as jobs
+    from lifereel_api.modules.orchestration import service
+
+    _, _, session = _start(client)
+    assess = service._assess_chapter
+
+    def fail(*args, **kwargs):
+        raise ApiError(502, ErrorCode.INTERVIEW_LLM_REQUEST_FAILED)
+
+    monkeypatch.setattr(service, "_assess_chapter", fail)
+    response = client.post(
+        f"/v1/interviews/{session['id']}/turns",
+        json={"answer_text": "母亲教我读书。", "idempotency_key": "retry-latest"},
+    )
+    assert response.status_code == 502
+    failed = client.get(f"/v1/interviews/{session['id']}/workspace").json()["latest_workflow"]
+    monkeypatch.setattr(jobs, "enqueue", lambda job: None)
+    retry = client.post(f"/v1/jobs/{failed['job_id']}/retry")
+    assert retry.status_code == 200
+    assert retry.json()["status"] == "queued"
+    assert client.post(f"/v1/jobs/{failed['job_id']}/retry").status_code == 409
+    competing = client.post(
+        f"/v1/interviews/{session['id']}/turns",
+        json={"answer_text": "另一段补充。", "idempotency_key": "while-retrying"},
+    )
+    assert competing.status_code == 409
+    monkeypatch.setattr(service, "_assess_chapter", assess)
+    result = client.post(f"/v1/internal/interview-turns/{failed['id']}/execute")
+    assert result.status_code == 200
+    assert result.json()["status"] == "completed"
+
+
+def test_continuation_keeps_materials_from_failed_analysis(client, monkeypatch):
+    from lifereel_api.core.errors import ApiError, ErrorCode
+    from lifereel_api.modules.evidence import service as evidence
+
+    person, _, session = _start(client)
+    asset = client.post(
+        "/v1/evidence/assets",
+        data={
+            "subject_id": person["id"],
+            "interview_session_id": session["id"],
+            "kind": "document",
+        },
+        files={"file": ("record.txt", BytesIO("母亲在杭州教我写字。".encode()), "text/plain")},
+    ).json()
+    analyze = evidence.analyze_asset
+
+    def fail(*args, **kwargs):
+        raise ApiError(502, ErrorCode.WORKER_ERROR)
+
+    monkeypatch.setattr(evidence, "analyze_asset", fail)
+    failed = client.post(
+        f"/v1/interviews/{session['id']}/turns",
+        json={"asset_ids": [asset["id"]], "idempotency_key": "failed-material"},
+    )
+    assert failed.status_code == 502
+    monkeypatch.setattr(evidence, "analyze_asset", analyze)
+    continued = client.post(
+        f"/v1/interviews/{session['id']}/turns",
+        json={"answer_text": "那是我童年最温暖的记忆。", "idempotency_key": "recover-material"},
+    )
+    assert continued.status_code == 202
+    assert continued.json()["status"] == "completed"
+    assert asset["id"] in continued.json()["asset_ids"]
+    assert continued.json()["source_claim_ids"]
+    after = client.get(f"/v1/interviews/{session['id']}/workspace").json()
+    assert [item["id"] for item in after["assets"]] == [asset["id"]]
+    assert after["script"]

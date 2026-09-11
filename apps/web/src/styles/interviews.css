@@ -331,18 +331,22 @@
   outline-offset: 3px;
 }
 .composer-send {
-  width: 36px;
+  width: 76px;
   height: 36px;
-  flex: 0 0 36px;
+  flex: 0 0 76px;
   margin-left: auto;
   padding: 0;
-  display: grid;
-  place-items: center;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
   border: 0;
-  border-radius: 50%;
+  border-radius: 999px;
   color: #fff;
   background: var(--green);
   cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
 }
 .composer-send:disabled,
 .composer-tool:disabled,
@@ -678,6 +682,10 @@
   }
   .composer-tool {
     padding: 0 8px;
+  }
+  .composer-send {
+    width: 68px;
+    flex-basis: 68px;
   }
   .chat-assets-history {
     margin-left: 0;

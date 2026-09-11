@@ -89,7 +89,7 @@ def _retry_job(db: Session, tenant_id: UUID, job_id: UUID) -> Job:
             run.status = "queued"
             run.error_message = None
     if job.kind == "interview.turn.process":
-        from lifereel_api.modules.interview.models import InterviewTurnWorkflow
+        from lifereel_api.modules.interview.models import InterviewSession, InterviewTurnWorkflow
 
         workflow = db.scalar(
             select(InterviewTurnWorkflow).where(
@@ -98,6 +98,27 @@ def _retry_job(db: Session, tenant_id: UUID, job_id: UUID) -> Job:
             )
         )
         if workflow is not None:
+            db.scalar(
+                select(InterviewSession.id)
+                .where(
+                    InterviewSession.id == workflow.session_id,
+                    InterviewSession.tenant_id == tenant_id,
+                )
+                .with_for_update()
+            )
+            db.refresh(job)
+            db.refresh(workflow)
+            latest_id = db.scalar(
+                select(InterviewTurnWorkflow.id)
+                .where(
+                    InterviewTurnWorkflow.session_id == workflow.session_id,
+                    InterviewTurnWorkflow.tenant_id == tenant_id,
+                )
+                .order_by(InterviewTurnWorkflow.created_at.desc())
+                .limit(1)
+            )
+            if latest_id != workflow.id or job.status not in {"failed", "cancelled"}:
+                raise ApiError(status.HTTP_409_CONFLICT, ErrorCode.JOB_RETRY_NOT_ALLOWED)
             workflow.status = "queued"
             workflow.error_code = None
     job.status = "queued"

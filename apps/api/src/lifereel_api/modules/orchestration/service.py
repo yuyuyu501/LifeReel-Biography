@@ -157,7 +157,7 @@ def create_turn(
         .order_by(InterviewTurnWorkflow.created_at.desc())
         .limit(1)
     )
-    if latest and latest.status in {"queued", "running", "failed"}:
+    if latest and latest.status in {"queued", "running"}:
         raise ApiError(status.HTTP_409_CONFLICT, ErrorCode.INTERVIEW_TURN_STATE_INVALID)
     if payload.round_id is not None:
         round_ = db.scalar(
@@ -223,7 +223,11 @@ def create_turn(
         chapter_id=session.chapter_id,
         idempotency_key=payload.idempotency_key,
         status="queued",
-        asset_ids=[str(item.id) for item in assets],
+        # Continue unfinished material analysis together with the new message.
+        asset_ids=list(dict.fromkeys([
+            *(latest.asset_ids if latest and latest.status == "failed" else []),
+            *(str(item.id) for item in assets),
+        ])),
     )
     db.add(workflow)
     db.flush()
@@ -419,6 +423,26 @@ def _new_claims_for_workflow(
 @track_usage("interview")
 def execute_turn(db: Session, tenant_id: UUID, workflow_id: UUID) -> InterviewTurnWorkflow:
     workflow = _get_workflow(db, tenant_id, workflow_id)
+    if workflow.status == "completed":
+        return workflow
+    # Share the submission lock so an old retry cannot race a continuation.
+    db.scalar(
+        select(InterviewSession.id)
+        .where(InterviewSession.id == workflow.session_id, InterviewSession.tenant_id == tenant_id)
+        .with_for_update()
+    )
+    db.refresh(workflow)
+    latest_id = db.scalar(
+        select(InterviewTurnWorkflow.id)
+        .where(
+            InterviewTurnWorkflow.session_id == workflow.session_id,
+            InterviewTurnWorkflow.tenant_id == tenant_id,
+        )
+        .order_by(InterviewTurnWorkflow.created_at.desc())
+        .limit(1)
+    )
+    if latest_id != workflow.id:
+        raise ApiError(status.HTTP_409_CONFLICT, ErrorCode.INTERVIEW_TURN_STATE_INVALID)
     if workflow.status == "completed":
         return workflow
     if workflow.status == "running":

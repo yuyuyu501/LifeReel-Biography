@@ -1,6 +1,5 @@
 import type { SourceAsset } from "@lifereel/contracts";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ScriptPriceNotice } from "../components/ScriptPriceNotice";
 import {
   ArrowUp,
   BookOpenText,
@@ -157,8 +156,8 @@ export function InterviewRoomPage() {
 
   function onSubmit(event: FormEvent) {
     event.preventDefault();
-    if (recorder.isRecording || submitTurn.isPending || workspace.data?.latest_workflow &&
-      ["queued", "running", "failed"].includes(workspace.data.latest_workflow.status)) return;
+    if (recorder.isRecording || submitTurn.isPending || retryWorkflow.isPending || workspace.data?.latest_workflow &&
+      ["queued", "running"].includes(workspace.data.latest_workflow.status)) return;
     if (answer.trim() || recorder.audioBlob || files.length) submitTurn.mutate();
   }
 
@@ -190,12 +189,11 @@ export function InterviewRoomPage() {
       </div>
 
       <ErrorNotice error={submitTurn.error || retryWorkflow.error || workflowError} />
-      <ScriptPriceNotice />
       {workflowError && workflow?.job_id && (
         <div className="interview-retry-action">
           <button
             className="button secondary small"
-            disabled={retryWorkflow.isPending}
+            disabled={retryWorkflow.isPending || submitTurn.isPending}
             onClick={() => retryWorkflow.mutate(workflow.job_id!)}
           >
             <RefreshCw size={15} />
@@ -255,8 +253,9 @@ export function InterviewRoomPage() {
                 <button type="button" className={`composer-tool ${recorder.isRecording ? "recording" : ""}`} disabled={submitTurn.isPending} aria-pressed={recorder.isRecording} onClick={() => recorder.isRecording ? recorder.stop() : recorder.start()}>
                   {recorder.isRecording ? <><Square size={16} /> 停止录音</> : <><Mic2 size={17} /> {recorder.audioUrl ? "重新录制" : "录制原声"}</>}
                 </button>
-                <button className="composer-send" aria-label={submitTurn.isPending || workflowRunning ? "正在整理" : "发送并更新剧本"} title={recorder.isRecording ? "请先停止录音" : submitTurn.isPending || workflowRunning ? "正在整理" : "发送并更新剧本"} disabled={(!answer.trim() && !recorder.audioBlob && !files.length) || recorder.isRecording || submitTurn.isPending || workflowRunning || workflow?.status === "failed"}>
+                <button className="composer-send" aria-label={submitTurn.isPending || workflowRunning ? "正在整理" : "发送并更新剧本"} title={recorder.isRecording ? "请先停止录音" : submitTurn.isPending || workflowRunning ? "正在整理" : "发送并更新剧本"} disabled={(!answer.trim() && !recorder.audioBlob && !files.length) || recorder.isRecording || submitTurn.isPending || retryWorkflow.isPending || workflowRunning}>
                   {submitTurn.isPending || workflowRunning ? <LoaderCircle size={20} className="composer-spinner" /> : <ArrowUp size={21} />}
+                  <span>发送</span>
                 </button>
               </div>
               {(fileError || recorder.error) && <p className="form-error">{fileError || recorder.error}</p>}

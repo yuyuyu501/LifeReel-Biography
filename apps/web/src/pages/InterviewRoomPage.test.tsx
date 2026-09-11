@@ -81,7 +81,8 @@ beforeEach(() => {
         latest_workflow: {
           id: "workflow-completed",
           status: workflowStatus,
-          error_code: null,
+          error_code: workflowStatus === "failed" ? "SCRIPT_LLM_RESPONSE_INVALID" : null,
+          job_id: "job-1",
           missing_topics: ["后来影响"],
         },
       });
@@ -187,16 +188,34 @@ test("adds a material in the composer and submits it through the turn workflow",
   ));
 });
 
-test("uses labeled tools and an accessible icon-only send button", async () => {
+test("uses labeled tools and a visible send label without a pricing banner", async () => {
   renderPage();
   await screen.findByRole("textbox", { name: "说说这段往事" });
   const send = screen.getByRole("button", { name: "发送并更新剧本" });
   expect(send).toBeDisabled();
-  expect(send).toHaveTextContent("");
+  expect(send).toHaveTextContent("发送");
+  expect(screen.queryByText(/官方标准价|查看钱包|不再按章收费/)).not.toBeInTheDocument();
   expect(send).toHaveAttribute("title", "发送并更新剧本");
   expect(screen.getByLabelText("添加素材")).toHaveAttribute("type", "file");
   fireEvent.click(screen.getByRole("button", { name: "录制原声" }));
   expect(recorder.start).toHaveBeenCalled();
+});
+
+test("allows a new message after a failed script update", async () => {
+  workflowStatus = "failed";
+  renderPage();
+  fireEvent.change(await screen.findByRole("textbox", { name: "说说这段往事" }), {
+    target: { value: "现在我已经退休，和老伴住在杭州。" },
+  });
+  const send = screen.getByRole("button", { name: "发送并更新剧本" });
+  expect(send).toBeEnabled();
+  expect(screen.getByRole("button", { name: "重新整理" })).toBeEnabled();
+  fireEvent.click(send);
+  await waitFor(() => {
+    const call = vi.mocked(fetch).mock.calls.find(([url, init]) => String(url).endsWith("/turns") && init?.method === "POST");
+    expect(call).toBeDefined();
+    expect(JSON.parse(call![1]!.body as string).answer_text).toBe("现在我已经退休，和老伴住在杭州。");
+  });
 });
 
 test("waits for recording to stop before allowing a turn to be sent", async () => {
