@@ -50,7 +50,7 @@ def main():
     if args.domain:
         values.update({
             "AUTH_COOKIE_SECURE": "true",
-            "API_CORS_ORIGINS": f"https://{args.domain}",
+            "API_CORS_ORIGINS": f'["https://{args.domain}"]',
         })
     os.umask(0o077)
     args.target.touch(mode=0o600, exist_ok=False)

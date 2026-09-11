@@ -78,7 +78,7 @@ docker compose exec api python -m lifereel_api.modules.evidence.oss_admin config
 2. `POST /v1/evidence/assets/direct-upload` 校验家庭、人物、采访、MIME 和类型限额，为随机临时对象签发一小时 OSS POST Policy。许可限制确切路径、文件大小、Content-Type，并禁止覆盖。浏览器只获得 AccessKey ID 和限权签名，不获得 AccessKey Secret。
 3. 浏览器用 FormData 直接 POST 到 OSS，文件字段最后发送，不携带应用 Cookie 或 API Key。
 4. `POST /v1/evidence/assets/complete-direct-upload` 只接收上传 ID。后端锁定上传记录并再次鉴权，检查实际大小、类型头，以 1 MiB 块读取 OSS 内容计算真实 SHA-256。通过后在 OSS 内部复制到正式路径，再提交素材记录。重复确认返回同一素材；同一人物按真实哈希去重，不跨人物共享记录。
-5. 成功后删除临时对象。放弃、失败或清理失败的对象由 `lifereel-upload-staging/` 专用一天过期规则回收，正式素材不在此目录。该目录必须专用于本功能，不得放入其他业务数据。过期上传数据库记录暂保留用于追溯。
+5. 成功后删除临时对象。放弃、失败或清理失败的对象由 `LifeReel-Biography/uploads/staging/` 专用一天过期规则回收，正式素材不在此目录。该前缀必须专用于本功能，不得放入其他业务数据。过期上传数据库记录暂保留用于追溯。
 
 每个家庭最多保留 10 个未过期且未完成的上传许可；这不是完整的上线防刷方案，仍需配合注册保护、容量配额和全局限流。现有图片 20 MiB、文档 50 MiB、音频 500 MiB、视频 2 GiB 限额保持不变。当前是单次表单直传，不支持断点续传；慢速上传超过一小时需重新上传。
 
