@@ -107,11 +107,14 @@ class OpenAICompatibleClient:
             {"role": "user", "content": user},
         ]
         try:
-            content = self._chat(messages, json_output=True).strip()
+            content = self._chat(messages, json_output=True)
         except httpx.HTTPStatusError as exc:
             if exc.response.status_code != 400:
                 raise
-            content = self._chat(messages).strip()
+            content = self._chat(messages)
+        if not isinstance(content, str):
+            raise json.JSONDecodeError("Expected a JSON text response", "", 0)
+        content = content.strip()
         fenced = re.fullmatch(r"```(?:json)?\s*(.*?)\s*```", content, re.DOTALL)
         return json.loads(fenced.group(1) if fenced else content)
 

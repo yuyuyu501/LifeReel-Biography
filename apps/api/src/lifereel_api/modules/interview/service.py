@@ -117,39 +117,24 @@ def _llm_follow_up(
         "answered_questions": [item.question_text for item in answered],
         "chapter_assessment": assessment,
     }
-    try:
-        keywords = "、".join(profile["keywords"])
-        excluded = "、".join(profile["excluded_topics"]) or "无"
-        result = client.chat_json(
-            f"你是尊重边界的中文口述史采访者。当前唯一采访章节是“{profile['title']}”。"
-            f"本章关键词：{keywords}。本章采访目标：{profile['interview_goal']}。"
-            f"越界主题：{excluded}。你只能围绕当前章节提问；用户提到越界内容时可以简短"
-            "承接，但必须把下一问自然引回本章，不得继续展开其他章节。根据 required_topics"
-            "和已知记忆判断缺口，每次只问一个最有价值的问题。不得臆造事实、重复"
-            "answered_questions 中的问题、暗示所谓正确答案，或施压回答隐私。"
-            "问题应帮助补充本章需要的时间、地点、人物、经过、影响或感受。只输出 JSON："
-            '{"next_question":"...","intent":"timeline|person|place|event|consequence|feeling|meaning"}。',
-            json.dumps(context, ensure_ascii=False),
-        )
-    except json.JSONDecodeError as exc:
-        raise ApiError(
-            status.HTTP_502_BAD_GATEWAY,
-            ErrorCode.INTERVIEW_LLM_RESPONSE_INVALID,
-        ) from exc
-    except ApiError:
-        raise
-    except Exception as exc:
-        raise ApiError(
-            status.HTTP_502_BAD_GATEWAY,
-            ErrorCode.INTERVIEW_LLM_REQUEST_FAILED,
-        ) from exc
-    if not isinstance(result, dict):
-        raise ApiError(
-            status.HTTP_502_BAD_GATEWAY,
-            ErrorCode.INTERVIEW_LLM_RESPONSE_INVALID,
-        )
-    question = str(result.get("next_question") or "").strip().strip('"“” ')
-    intent = str(result.get("intent") or "llm_follow_up").strip()[:80]
+    keywords = "、".join(profile["keywords"])
+    excluded = "、".join(profile["excluded_topics"]) or "无"
+    system = (
+        f"你是尊重边界的中文口述史采访者。当前唯一采访章节是“{profile['title']}”。"
+        f"本章关键词：{keywords}。本章采访目标：{profile['interview_goal']}。"
+        f"越界主题：{excluded}。根据 chapter_assessment 和已知记忆回应用户最新一条消息。"
+        "有重要缺口时，只问一个本章内最有价值的问题；用户提到越界内容时可以简短承接，"
+        "但不得继续展开其他章节。不得臆造事实、重复 answered_questions 中的问题、"
+        "暗示所谓正确答案，或施压回答隐私。用户不提供的信息要尊重，不反复追问。"
+        "当本章信息已经齐全、用户希望暂告一段落或没有值得追问的新问题时，"
+        "请根据已讲述的具体内容，简短回应并自然收束，允许用户以后继续补充。"
+        "此时 next_question 仍须填写这段给用户的回应，intent 使用 meaning，"
+        "不必强行写成问句，不得输出空对象、空字符串、null 或仅一个符号。"
+        "只输出包含两个必填字段的 JSON 对象。next_question 为 2 至 240 字的中文回应；"
+        "intent 只能从 timeline、person、place、event、consequence、feeling、meaning "
+        "中选择一个值，不得把多个值用竖线拼接。格式："
+        '{"next_question":"这里填写本章的追问或回应正文","intent":"meaning"}。'
+    )
     allowed_intents = {
         "timeline",
         "person",
@@ -159,12 +144,39 @@ def _llm_follow_up(
         "feeling",
         "meaning",
     }
-    if not question or intent not in allowed_intents:
-        raise ApiError(
-            status.HTTP_502_BAD_GATEWAY,
-            ErrorCode.INTERVIEW_LLM_RESPONSE_INVALID,
+    for attempt in range(2):
+        retry_hint = (
+            "\n上次返回未通过格式校验。请重新阅读上下文，严格输出必填的 next_question "
+            "和 intent。如果已无信息缺口，请给出非空的自然收束回应，不得返回 {}。"
+            if attempt else ""
         )
-    return {"question": question[:240], "intent": intent}
+        try:
+            result = client.chat_json(system + retry_hint, json.dumps(context, ensure_ascii=False))
+        except json.JSONDecodeError:
+            continue
+        except ApiError:
+            raise
+        except Exception as exc:
+            raise ApiError(
+                status.HTTP_502_BAD_GATEWAY,
+                ErrorCode.INTERVIEW_LLM_REQUEST_FAILED,
+            ) from exc
+        if not isinstance(result, dict):
+            continue
+        question = result.get("next_question")
+        intent = result.get("intent")
+        if not isinstance(question, str) or not isinstance(intent, str):
+            continue
+        question = question.strip().strip('"“” ')
+        intent = intent.strip()
+        if (
+            2 <= len(question) <= 240
+            and any(char.isalnum() for char in question)
+            and intent in allowed_intents
+            and question not in context["answered_questions"]
+        ):
+            return {"question": question, "intent": intent}
+    raise ApiError(status.HTTP_502_BAD_GATEWAY, ErrorCode.INTERVIEW_LLM_RESPONSE_INVALID)
 
 
 def list_chapters(db: Session, tenant_id: UUID) -> list[Chapter]:

@@ -420,6 +420,46 @@ def _new_claims_for_workflow(
     return list(db.scalars(statement.where(or_(*conditions)).order_by(MemoryClaim.created_at)))
 
 
+def _complete_turn_follow_up(
+    db: Session, tenant_id: UUID, workflow: InterviewTurnWorkflow
+) -> InterviewTurnWorkflow:
+    next_question = interview_service.suggest_next_question(
+        db,
+        tenant_id,
+        workflow.session_id,
+        assessment=workflow.script_brief["assessment"],
+    )
+    # add_round commits the response and completed workflow in the same transaction.
+    workflow.status = "completed"
+    workflow.next_question = next_question["question_text"]
+    workflow.next_question_intent = next_question["question_intent"]
+    workflow.completed_at = datetime.now(UTC)
+    interview_service.add_round(
+        db,
+        tenant_id,
+        workflow.session_id,
+        InterviewRoundCreate(
+            question_text=next_question["question_text"],
+            question_intent=next_question["question_intent"],
+            question_source=next_question["question_source"],
+        ),
+    )
+    db.refresh(workflow)
+    if workflow.job_id:
+        job_service.complete_job(
+            db,
+            tenant_id,
+            workflow.job_id,
+            {
+                "workflow_id": str(workflow.id),
+                "script_project_id": (
+                    str(workflow.script_project_id) if workflow.script_project_id else None
+                ),
+            },
+        )
+    return workflow
+
+
 @track_usage("interview")
 def execute_turn(db: Session, tenant_id: UUID, workflow_id: UUID) -> InterviewTurnWorkflow:
     workflow = _get_workflow(db, tenant_id, workflow_id)
@@ -458,6 +498,8 @@ def execute_turn(db: Session, tenant_id: UUID, workflow_id: UUID) -> InterviewTu
 
     billing_key = None
     try:
+        if workflow.script_brief.get("followup_ready") is True:
+            return _complete_turn_follow_up(db, tenant_id, workflow)
         session = interview_service.get_session(db, tenant_id, workflow.session_id)
         script_request = ScriptGenerateRequest(
             subject_id=session.subject_id,
@@ -558,48 +600,15 @@ def execute_turn(db: Session, tenant_id: UUID, workflow_id: UUID) -> InterviewTu
             billing.transition(db, tenant_id, billing_key, False)
             db.commit()
 
-        next_question = interview_service.suggest_next_question(
-            db,
-            tenant_id,
-            session.id,
-            assessment=assessment,
-        )
-        interview_service.add_round(
-            db,
-            tenant_id,
-            session.id,
-            InterviewRoundCreate(
-                question_text=next_question["question_text"],
-                question_intent=next_question["question_intent"],
-                question_source=next_question["question_source"],
-            ),
-        )
-
+        # Retain completed AI work even if the following response fails validation.
         workflow = _get_workflow(db, tenant_id, workflow.id)
-        workflow.status = "completed"
         workflow.source_claim_ids = [str(item.id) for item in new_claims]
         workflow.script_project_id = project.id if project else None
         workflow.script_scene_ids = [str(item.id) for item in scenes]
-        workflow.next_question = next_question["question_text"]
-        workflow.next_question_intent = next_question["question_intent"]
         workflow.missing_topics = missing
-        workflow.script_brief = brief
-        workflow.completed_at = datetime.now(UTC)
+        workflow.script_brief = {**brief, "followup_ready": True}
         db.commit()
-        db.refresh(workflow)
-        if workflow.job_id:
-            job_service.complete_job(
-                db,
-                tenant_id,
-                workflow.job_id,
-                {
-                    "workflow_id": str(workflow.id),
-                    "script_project_id": (
-                        str(workflow.script_project_id) if workflow.script_project_id else None
-                    ),
-                },
-            )
-        return workflow
+        return _complete_turn_follow_up(db, tenant_id, workflow)
     except ApiError as exc:
         db.rollback()
         if billing_key:

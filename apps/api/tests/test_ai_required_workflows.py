@@ -4,6 +4,8 @@ import json
 from types import SimpleNamespace
 from uuid import UUID
 
+import pytest
+
 
 def _configure_real_llm(monkeypatch) -> None:
     from lifereel_api.core.config import get_settings
@@ -42,15 +44,114 @@ def test_interview_follow_up_reports_provider_failure(client, monkeypatch) -> No
 
     _, _, session = _start_answered_interview(client)
     _configure_real_llm(monkeypatch)
-    monkeypatch.setattr(
-        OpenAICompatibleClient,
-        "chat_json",
-        lambda self, system, user: (_ for _ in ()).throw(RuntimeError("provider down")),
-    )
+    calls = []
+
+    def fail(self, system, user):
+        calls.append(system)
+        raise RuntimeError("provider down")
+
+    monkeypatch.setattr(OpenAICompatibleClient, "chat_json", fail)
     try:
         response = client.get(f"/v1/interviews/{session['id']}/next-question")
         assert response.status_code == 502
         assert response.json() == {"error": {"code": "INTERVIEW_LLM_REQUEST_FAILED"}}
+        assert len(calls) == 1
+    finally:
+        _reset_settings()
+
+
+@pytest.mark.parametrize(
+    "invalid",
+    [
+        {},
+        None,
+        [],
+        {"next_question": "  ", "intent": "meaning"},
+        {"next_question": ["question"], "intent": "meaning"},
+        {"next_question": "...", "intent": "meaning"},
+        {"next_question": "请说说您的感受。", "intent": "feeling|meaning"},
+        {"next_question": "问" * 241, "intent": "meaning"},
+        json.JSONDecodeError("invalid JSON", "{", 0),
+    ],
+)
+def test_follow_up_retries_invalid_content_once(client, monkeypatch, invalid):
+    from lifereel_api.providers.openai_compatible import OpenAICompatibleClient
+
+    _, chapter, session = _start_answered_interview(client)
+    _configure_real_llm(monkeypatch)
+    calls = []
+    expected = "您和父亲一起生活时，有什么印象深刻的小事？"
+
+    def respond(self, system, user):
+        calls.append(system)
+        assert chapter["title"] in system
+        if len(calls) == 1:
+            if isinstance(invalid, Exception):
+                raise invalid
+            return invalid
+        assert "上次返回未通过格式校验" in system
+        return {"next_question": expected, "intent": "event"}
+
+    monkeypatch.setattr(OpenAICompatibleClient, "chat_json", respond)
+    try:
+        result = client.get(f"/v1/interviews/{session['id']}/next-question")
+        assert result.status_code == 200
+        assert result.json()["question_text"] == expected
+        assert len(calls) == 2
+    finally:
+        _reset_settings()
+
+
+def test_follow_up_accepts_ai_closing_without_forcing_another_question(client, monkeypatch):
+    from lifereel_api.core.config import get_settings
+    from lifereel_api.core.database import SessionLocal
+    from lifereel_api.modules.interview.service import suggest_next_question
+    from lifereel_api.providers.openai_compatible import OpenAICompatibleClient
+
+    _, _, session = _start_answered_interview(client)
+    _configure_real_llm(monkeypatch)
+    calls = []
+    closing = "谢谢您分享和父亲在泉州的这段生活。先记到这里，以后想起细节还可以继续补充。"
+
+    def respond(self, system, user):
+        calls.append(system)
+        assert "不必强行写成问句" in system
+        assert json.loads(user)["chapter_assessment"]["missing_topics"] == []
+        return {"next_question": closing, "intent": "meaning"}
+
+    monkeypatch.setattr(OpenAICompatibleClient, "chat_json", respond)
+    try:
+        with SessionLocal() as db:
+            result = suggest_next_question(
+                db, get_settings().default_tenant_id, UUID(session["id"]),
+                assessment={"ready_for_script": True, "missing_topics": [], "reason": "齐全"},
+            )
+        assert result["question_text"] == closing
+        assert len(calls) == 1
+        assert client.get(f"/v1/interviews/{session['id']}").json()["status"] == "active"
+    finally:
+        _reset_settings()
+
+
+def test_follow_up_exhausted_retry_reports_error_without_fabricating_round(client, monkeypatch):
+    from lifereel_api.providers.openai_compatible import OpenAICompatibleClient
+
+    _, _, session = _start_answered_interview(client)
+    _configure_real_llm(monkeypatch)
+    calls = []
+
+    def invalid(self, system, user):
+        calls.append(system)
+        return {}
+
+    monkeypatch.setattr(OpenAICompatibleClient, "chat_json", invalid)
+    try:
+        result = client.get(f"/v1/interviews/{session['id']}/next-question")
+        assert result.status_code == 502
+        assert result.json()["error"]["code"] == "INTERVIEW_LLM_RESPONSE_INVALID"
+        assert len(calls) == 2
+        after = client.get(f"/v1/interviews/{session['id']}").json()
+        assert len(after["rounds"]) == len(session["rounds"])
     finally:
         _reset_settings()
 

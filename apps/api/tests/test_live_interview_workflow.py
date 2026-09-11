@@ -196,9 +196,12 @@ def test_text_turn_updates_chapter_script_and_creates_next_question(client) -> N
     assert client.get("/v1/wallet/ledger?event=consume").json()["total"] == 2
 
 
-def test_followup_retry_does_not_regenerate_or_charge_script_again(client, monkeypatch):
+@pytest.mark.parametrize("ready", [True, False])
+def test_followup_retry_resumes_without_repeating_completed_ai_work(client, monkeypatch, ready):
     from lifereel_api.core.errors import ApiError, ErrorCode
     from lifereel_api.modules.interview import service as interviews
+    from lifereel_api.modules.memory import service as memories
+    from lifereel_api.modules.orchestration import service
     from lifereel_api.modules.script import service as scripts
 
     _, _, session = _start(client)
@@ -207,6 +210,10 @@ def test_followup_retry_does_not_regenerate_or_charge_script_again(client, monke
     def fail(*args, **kwargs):
         raise ApiError(502, ErrorCode.INTERVIEW_LLM_REQUEST_FAILED)
 
+    monkeypatch.setattr(
+        service, "_assess_chapter",
+        lambda *args: {"ready_for_script": ready, "missing_topics": [], "reason": "test"},
+    )
     monkeypatch.setattr(interviews, "suggest_next_question", fail)
     response = client.post(
         f"/v1/interviews/{session['id']}/turns",
@@ -219,17 +226,31 @@ def test_followup_retry_does_not_regenerate_or_charge_script_again(client, monke
     )
     assert response.status_code == 502
     workspace = client.get(f"/v1/interviews/{session['id']}/workspace").json()
-    assert workspace["script"]
-    assert client.get("/v1/wallet").json()["available_cents"] == 1998
+    assert bool(workspace["script"]) is ready
+    expected_balance = 1998 if ready else 2000
+    assert client.get("/v1/wallet").json()["available_cents"] == expected_balance
+    checkpoint = workspace["latest_workflow"]["script_brief"]
+    assert checkpoint["followup_ready"] is True
+    assert checkpoint["assessment"]["ready_for_script"] is ready
+    before_claims = client.get(f"/v1/memories?subject_id={session['subject_id']}").json()
     monkeypatch.setattr(interviews, "suggest_next_question", original)
-    monkeypatch.setattr(scripts, "_generate_draft", fail)
+    monkeypatch.setattr(scripts, "generate_draft", fail)
+    monkeypatch.setattr(memories, "compile_memories", fail)
+    monkeypatch.setattr(service, "_assess_chapter", fail)
     workflow_id = workspace["latest_workflow"]["id"]
     result = client.post(f"/v1/internal/interview-turns/{workflow_id}/execute")
     assert result.status_code == 200
     assert result.json()["status"] == "completed"
     after = client.get(f"/v1/interviews/{session['id']}/workspace").json()
-    assert after["script"]["version_number"] == workspace["script"]["version_number"]
-    assert client.get("/v1/wallet").json()["available_cents"] == 1998
+    assert after["script"] == workspace["script"]
+    assert after["latest_workflow"]["script_brief"] == checkpoint
+    assert len(after["session"]["rounds"]) == 2
+    assert after["latest_workflow"]["error_code"] is None
+    assert client.get(f"/v1/memories?subject_id={session['subject_id']}").json() == before_claims
+    assert client.get("/v1/wallet").json()["available_cents"] == expected_balance
+    assert client.post(f"/v1/internal/interview-turns/{workflow_id}/execute").status_code == 200
+    final = client.get(f"/v1/interviews/{session['id']}/workspace").json()
+    assert final["session"]["rounds"] == after["session"]["rounds"]
 
 
 def test_document_attachment_is_linked_analyzed_and_used_by_script(client) -> None:

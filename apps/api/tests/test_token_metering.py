@@ -109,6 +109,57 @@ def test_invalid_json_still_retains_and_charges_actual_usage(token_mode, monkeyp
     assert event["usage"]["prompt_tokens"] == 10000
 
 
+@pytest.mark.parametrize("invalid", [None, [], "{}", "{invalid", ""])
+def test_followup_validation_retry_meters_each_actual_call(token_mode, monkeypatch, invalid):
+    import json
+
+    person = token_mode.post("/v1/persons", json={"display_name": "Metering test"}).json()
+    chapter = token_mode.get("/v1/chapters").json()[0]
+    session = token_mode.post(
+        "/v1/interviews", json={"subject_id": person["id"], "chapter_id": chapter["id"]},
+    ).json()
+    answered = token_mode.post(
+        f"/v1/interviews/{session['id']}/rounds/{session['rounds'][0]['id']}/answer",
+        json={"answer_text": "I lived with my father in Quanzhou."},
+    )
+    assert answered.status_code == 200
+    settings = get_settings()
+    monkeypatch.setattr(settings, "llm_provider", "openai-compatible")
+    monkeypatch.setattr(settings, "openai_compatible_base_url", "https://ark.cn-beijing.volces.com/api/v3")
+    monkeypatch.setattr(settings, "openai_compatible_api_key", "test-key")
+    monkeypatch.setattr(settings, "openai_compatible_model", tokens.MODEL)
+    monkeypatch.setattr(settings, "interview_llm_model", tokens.MODEL)
+    calls = []
+
+    def post(*args, **kwargs):
+        calls.append(kwargs["json"])
+        content = invalid if len(calls) == 1 else json.dumps({
+            "next_question": "Thank you for sharing; you can add more details later.",
+            "intent": "meaning",
+        })
+        return httpx.Response(
+            200, request=httpx.Request("POST", "https://model.test"),
+            json={
+                "id": f"followup-{len(calls)}",
+                "usage": {"prompt_tokens": 10000, "completion_tokens": 1000},
+                "choices": [{"message": {"content": content}}],
+            },
+        )
+
+    monkeypatch.setattr(httpx, "post", post)
+    result = token_mode.get(f"/v1/interviews/{session['id']}/next-question")
+    assert result.status_code == 200, result.text
+    assert len(calls) == 2
+    events = token_mode.get("/v1/wallet/usage").json()
+    assert events["total"] == 2
+    assert all(event["operation"] == "question" for event in events["items"])
+    assert all(event["metering"]["status"] == "settled" for event in events["items"])
+    wallet = token_mode.get("/v1/wallet").json()
+    assert wallet["available_cents"] == 1997
+    assert wallet["frozen_cents"] == 0
+    assert wallet["token_remainder_nano"] == 0
+
+
 def test_duplicate_receipt_does_not_charge_twice(token_mode, monkeypatch):
     for _ in range(2):
         invoke(monkeypatch, "same", {"prompt_tokens": 10000, "completion_tokens": 1000})
