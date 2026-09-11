@@ -17,6 +17,10 @@ def prices() -> dict:
     return {
         "version": settings.billing_price_version,
         "video_cents_per_second": settings.billing_video_cents_per_second,
+        "video_billing_mode": settings.billing_video_mode,
+        "video_reserve_cents": settings.billing_video_reserve_cents,
+        "video_cny_per_million": "34.5",
+        "video_markup": "1.5",
         "script_chapter_cents": settings.billing_script_chapter_cents,
         "welcome_bonus_cents": settings.billing_welcome_bonus_cents,
         "payment_enabled": False,
@@ -107,7 +111,8 @@ def _event(
 
 
 def reserve(
-    db: Session, tenant_id: UUID, key: str, amount: int, kind: str, title: str, price: dict
+    db: Session, tenant_id: UUID, key: str, amount: int, kind: str, title: str, price: dict,
+    *, allow_overdraft: bool = False,
 ) -> Charge:
     wallet = lock_wallet(db, tenant_id)
     charge = db.scalar(
@@ -127,9 +132,9 @@ def reserve(
         amount = charge.amount_cents if charge else amount
     if amount < 0:
         raise ValueError("Negative charge")
-    if available(wallet) < amount:
+    if (available(wallet) <= 0 if allow_overdraft else available(wallet) < amount):
         raise ApiError(409, ErrorCode.WALLET_INSUFFICIENT_BALANCE)
-    bonus = min(wallet.bonus_cents - wallet.frozen_bonus_cents, amount)
+    bonus = min(max(0, wallet.bonus_cents - wallet.frozen_bonus_cents), amount)
     paid = amount - bonus
     wallet.frozen_bonus_cents += bonus
     wallet.frozen_paid_cents += paid
@@ -192,12 +197,45 @@ def video_reserve(db: Session, run) -> None:
             run.tenant_id,
             f"video:{run.id}",
             quote["amount_cents"],
-            "video",
+            "video_hold" if quote.get("video_billing_mode") == "tokens" else "video",
             quote["title"],
             quote,
+            allow_overdraft=quote.get("video_billing_mode") == "tokens",
         )
 
 
 def video_finish(db: Session, run, success: bool) -> None:
-    if (run.output_manifest or {}).get("billing_quote"):
+    quote = (run.output_manifest or {}).get("billing_quote")
+    if quote and quote.get("video_billing_mode") == "tokens":
+        from lifereel_api.modules.billing.video import settle_run
+
+        settle_run(db, run, success)
+    elif quote:
         transition(db, run.tenant_id, f"video:{run.id}", success)
+
+
+def debit_actual(db: Session, tenant_id: UUID, key: str, amount: int, title: str, price: dict):
+    """Settle already-authorized consumption, even if it creates a cash debt."""
+    if amount < 0:
+        raise ValueError("Negative charge")
+    wallet = lock_wallet(db, tenant_id)
+    existing = db.scalar(select(Charge).where(
+        Charge.tenant_id == tenant_id, Charge.business_key == key,
+    ))
+    if existing:
+        if existing.status != "settled":
+            raise ApiError(409, ErrorCode.BILLING_STATE_INVALID)
+        return existing
+    bonus = min(max(0, wallet.bonus_cents - wallet.frozen_bonus_cents), amount)
+    paid = amount - bonus
+    wallet.bonus_cents -= bonus
+    wallet.paid_cents -= paid
+    charge = Charge(
+        tenant_id=tenant_id, business_key=key, kind="tokens", title=title[:300],
+        amount_cents=amount, bonus_cents=bonus, paid_cents=paid, status="settled",
+        attempt=1, price_snapshot=price,
+    )
+    db.add(charge)
+    db.flush()
+    _event(db, wallet, charge, "consume", paid=-paid, bonus=-bonus)
+    return charge

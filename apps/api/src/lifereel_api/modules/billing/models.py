@@ -23,12 +23,12 @@ from lifereel_api.core.models import TimestampMixin, UUIDPrimaryKeyMixin
 class Wallet(TimestampMixin, Base):
     __tablename__ = "wallets"
     __table_args__ = (
-        CheckConstraint("paid_cents >= 0 AND bonus_cents >= 0", name="nonnegative_balance"),
+        CheckConstraint("bonus_cents >= 0", name="nonnegative_balance"),
         CheckConstraint(
             "frozen_paid_cents >= 0 AND frozen_bonus_cents >= 0", name="nonnegative_frozen"
         ),
         CheckConstraint(
-            "paid_cents >= frozen_paid_cents AND bonus_cents >= frozen_bonus_cents",
+            "bonus_cents >= frozen_bonus_cents",
             name="covered_frozen",
         ),
     )

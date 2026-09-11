@@ -8,7 +8,6 @@ import { EmptyState } from "../components/EmptyState";
 import { ErrorNotice, QueryState } from "../components/QueryState";
 import { hasQueryIssue } from "../queryHelpers";
 import { providerLabel, statusLabel } from "../statusLabels";
-import { money } from "./WalletPage";
 
 function matchesChapter(run: ProductionRun, project: ScriptProject, scene: ScriptScene) {
   if (run.project_id !== project.id) return false;
@@ -56,7 +55,10 @@ export function StudioPage() {
   const actualMedia = media?.id === activeAsset?.id ? media : null;
   const parameters = activeAsset?.generation_parameters;
   const segmented = settings.data?.mode === "segmented";
-  const quote = wallet.data?.prices && selected ? (segmented ? selected.scene.duration_seconds : settings.data?.duration_seconds ?? selected.scene.duration_seconds) * wallet.data.prices.video_cents_per_second : undefined;
+  const quote = wallet.data?.prices && selected ? wallet.data.prices.video_billing_mode === "tokens" && settings.data?.provider !== "mock"
+    ? wallet.data.prices.video_reserve_cents
+    : (segmented ? selected.scene.duration_seconds : settings.data?.duration_seconds ?? selected.scene.duration_seconds) * wallet.data.prices.video_cents_per_second : undefined;
+  const hasBalance = (wallet.data?.available_cents ?? 0) > 0;
   const progress = activeRun?.output_manifest;
   const progressText = activeRun?.status === "running" && progress?.stage
     ? progress.stage === "planning" ? "正在规划分镜"
@@ -113,10 +115,7 @@ export function StudioPage() {
                 <div><dt>目标时长</dt><dd>{seconds(segmented ? selected.scene.duration_seconds : settings.data?.duration_seconds)}</dd></div>
                 <div><dt>声音</dt><dd>{settings.data?.generate_audio === true ? "原生音频" : settings.data?.generate_audio === false ? "无声片段" : "由服务决定"}</dd></div>
               </dl>
-              {quote !== undefined && <p className="wallet-note">本次报价 {money(quote)} · 可用 {money(wallet.data!.available_cents)} · 成功扣款，失败解冻。<Link to="/wallet">查看钱包</Link></p>}
-              <div className="studio-generate-row"><span className="studio-muted">剧本预估 {seconds(selected.scene.duration_seconds)}</span><button className="button primary" disabled={produce.isPending || isGenerating || quote === undefined} onClick={() => {
-                if (quote !== undefined && window.confirm(`本次生成报价 ${money(quote)}，先冻结额度，成功后扣款，失败解冻。是否继续？`)) produce.mutate(selected);
-              }}><Play size={16} aria-hidden="true" /> {isGenerating ? "正在生成" : "生成影像"}</button></div>
+              <div className="studio-generate-row"><span className="studio-muted">剧本预估 {seconds(selected.scene.duration_seconds)}</span><button className="button primary" disabled={produce.isPending || isGenerating || quote === undefined || !hasBalance} title={!hasBalance ? "余额不足，请先充值" : undefined} onClick={() => produce.mutate(selected)}><Play size={16} aria-hidden="true" /> {isGenerating ? "正在生成" : "生成影像"}</button></div>
             </div>
             <div className="studio-preview-toolbar">
               <div role="tablist" aria-label="预览内容" className="studio-tabs" onKeyDown={(event) => {
@@ -134,10 +133,7 @@ export function StudioPage() {
             {chapterRuns.length > 1 && <label className="studio-version">生成版本<select value={activeRun?.id} onChange={(event) => setRunId(event.target.value)}>{chapterRuns.map((run, index) => <option key={run.id} value={run.id}>{index === 0 ? "最新 · " : ""}{new Date(run.created_at).toLocaleString("zh-CN")} · {statusLabel(run.status)}</option>)}</select></label>}
             {progressText && <p className="studio-muted" role="status">{progressText}</p>}
             <div id="studio-panel-video" role="tabpanel" aria-labelledby="studio-tab-video" hidden={view !== "video"}>
-              {activeRun?.error_message && <div className="notice error" role="alert">{statusLabel(activeRun.error_message, "视频生成失败，请稍后重试。")}{activeRun.job_id && <button className="button secondary small" disabled={retry.isPending} onClick={() => {
-                const savedQuote = activeRun.output_manifest?.billing_quote;
-                if (!savedQuote || window.confirm(`重试按原报价 ${money(savedQuote.amount_cents)} 冻结额度，成功后扣款，失败解冻。是否继续？`)) retry.mutate(activeRun.job_id!);
-              }}><RefreshCw size={15} aria-hidden="true" /> 重新尝试</button>}</div>}
+              {activeRun?.error_message && <div className="notice error" role="alert">{statusLabel(activeRun.error_message, "视频生成失败，请稍后重试。")}{activeRun.job_id && <button className="button secondary small" disabled={retry.isPending || (!hasBalance && activeRun.output_manifest?.billing?.status !== "pending")} onClick={() => retry.mutate(activeRun.job_id!)}><RefreshCw size={15} aria-hidden="true" /> 重新尝试</button>}</div>}
               <div className="studio-screen">
                 {activeAsset ? <video key={activeAsset.id} aria-label={`${selected.scene.heading}视频`} controls playsInline preload="metadata" src={generatedAssetUrl(activeAsset.id)} onLoadedMetadata={(event) => {
                   const video = event.currentTarget;

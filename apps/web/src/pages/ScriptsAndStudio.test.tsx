@@ -161,12 +161,40 @@ test("switches chapters and submits only the selected chapter", async () => {
   ));
 });
 
-test("canceling the quote does not submit or charge production", async () => {
+test("starts immediately without a confirmation dialog or quote notice", async () => {
   vi.mocked(window.confirm).mockReturnValue(false);
   renderPage(<StudioPage />, "/studio");
   fireEvent.click(await screen.findByRole("button", { name: "生成影像" }));
-  expect(window.confirm).toHaveBeenCalledWith(expect.stringContaining("¥4.00"));
+  expect(window.confirm).not.toHaveBeenCalled();
+  expect(screen.queryByText(/本次报价/)).not.toBeInTheDocument();
+  await waitFor(() => expect(vi.mocked(fetch).mock.calls.some(([, init]) => init?.method === "POST")).toBe(true));
+});
+
+test.each([0, -400])("disables new generation when available balance is %s", async (balance) => {
+  const original = vi.mocked(fetch).getMockImplementation()!;
+  vi.mocked(fetch).mockImplementation(async (input, init) => String(input).endsWith("/v1/wallet")
+    ? response({ available_cents: balance, prices: { video_billing_mode: "tokens", video_reserve_cents: 2400 } })
+    : original(input, init));
+  renderPage(<StudioPage />, "/studio");
+  const button = await screen.findByRole("button", { name: "生成影像" });
+  expect(button).toBeDisabled();
+  fireEvent.click(button);
   expect(vi.mocked(fetch).mock.calls.some(([, init]) => init?.method === "POST")).toBe(false);
+});
+
+test("a positive balance below the full hold still permits one video", async () => {
+  const original = vi.mocked(fetch).getMockImplementation()!;
+  vi.mocked(fetch).mockImplementation(async (input, init) => String(input).endsWith("/v1/wallet")
+    ? response({ available_cents: 1, prices: { video_billing_mode: "tokens", video_reserve_cents: 2400 } })
+    : original(input, init));
+  renderPage(<StudioPage />, "/studio");
+  const button = await screen.findByRole("button", { name: "生成影像" });
+  expect(button).toBeEnabled();
+  fireEvent.click(button);
+  await waitFor(() => expect(fetch).toHaveBeenCalledWith(expect.stringContaining("/v1/production/runs"),
+    expect.objectContaining({ method: "POST", body: JSON.stringify({ project_id: project.id,
+      scene_id: "scene-1", audience: "family", quoted_amount_cents: 2400 }) })));
+  expect(window.confirm).not.toHaveBeenCalled();
 });
 
 test("script retry reuses its update ID and the next success uses a new ID", async () => {

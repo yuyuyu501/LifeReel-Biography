@@ -59,7 +59,7 @@ def _rule_scenes(
         f"围绕“{chapter_title}”的纪实电影画面，符合人物年代与地域；"
         "只呈现来源记忆中已有的细节，不得擅自生成未经授权的真实人脸。"
     )
-    duration = max(12, min(90, len(claims) * 12))
+    duration = max(15, min(30, (len(introduction + memories) + 3) // 4))
     return [
         {
             "heading": chapter_title,
@@ -124,6 +124,7 @@ def _llm_scenes(
         "chapter_profile": profile,
         "evidence_pack": evidence_pack,
         "update_brief": update_brief,
+        "duration_range_seconds": {"min": 15, "max": 30},
     }
     try:
         result = client.chat_json(
@@ -132,12 +133,17 @@ def _llm_scenes(
             "相关的信息，不得引入其他生命章节，不得补写未提供的事实。每次调用都要把全部"
             "证据融合为一份完整、连续的当前章节稿件，而不是新增草稿、场景或片段列表。"
             "使用第一人称、自然口语和克制情感；新信息应融入原有叙事并改善连贯性。"
+            "本章短视频总时长必须在15至30秒之间，根据最终旁白实际字数、自然停顿和"
+            "画面节奏选择整数秒，不要每次都写30秒。口述旁白约每秒3至4个汉字，"
+            "为停顿和转场留出时间；信息较少可用15至20秒，较丰富用21至30秒。"
+            "如全部信息无法在30秒内自然讲完，请保留本章核心事实、精炼旁白，"
+            "不要靠加速朗读或超过30秒塞入内容。各镜头时长之和应等于本章总时长。"
             "chapter.source_claim_ids 和每个镜头的 source_claim_ids 必须填写实际支撑内容的"
             "claim_id，且只能引用输入中的 claim_id。未核对信息保留不确定语气。"
-            "输出严格 JSON，结构为："
+            "输出严格 JSON，以下结构中的22秒仅为格式示例，实际时长须独立估算："
             '{"title":"整本书名（可选）","chapter":{"heading":"本章标题",'
             '"narration":"一份连续的本章旁白","visual_prompt":"本章整体画面方向",'
-            '"duration_seconds":30,"source_claim_ids":["..."],'
+            '"duration_seconds":22,"source_claim_ids":["..."],'
             '"shots":[{"shot_type":"wide|medium|closeup|detail|archive",'
             '"visual_prompt":"...","duration_seconds":6,"source_claim_ids":["..."]}]}}。',
             json.dumps(request, ensure_ascii=False),
@@ -157,12 +163,12 @@ def _llm_scenes(
         ) from exc
 
     allowed_ids = {str(claim.id) for claim in claims}
-    raw_chapter = result.get("chapter")
+    raw_chapter = result.get("chapter") if isinstance(result, dict) else None
     if not isinstance(raw_chapter, dict):
         logger.warning(
             "Invalid script model response: chapter_type=%s response_keys=%s",
             type(raw_chapter).__name__,
-            sorted(result.keys()),
+            sorted(result.keys()) if isinstance(result, dict) else [],
         )
         raise ApiError(status.HTTP_502_BAD_GATEWAY, ErrorCode.SCRIPT_LLM_RESPONSE_INVALID)
     try:
@@ -172,7 +178,9 @@ def _llm_scenes(
         )
         if not source_ids:
             raise ValueError("chapter has no valid evidence references")
-        duration = max(4, min(180, int(raw_chapter.get("duration_seconds", 30))))
+        duration = raw_chapter["duration_seconds"]
+        if type(duration) is not int or not 15 <= duration <= 30:
+            raise ValueError("chapter duration must be an integer between 15 and 30")
         shots = []
         for raw_shot in (raw_chapter.get("shots") or [])[:12]:
             if not isinstance(raw_shot, dict):

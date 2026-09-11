@@ -42,6 +42,7 @@ export function WalletPage() {
             <div className="wallet-available">
               <span>可用余额</span>
               <strong>{money(w.available_cents)}</strong>
+              {(w.debt_cents ?? 0) > 0 && <small role="status">当前欠款 {money(w.debt_cents!)}，充值后抵扣</small>}
               {w.prices.script_billing_mode === "tokens" && <small>
                 预冻结 {money(w.frozen_cents)} · 待累计结算 ¥{((w.token_remainder_nano ?? 0) / 1e9).toFixed(6)}
               </small>}
@@ -50,10 +51,14 @@ export function WalletPage() {
           <WalletRecharge wallet={w} />
           <div className="wallet-rates">
             <span>当前价格</span>
-            <span>
+            {w.prices.video_billing_mode === "tokens" ? <>
+              <span>影像按实际 token 用量计费（官方标准价 × {w.prices.video_markup ?? "1.5"}）</span>
+              <span>720p 每百万输出 token ¥{w.prices.video_cny_per_million ?? "34.5"}，分镜规划按文本 AI 单价计费。</span>
+              <span>每次预冻结 {money(w.prices.video_reserve_cents ?? 2400)}，按实际用量多退少补；欠款结清后可再次生成。</span>
+            </> : <span>
               影像 {money(w.prices.video_cents_per_second)} / 秒（
               {money(w.prices.video_cents_per_second * 30)} / 30 秒）
-            </span>
+            </span>}
             {w.prices.script_billing_mode === "tokens" ? <>
               <span>文本 AI 按实际 token 用量计费（官方标准价 × 1.5）</span>
               <span>每百万 token：输入 ≤32K 时输入 ¥1.20 / 输出 ¥3.00；32K–128K 时输入 ¥1.80 / 输出 ¥9.00；缓存命中输入 ¥0.24。</span>

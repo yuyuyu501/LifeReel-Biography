@@ -71,6 +71,11 @@ def begin(base_url: str, model: str, context: tuple | None) -> str | None:
     ):
         raise ApiError(503, ErrorCode.BILLING_MODEL_UNPRICED)
     tenant_id, operation, reference = context
+    if operation == "video" and reference:
+        from lifereel_api.modules.billing.video import use_reserved_budget
+
+        if use_reserved_budget(tenant_id, reference):
+            return None
     key = f"token-hold:{uuid4()}"
     with SessionLocal() as db:
         service.lock_wallet(db, tenant_id)
@@ -144,8 +149,7 @@ def settle(db, event, reservation: str) -> None:
     cents, remainder = divmod(nano, NANO_PER_CENT)
     if cents:
         key = f"token-usage:{event.id}"
-        service.reserve(db, event.tenant_id, key, cents, "tokens", "AI 实际用量", price)
-        service.transition(db, event.tenant_id, key, True)
+        service.debit_actual(db, event.tenant_id, key, cents, "AI 实际用量", price)
     wallet.token_remainder_nano = remainder
     event.metering = {
         **price,

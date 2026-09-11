@@ -335,6 +335,7 @@ export interface ProductionRun {
     segments?: Array<{ status: string; duration_seconds: number; narration: string }>;
     target_duration_seconds?: number;
     billing_quote?: { amount_cents: number; target_seconds: number; version: string; title: string };
+    billing?: { status: "pending" | "settled"; reserved_cents: number; charged_cents?: number };
   }) | null;
   error_message: string | null;
   created_at: string;
@@ -370,8 +371,11 @@ export interface WalletSummary {
   bonus_cents: number;
   frozen_cents: number;
   available_cents: number;
+  debt_cents?: number;
   token_remainder_nano?: number;
   prices: { version: string; video_cents_per_second: number; script_chapter_cents: number;
+    video_billing_mode?: "tokens" | "per_second"; video_reserve_cents?: number;
+    video_cny_per_million?: string; video_markup?: string;
     welcome_bonus_cents: number; payment_enabled: boolean; script_billing_mode: string };
 }
 export interface WalletEntry {

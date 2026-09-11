@@ -284,7 +284,7 @@ def test_openai_compatible_script_uses_structured_evidence_references(
                 "heading": "码头清晨",
                 "narration": "我年轻时在码头工作，每天伴着船笛开始一天。",
                 "visual_prompt": "清晨的旧码头，不出现未经授权的正脸。",
-                "duration_seconds": 12,
+                "duration_seconds": 22,
                 "source_claim_ids": [claim["id"], "00000000-0000-0000-0000-000000000099"],
                 "shots": [
                     {

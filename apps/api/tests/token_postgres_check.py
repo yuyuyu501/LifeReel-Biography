@@ -128,7 +128,7 @@ def workflow_checks(tenant_id):
                     "heading": "童年",
                     "narration": "我在家乡长大。",
                     "visual_prompt": "家乡",
-                    "duration_seconds": 6,
+                    "duration_seconds": 18,
                     "source_claim_ids": ids,
                     "shots": [
                         {"visual_prompt": "家乡", "duration_seconds": 6, "source_claim_ids": ids}

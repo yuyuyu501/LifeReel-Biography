@@ -74,6 +74,10 @@ def record(
                 duration_ms=max(0, duration_ms),
                 provider_request_id=request_id[:200] if request_id else None,
                 error_code=error[:80] if error else None,
+                metering=(
+                    {"status": "released", "reason": "request_rejected"}
+                    if rejected and not usage else {}
+                ),
             )
             db.add(event)
             db.flush()
@@ -116,7 +120,7 @@ def record(
         try:
             with SessionLocal() as db:
                 duplicate = request_id and db.scalar(
-                    select(UsageEvent.id).where(
+                    select(UsageEvent).where(
                         UsageEvent.tenant_id == tenant_id,
                         UsageEvent.operation == operation,
                         UsageEvent.model == model[:150],
@@ -124,6 +128,25 @@ def record(
                         UsageEvent.status == status,
                     )
                 )
+                if duplicate and operation == "video" and duplicate.metering.get("status") not in {
+                    "settled", "released", "duplicate",
+                }:
+                    from lifereel_api.modules.billing import video
+
+                    try:
+                        video.quote(model, duplicate.usage, status)
+                    except ValueError:
+                        video.quote(model, usage, status)
+                        from lifereel_api.modules.billing.service import lock_wallet
+
+                        lock_wallet(db, tenant_id)
+                        db.refresh(duplicate)
+                        if duplicate.metering.get("status") not in {"settled", "released"}:
+                            duplicate.metering = {
+                                **duplicate.metering, "original_usage": duplicate.usage,
+                            }
+                            duplicate.usage = usage
+                            db.commit()
             if not duplicate:
                 logger.exception(
                     "Provider usage integrity failure; billing reconciliation required"

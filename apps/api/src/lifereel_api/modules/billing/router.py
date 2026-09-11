@@ -27,6 +27,7 @@ def wallet(db: Db, tenant_id: Tenant):
         "bonus_cents": row.bonus_cents,
         "frozen_cents": row.frozen_paid_cents + row.frozen_bonus_cents,
         "available_cents": service.available(row),
+        "debt_cents": max(0, -row.paid_cents - row.bonus_cents),
         "token_remainder_nano": row.token_remainder_nano,
         "prices": service.prices(),
         "recharge": {

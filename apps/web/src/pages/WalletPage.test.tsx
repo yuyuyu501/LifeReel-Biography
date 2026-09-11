@@ -53,3 +53,17 @@ test("shows available balance and disables unconfigured payments", async () => {
   fireEvent.change(screen.getByLabelText("类型"), { target: { value: "consume" } });
   await waitFor(() => expect(fetch).toHaveBeenCalledWith(expect.stringContaining("event=consume"), expect.anything()));
 });
+
+test("shows debt and actual-use video pricing without supplier usage rows", async () => {
+  const original = vi.mocked(fetch).getMockImplementation()!;
+  vi.mocked(fetch).mockImplementation(async (input, init) => String(input).endsWith("/wallet") ? {
+    ok: true, status: 200, json: async () => ({ paid_cents: -241, bonus_cents: 0,
+      frozen_cents: 0, available_cents: -241, debt_cents: 241,
+      prices: { video_billing_mode: "tokens", video_reserve_cents: 2400,
+        video_cny_per_million: "34.5", video_markup: "1.5", script_billing_mode: "tokens" } }),
+  } as Response : original(input, init));
+  render(<QueryClientProvider client={new QueryClient()}><MemoryRouter><WalletPage /></MemoryRouter></QueryClientProvider>);
+  expect(await screen.findByText("当前欠款 ¥2.41，充值后抵扣")).toBeVisible();
+  expect(screen.getByText(/影像按实际 token 用量计费/)).toBeVisible();
+  expect(screen.queryByText(/0.80.*秒/)).not.toBeInTheDocument();
+});

@@ -49,6 +49,8 @@ class Settings(BaseSettings):
     billing_price_version: str = "standard-2026-09-luna20"
     billing_welcome_bonus_cents: int = Field(default=2000, ge=0, le=100000)
     billing_video_cents_per_second: int = Field(default=80, ge=0, le=10000)
+    billing_video_mode: Literal["per_second", "tokens"] = "tokens"
+    billing_video_reserve_cents: int = Field(default=2400, ge=1, le=100000)
     billing_script_chapter_cents: int = Field(default=40, ge=0, le=10000)
     billing_text_mode: Literal["per_successful_chapter_update", "tokens"] = (
         "per_successful_chapter_update"

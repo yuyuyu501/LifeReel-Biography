@@ -40,7 +40,7 @@ class OpenAICompatibleClient:
         if json_output:
             payload["response_format"] = {"type": "json_object"}
         reservation = tokens.begin(self.base_url, self.model, current_context())
-        if reservation:
+        if reservation or (tokens.enabled() and current_context()):
             payload["max_tokens"] = tokens.MAX_OUTPUT
         started = time.monotonic()
         data = {}

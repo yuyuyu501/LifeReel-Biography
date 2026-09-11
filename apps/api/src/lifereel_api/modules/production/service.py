@@ -128,6 +128,13 @@ def start_production(db: Session, tenant_id: UUID, payload: ProductionStart) -> 
         if existing:
             return existing
     subject = db.get(Person, project.subject_id)
+    token_video = settings.billing_video_mode == "tokens" and provider_name != "mock"
+    if token_video:
+        from lifereel_api.modules.billing.video import validate_config
+
+        validate_config(config or {})
+        if len(scenes) != 1 or not 15 <= scenes[0].duration_seconds <= 30:
+            raise ApiError(422, ErrorCode.VIDEO_DURATION_UNSUPPORTED)
     target_seconds = (
         config["duration"]
         if config and config["mode"] == "single_clip"
@@ -136,7 +143,11 @@ def start_production(db: Session, tenant_id: UUID, payload: ProductionStart) -> 
     quote = {
         **billing.prices(),
         "target_seconds": target_seconds,
-        "amount_cents": target_seconds * settings.billing_video_cents_per_second,
+        "video_billing_mode": "tokens" if token_video else "per_second",
+        "amount_cents": (
+            settings.billing_video_reserve_cents if token_video
+            else target_seconds * settings.billing_video_cents_per_second
+        ),
         "title": f"{subject.preferred_name or subject.display_name} · "
         + "、".join(scene.heading for scene in scenes),
     }
@@ -298,6 +309,7 @@ def _execute_run(db: Session, tenant_id: UUID, run_id: UUID) -> ProductionRun:
         job.error_message = None
         job.result = {"production_run_id": str(run.id), **run.output_manifest}
         billing.video_finish(db, run, True)
+        job.result = {"production_run_id": str(run.id), **run.output_manifest}
     except Exception as exc:
         logger.exception("Video production failed for run %s", run_id, exc_info=exc)
         # Keep committed segment checkpoints, but never publish partially saved results.
