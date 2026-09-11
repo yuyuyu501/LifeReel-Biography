@@ -57,7 +57,8 @@ function renderPage() {
 test("opens the saved chapter conversation instead of creating another one", async () => {
   renderPage();
   expect(await screen.findByRole("heading", { name: "章节采访" })).toBeInTheDocument();
-  expect(await screen.findByText("已保存 1 轮回答")).toBeInTheDocument();
+  expect((await screen.findAllByText(/已保存 1 轮回答/)).length).toBeGreaterThan(0);
+  expect(screen.queryByText(/^(进行中|已暂停|已完成|未开始)$/)).not.toBeInTheDocument();
   fireEvent.click(await screen.findByRole("button", { name: /继续这一章/ }));
   expect(await screen.findByText("采访对话页")).toBeInTheDocument();
   expect(vi.mocked(fetch)).not.toHaveBeenCalledWith(
@@ -83,7 +84,7 @@ test("creates a conversation only for a chapter that has not started", async () 
 test("keeps legacy duplicate sessions available as past interviews", async () => {
   renderPage();
   expect(await screen.findByRole("heading", { name: "过往采访" })).toBeInTheDocument();
-  expect(screen.getByRole("link", { name: /我是谁.*2 轮.*已完成/ })).toHaveAttribute(
+  expect(screen.getByRole("link", { name: /我是谁.*已保存 1 轮回答/ })).toHaveAttribute(
     "href",
     "/interviews/session-old",
   );

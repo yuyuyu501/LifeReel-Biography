@@ -370,6 +370,7 @@ export interface WalletSummary {
   bonus_cents: number;
   frozen_cents: number;
   available_cents: number;
+  token_remainder_nano?: number;
   prices: { version: string; video_cents_per_second: number; script_chapter_cents: number;
     welcome_bonus_cents: number; payment_enabled: boolean; script_billing_mode: string };
 }
@@ -381,6 +382,7 @@ export interface WalletEntry {
 export interface ProviderUsage {
   id: string; model: string; operation: string; status: string; created_at: string;
   usage: Record<string, unknown>; duration_ms: number; provider_request_id: string | null;
+  metering?: Record<string, unknown>;
 }
 export interface WalletPage<T> { total: number; page: number; page_size: number; items: T[] }
 export interface RechargeOrder {

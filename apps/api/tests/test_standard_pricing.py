@@ -71,7 +71,7 @@ def test_interview_reserves_before_memory_and_charges_once(client, monkeypatch):
 def test_insufficient_funds_stops_before_any_interview_ai(client, monkeypatch):
     _, _, session = _start(client)
     with SessionLocal() as db:
-        billing.reserve(db, get_settings().default_tenant_id, "other", 1900, "video", "test", {})
+        billing.reserve(db, get_settings().default_tenant_id, "other", 1990, "video", "test", {})
         db.commit()
 
     def unexpected(*args, **kwargs):
@@ -81,7 +81,7 @@ def test_insufficient_funds_stops_before_any_interview_ai(client, monkeypatch):
     result = client.post(f"/v1/interviews/{session['id']}/turns", json=turn_payload(session))
     assert result.status_code == 409
     assert result.json()["error"]["code"] == "WALLET_INSUFFICIENT_BALANCE"
-    assert client.get("/v1/wallet").json()["available_cents"] == 100
+    assert client.get("/v1/wallet").json()["available_cents"] == 10
 
 
 def test_preprocessing_failure_releases_and_retry_keeps_original_price(client, monkeypatch):
@@ -102,7 +102,7 @@ def test_preprocessing_failure_releases_and_retry_keeps_original_price(client, m
     workspace = client.get(f"/v1/interviews/{session['id']}/workspace").json()
     workflow_id = workspace["latest_workflow"]["id"]
     assert client.post(f"/v1/internal/interview-turns/{workflow_id}/execute").status_code == 200
-    assert client.get("/v1/wallet").json()["available_cents"] == 2000
+    assert client.get("/v1/wallet").json()["available_cents"] == 1960
 
 
 def test_saved_script_remains_charged_when_followup_fails(client, monkeypatch):
@@ -121,7 +121,7 @@ def test_saved_script_remains_charged_when_followup_fails(client, monkeypatch):
     workspace = client.get(f"/v1/interviews/{session['id']}/workspace").json()
     workflow_id = workspace["latest_workflow"]["id"]
     assert client.post(f"/v1/internal/interview-turns/{workflow_id}/execute").status_code == 200
-    assert client.get("/v1/wallet").json()["available_cents"] == 1801
+    assert client.get("/v1/wallet").json()["available_cents"] == 1960
 
 
 def test_thirty_second_video_costs_24_not_covered_by_welcome_credit(client, monkeypatch):

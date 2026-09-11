@@ -4,6 +4,17 @@ import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { beforeEach, vi } from "vitest";
 import { InterviewRoomPage } from "./InterviewRoomPage";
 
+const recorder = vi.hoisted(() => ({
+  isRecording: false,
+  audioBlob: null,
+  audioUrl: null,
+  error: null,
+  start: vi.fn(),
+  stop: vi.fn(),
+  clear: vi.fn(),
+}));
+vi.mock("../hooks/useAudioRecorder", () => ({ useAudioRecorder: () => recorder }));
+
 const rounds = [
   {
     id: "round-old-empty",
@@ -33,14 +44,16 @@ function response(payload: unknown) {
 }
 
 let interviewStatus = "completed";
+let interviewRounds = rounds;
+let workflowStatus = "completed";
 
 beforeEach(() => {
+  recorder.isRecording = false;
   interviewStatus = "completed";
+  interviewRounds = rounds;
+  workflowStatus = "completed";
   vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
-    if (url.endsWith("/resume") && init?.method === "POST") {
-      interviewStatus = "active";
-    }
     if (url.endsWith("/v1/interviews/session-1/workspace")) {
       return response({
         session: {
@@ -48,7 +61,7 @@ beforeEach(() => {
           subject_id: "person-1",
           chapter_id: "chapter-1",
           status: interviewStatus,
-          rounds,
+          rounds: interviewRounds,
         },
         assets: [],
         script: {
@@ -67,7 +80,7 @@ beforeEach(() => {
         },
         latest_workflow: {
           id: "workflow-completed",
-          status: "completed",
+          status: workflowStatus,
           error_code: null,
           missing_topics: ["后来影响"],
         },
@@ -112,16 +125,42 @@ test("shows saved answers and only the current unanswered question", async () =>
   expect(screen.queryByText("后来影响")).not.toBeInTheDocument();
 });
 
-test("resumes a completed conversation in place", async () => {
+test.each(["active", "paused", "completed"])("keeps the composer visible for legacy %s conversations", async (status) => {
+  interviewStatus = status;
   renderPage();
-  fireEvent.click(await screen.findByRole("button", { name: "继续采访" }));
-  await waitFor(() => expect(vi.mocked(fetch)).toHaveBeenCalledWith(
-    "/v1/interviews/session-1/resume",
-    expect.objectContaining({ method: "POST" }),
-  ));
   expect(await screen.findByRole("textbox", { name: /^说说这段往事/ })).toBeInTheDocument();
   expect(screen.getByText("添加素材")).toBeInTheDocument();
-  expect(screen.getByRole("button", { name: "温暖结束" })).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "录制原声" })).toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: /温暖结束|暂停采访|继续采访/ })).not.toBeInTheDocument();
+  expect(screen.queryByText(/^(进行中|已暂停|已完成)$/)).not.toBeInTheDocument();
+  expect(vi.mocked(fetch).mock.calls.some(([url]) => /\/(pause|resume|complete)$/.test(String(url)))).toBe(false);
+});
+
+test("appends a message when the last historical round has already been answered", async () => {
+  interviewRounds = rounds.slice(0, 2);
+  renderPage();
+  fireEvent.change(await screen.findByRole("textbox", { name: /^说说这段往事/ }), {
+    target: { value: "我还记得母亲带我去赶海。" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: /发送并更新剧本/ }));
+  await waitFor(() => {
+    const call = vi.mocked(fetch).mock.calls.find(([url, init]) => String(url).endsWith("/turns") && init?.method === "POST");
+    expect(call).toBeDefined();
+    const body = JSON.parse(call![1]!.body as string);
+    expect(body.answer_text).toBe("我还记得母亲带我去赶海。");
+    expect(body.round_id).toBeUndefined();
+  });
+});
+
+test("keeps the composer visible while the previous turn is processing", async () => {
+  interviewRounds = rounds.slice(0, 2);
+  workflowStatus = "running";
+  const view = renderPage();
+  const composer = await screen.findByRole("textbox", { name: /^说说这段往事/ });
+  fireEvent.change(composer, { target: { value: "下一段回忆" } });
+  expect(composer).toBeEnabled();
+  expect(screen.getByRole("button", { name: /正在整理/ })).toBeDisabled();
+  view.unmount();
 });
 
 test("adds a material in the composer and submits it through the turn workflow", async () => {
@@ -146,4 +185,31 @@ test("adds a material in the composer and submits it through the turn workflow",
     "/v1/interviews/session-1/turns",
     expect.objectContaining({ method: "POST" }),
   ));
+});
+
+test("uses labeled tools and an accessible icon-only send button", async () => {
+  renderPage();
+  await screen.findByRole("textbox", { name: "说说这段往事" });
+  const send = screen.getByRole("button", { name: "发送并更新剧本" });
+  expect(send).toBeDisabled();
+  expect(send).toHaveTextContent("");
+  expect(send).toHaveAttribute("title", "发送并更新剧本");
+  expect(screen.getByLabelText("添加素材")).toHaveAttribute("type", "file");
+  fireEvent.click(screen.getByRole("button", { name: "录制原声" }));
+  expect(recorder.start).toHaveBeenCalled();
+});
+
+test("waits for recording to stop before allowing a turn to be sent", async () => {
+  recorder.isRecording = true;
+  renderPage();
+  fireEvent.change(await screen.findByRole("textbox", { name: "说说这段往事" }), {
+    target: { value: "正在录音时写下的回忆" },
+  });
+  expect(screen.getByRole("button", { name: "发送并更新剧本" })).toBeDisabled();
+  const stop = screen.getByRole("button", { name: "停止录音" });
+  expect(stop).toHaveAttribute("aria-pressed", "true");
+  fireEvent.submit(stop.closest("form")!);
+  expect(vi.mocked(fetch).mock.calls.some(([url]) => String(url).endsWith("/turns"))).toBe(false);
+  fireEvent.click(stop);
+  expect(recorder.stop).toHaveBeenCalled();
 });

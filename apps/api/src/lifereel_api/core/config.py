@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from functools import lru_cache
+from typing import Literal
 from uuid import UUID
 
 from pydantic import Field, field_validator
@@ -49,6 +50,9 @@ class Settings(BaseSettings):
     billing_welcome_bonus_cents: int = Field(default=2000, ge=0, le=100000)
     billing_video_cents_per_second: int = Field(default=80, ge=0, le=10000)
     billing_script_chapter_cents: int = Field(default=40, ge=0, le=10000)
+    billing_text_mode: Literal["per_successful_chapter_update", "tokens"] = (
+        "per_successful_chapter_update"
+    )
     manual_wechat_enabled: bool = False
     manual_wechat_qr_path: str = "/data/payments/wechat-qr.png"
     max_evidence_image_bytes: int = 20 * 1024 * 1024

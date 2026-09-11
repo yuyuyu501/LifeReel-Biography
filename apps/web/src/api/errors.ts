@@ -1,7 +1,9 @@
 export const ERROR_MESSAGES: Record<string, string> = {
   WALLET_NOT_FOUND: "未找到所属家庭的钱包。",
-  WALLET_INSUFFICIENT_BALANCE: "钱包可用余额不足，任务尚未开始。请前往钱包查看余额。",
+  WALLET_INSUFFICIENT_BALANCE: "钱包可用余额不足，已暂停新的调用或任务。请前往钱包查看余额。",
   BILLING_STATE_INVALID: "扣费状态异常，请刷新后重试或联系管理员。",
+  BILLING_MODEL_UNPRICED: "当前模型尚未配置用量价格，请联系管理员。",
+  BILLING_USAGE_PENDING: "上次 AI 调用的用量正在核对，已暂停新的调用，请联系管理员核对后再试。",
   BILLING_BUSY: "当前章节正在生成，请稍后重试。",
   BILLING_QUOTE_CHANGED: "价格已更新，请刷新页面后重新确认。",
   PAYMENT_NOT_ENABLED: "充值暂未开通，请勿向任何收款码付款。",

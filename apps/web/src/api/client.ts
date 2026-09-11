@@ -96,7 +96,7 @@ export const api = {
   createInterviewTurn: (
     sessionId: string,
     payload: {
-      round_id: string;
+      round_id?: string;
       answer_text?: string;
       asset_ids: string[];
       idempotency_key: string;
@@ -122,12 +122,6 @@ export const api = {
       method: "POST",
       body: JSON.stringify(payload),
     }),
-  completeInterview: (sessionId: string) =>
-    request<InterviewSession>(`/v1/interviews/${sessionId}/complete`, { method: "POST" }),
-  pauseInterview: (sessionId: string) =>
-    request<InterviewSession>(`/v1/interviews/${sessionId}/pause`, { method: "POST" }),
-  resumeInterview: (sessionId: string) =>
-    request<InterviewSession>(`/v1/interviews/${sessionId}/resume`, { method: "POST" }),
   listMemories: (subjectId?: string) =>
     request<MemoryClaim[]>(`/v1/memories${subjectId ? `?subject_id=${subjectId}` : ""}`),
   compileMemories: (payload: { interview_session_id?: string; subject_id?: string }) =>

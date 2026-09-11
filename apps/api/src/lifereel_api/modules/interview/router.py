@@ -78,18 +78,3 @@ def answer_round(
 @router.get("/interviews/{session_id}/next-question", response_model=NextQuestionRead)
 def next_question(session_id: UUID, db: Db, tenant_id: Tenant) -> NextQuestionRead:
     return service.suggest_next_question(db, tenant_id, session_id)
-
-
-@router.post("/interviews/{session_id}/pause", response_model=InterviewSessionRead)
-def pause_interview(session_id: UUID, db: Db, tenant_id: Tenant) -> InterviewSessionRead:
-    return service.set_session_status(db, tenant_id, session_id, "paused")
-
-
-@router.post("/interviews/{session_id}/resume", response_model=InterviewSessionRead)
-def resume_interview(session_id: UUID, db: Db, tenant_id: Tenant) -> InterviewSessionRead:
-    return service.resume_session(db, tenant_id, session_id)
-
-
-@router.post("/interviews/{session_id}/complete", response_model=InterviewSessionRead)
-def complete_interview(session_id: UUID, db: Db, tenant_id: Tenant) -> InterviewSessionRead:
-    return service.set_session_status(db, tenant_id, session_id, "completed")

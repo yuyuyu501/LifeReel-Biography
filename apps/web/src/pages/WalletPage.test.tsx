@@ -3,6 +3,7 @@ import { fireEvent, render, screen, waitFor, within } from "@testing-library/rea
 import { MemoryRouter } from "react-router-dom";
 import { beforeEach, expect, test, vi } from "vitest";
 import { WalletPage } from "./WalletPage";
+import { ScriptPriceNotice } from "../components/ScriptPriceNotice";
 
 beforeEach(() => {
   vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
@@ -16,6 +17,24 @@ beforeEach(() => {
     };
     return { ok: true, status: 200, json: async () => data } as Response;
   }));
+});
+
+test("token mode replaces chapter pricing in wallet and interview notice", async () => {
+  vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => ({
+    ok: true, status: 200, json: async () => String(input).endsWith("/wallet") ? {
+      paid_cents: 0, bonus_cents: 2000, frozen_cents: 0, available_cents: 2000,
+      token_remainder_nano: 2600000,
+      prices: { video_cents_per_second: 80, script_chapter_cents: 40,
+        script_billing_mode: "tokens", payment_enabled: false },
+    } : { total: 0, items: [] },
+  })));
+  render(<QueryClientProvider client={new QueryClient()}><MemoryRouter>
+    <WalletPage /><ScriptPriceNotice />
+  </MemoryRouter></QueryClientProvider>);
+  expect(await screen.findByText("文本 AI 按实际 token 用量计费（官方标准价 × 1.5）")).toBeVisible();
+  expect(screen.queryByText("剧本 ¥0.40 / 章 / 次")).not.toBeInTheDocument();
+  expect(screen.getByText(/未生成剧本也会产生用量费用/)).toBeVisible();
+  expect(screen.getByText(/0.002600/)).toBeVisible();
 });
 
 test("shows available balance and disables unconfigured payments", async () => {

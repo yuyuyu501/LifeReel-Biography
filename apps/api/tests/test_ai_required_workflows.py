@@ -64,7 +64,7 @@ def test_missing_topics_are_decided_by_ai_semantics(monkeypatch) -> None:
     def semantic_gap(self, system, user):
         assert "语义判断" in system
         assert "allowed_topics" in user
-        return {"missing_topics": ["当时感受"]}
+        return {"missing_topics": ["当时感受"], "ready_for_script": False, "reason": "需要细节"}
 
     monkeypatch.setattr(OpenAICompatibleClient, "chat_json", semantic_gap)
     try:

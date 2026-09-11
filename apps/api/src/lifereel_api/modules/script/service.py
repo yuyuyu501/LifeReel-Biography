@@ -293,7 +293,11 @@ def reserve_interview_update(db: Session, tenant_id: UUID, payload: ScriptGenera
     chapter = db.get(Chapter, payload.chapter_id) if payload.chapter_id else None
     key = f"script-update:{payload.idempotency_key}:{payload.chapter_id or 'free'}"
     charge = billing.reserve(
-        db, tenant_id, key, get_settings().billing_script_chapter_cents, "script",
+        db,
+        tenant_id,
+        key,
+        billing.script_update_price(),
+        "script",
         f"{person.preferred_name or person.display_name} · "
         f"{chapter.title if chapter else '自由采访'}",
         {**billing.prices(), "request_fingerprint": update_fingerprint(payload)},
@@ -332,7 +336,11 @@ def generate_draft(
         if any(item.price_snapshot.get("request_fingerprint") != fingerprint for item in previous):
             raise ApiError(409, ErrorCode.BILLING_STATE_INVALID)
         if previous and all(item.status == "settled" for item in previous):
-            return get_project(db, tenant_id, UUID(previous[0].price_snapshot["result_project_id"]))
+            result = get_project(
+                db, tenant_id, UUID(previous[0].price_snapshot["result_project_id"])
+            )
+            db.commit()
+            return result
         statement = select(MemoryClaim.chapter_id).where(
             MemoryClaim.tenant_id == tenant_id,
             MemoryClaim.subject_id == person.id,
@@ -358,7 +366,7 @@ def generate_draft(
                     db,
                     tenant_id,
                     key,
-                    get_settings().billing_script_chapter_cents,
+                    billing.script_update_price(),
                     "script",
                     f"{person.preferred_name or person.display_name} · "
                     f"{chapter.title if chapter else '自由采访'}",

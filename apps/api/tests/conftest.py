@@ -19,6 +19,7 @@ os.environ["VOICE_PROVIDER"] = "mock"
 os.environ["MANUAL_WECHAT_ENABLED"] = "false"
 os.environ["STORAGE_BACKEND"] = "local"
 os.environ["OSS_DIRECT_UPLOAD_ENABLED"] = "false"
+os.environ["BILLING_TEXT_MODE"] = "per_successful_chapter_update"
 
 from lifereel_api.core.config import get_settings  # noqa: E402
 

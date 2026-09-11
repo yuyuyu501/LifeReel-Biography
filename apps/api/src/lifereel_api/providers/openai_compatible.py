@@ -9,7 +9,8 @@ from typing import Any
 
 import httpx
 
-from lifereel_api.modules.billing.usage import record
+from lifereel_api.modules.billing import tokens
+from lifereel_api.modules.billing.usage import current_context, record
 from lifereel_api.providers.base import ProviderCapabilities
 
 
@@ -38,8 +39,12 @@ class OpenAICompatibleClient:
         }
         if json_output:
             payload["response_format"] = {"type": "json_object"}
+        reservation = tokens.begin(self.base_url, self.model, current_context())
+        if reservation:
+            payload["max_tokens"] = tokens.MAX_OUTPUT
         started = time.monotonic()
         data = {}
+        response = None
         try:
             response = httpx.post(
                 f"{self.base_url}/chat/completions",
@@ -47,8 +52,14 @@ class OpenAICompatibleClient:
                 json=payload,
                 timeout=60,
             )
+            try:
+                data = response.json()
+            except ValueError:
+                response.raise_for_status()
+                raise
+            if not isinstance(data, dict):
+                data = {}
             response.raise_for_status()
-            data = response.json()
             content = data["choices"][0]["message"]["content"]
         except Exception as exc:
             record(
@@ -56,7 +67,20 @@ class OpenAICompatibleClient:
                 "failed",
                 data.get("usage") or {},
                 int((time.monotonic() - started) * 1000),
+                request_id=data.get("id"),
                 error=type(exc).__name__,
+                reservation=reservation,
+                rejected=response is not None
+                and response.status_code
+                in {
+                    400,
+                    401,
+                    403,
+                    404,
+                    413,
+                    422,
+                    429,
+                },
             )
             raise
         record(
@@ -65,6 +89,7 @@ class OpenAICompatibleClient:
             data.get("usage") or {},
             int((time.monotonic() - started) * 1000),
             data.get("id"),
+            reservation=reservation,
         )
         return content
 

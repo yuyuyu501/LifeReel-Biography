@@ -6,7 +6,6 @@ import { api } from "../api/client";
 import { EmptyState } from "../components/EmptyState";
 import { ErrorNotice, QueryState } from "../components/QueryState";
 import { hasQueryIssue } from "../queryHelpers";
-import { statusLabel } from "../statusLabels";
 
 export function InterviewsPage() {
   const queryClient = useQueryClient();
@@ -65,12 +64,9 @@ export function InterviewsPage() {
               const answerCount = existing?.rounds.filter((round) => round.answer_text).length ?? 0;
               const isStarting = start.isPending && start.variables?.chapter_id === chapter.id;
               return (
-              <article className={`chapter-card interview-chapter-card ${existing ? `has-session ${existing.status}` : "not-started"}`} key={chapter.id}>
+              <article className={`chapter-card interview-chapter-card ${existing ? "has-session" : ""}`} key={chapter.id}>
                 <div className="chapter-card-kicker">
                   <span>第 {String(chapter.order_index).padStart(2, "0")} 章</span>
-                  <span className={`chapter-interview-status ${existing?.status ?? "not-started"}`}>
-                    {existing ? statusLabel(existing.status) : "未开始"}
-                  </span>
                 </div>
                 <h2>{chapter.title}</h2>
                 <p>{chapter.description}</p>
@@ -89,9 +85,7 @@ export function InterviewsPage() {
                     ? "正在建立记录"
                     : !existing
                       ? "开始这一章"
-                      : existing.status === "completed"
-                        ? "查看完整记录"
-                        : "继续这一章"} <ArrowRight size={17} />
+                      : "继续这一章"} <ArrowRight size={17} />
                 </button>
               </article>
               );
@@ -103,10 +97,10 @@ export function InterviewsPage() {
             <div className="session-list">
               {pastSessions.map((session) => (
                 <Link className="session-row" to={`/interviews/${session.id}`} key={session.id}>
-                  <span className={`session-status ${session.status}`}><Mic2 size={18} /></span>
+                  <span className="session-status"><Mic2 size={18} /></span>
                   <div>
                     <strong>{chapters.data?.find((item) => item.id === session.chapter_id)?.title ?? "自由采访"}</strong>
-                    <small><Clock3 size={14} /> {session.round_count} 轮 · {statusLabel(session.status)}</small>
+                    <small><Clock3 size={14} /> 已保存 {session.rounds.filter((round) => round.answer_text).length} 轮回答</small>
                   </div>
                   <ArrowRight size={18} />
                 </Link>

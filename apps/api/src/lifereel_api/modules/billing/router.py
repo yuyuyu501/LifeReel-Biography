@@ -27,6 +27,7 @@ def wallet(db: Db, tenant_id: Tenant):
         "bonus_cents": row.bonus_cents,
         "frozen_cents": row.frozen_paid_cents + row.frozen_bonus_cents,
         "available_cents": service.available(row),
+        "token_remainder_nano": row.token_remainder_nano,
         "prices": service.prices(),
         "recharge": {
             "mode": "manual_wechat" if payments.enabled() else "disabled",
@@ -92,6 +93,7 @@ def usage(db: Db, tenant_id: Tenant, page: int = Query(1, ge=1)):
                 "model": row.model,
                 "status": row.status,
                 "usage": row.usage,
+                "metering": row.metering,
                 "duration_ms": row.duration_ms,
                 "provider_request_id": row.provider_request_id,
                 "created_at": row.created_at,

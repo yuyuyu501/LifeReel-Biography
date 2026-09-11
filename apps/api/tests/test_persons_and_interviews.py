@@ -1,3 +1,11 @@
+from uuid import UUID
+
+import pytest
+
+from lifereel_api.core.database import SessionLocal
+from lifereel_api.modules.interview.models import InterviewSession
+
+
 def test_person_interview_flow(client):
     created = client.post(
         "/v1/persons",
@@ -44,9 +52,8 @@ def test_person_interview_flow(client):
     assert new_round.status_code == 201
     assert new_round.json()["round_index"] == 2
 
-    completed = client.post(f"/v1/interviews/{session['id']}/complete")
-    assert completed.status_code == 200
-    assert completed.json()["status"] == "completed"
+    for action in ("pause", "resume", "complete"):
+        assert client.post(f"/v1/interviews/{session['id']}/{action}").status_code == 404
 
 
 def test_interview_llm_receives_chapter_and_recent_answer(client, monkeypatch):
@@ -120,7 +127,8 @@ def test_interview_llm_receives_chapter_and_recent_answer(client, monkeypatch):
         get_settings.cache_clear()
 
 
-def test_chapter_interview_is_reused_and_can_resume(client):
+@pytest.mark.parametrize("legacy_status", ["paused", "completed"])
+def test_chapter_interview_is_reused_and_accepts_continuation(client, legacy_status):
     person = client.post("/v1/persons", json={"display_name": "周先生"}).json()
     chapter = client.get("/v1/chapters").json()[0]
 
@@ -133,7 +141,9 @@ def test_chapter_interview_is_reused_and_can_resume(client):
         f"/v1/interviews/{first['id']}/rounds/{first_round['id']}/answer",
         json={"answer_text": "这是第一次留下的长期回答。"},
     )
-    client.post(f"/v1/interviews/{first['id']}/complete")
+    with SessionLocal() as db:
+        db.get(InterviewSession, UUID(first["id"])).status = legacy_status
+        db.commit()
 
     reused = client.post(
         "/v1/interviews",
@@ -143,12 +153,21 @@ def test_chapter_interview_is_reused_and_can_resume(client):
     assert reused.json()["id"] == first["id"]
     assert reused.json()["rounds"][0]["answer_text"] == "这是第一次留下的长期回答。"
 
-    resumed = client.post(f"/v1/interviews/{first['id']}/resume")
-    assert resumed.status_code == 200
-    assert resumed.json()["status"] == "active"
-    assert resumed.json()["completed_at"] is None
-    assert len(resumed.json()["rounds"]) == 2
-    assert resumed.json()["rounds"][1]["answer_text"] is None
+    continuation = {
+        "answer_text": "1968年，我和母亲在泉州一起生活。",
+        "idempotency_key": "legacy-continuation-001",
+    }
+    result = client.post(f"/v1/interviews/{first['id']}/turns", json=continuation)
+    assert result.status_code == 202
+    assert result.json()["status"] == "completed"
+    repeated = client.post(f"/v1/interviews/{first['id']}/turns", json=continuation)
+    assert repeated.json()["id"] == result.json()["id"]
+    updated = client.get(f"/v1/interviews/{first['id']}").json()
+    assert len(updated["rounds"]) == 3
+    assert updated["rounds"][0]["answer_text"] == "这是第一次留下的长期回答。"
+    assert updated["rounds"][1]["question_text"] == ""
+    assert updated["rounds"][1]["answer_text"] == continuation["answer_text"]
+    assert updated["rounds"][2]["answer_text"] is None
 
     sessions = [
         item

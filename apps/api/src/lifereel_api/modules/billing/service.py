@@ -13,14 +13,21 @@ from lifereel_api.modules.identity.models import Tenant
 
 def prices() -> dict:
     settings = get_settings()
+    token_mode = settings.billing_text_mode == "tokens"
     return {
         "version": settings.billing_price_version,
         "video_cents_per_second": settings.billing_video_cents_per_second,
         "script_chapter_cents": settings.billing_script_chapter_cents,
         "welcome_bonus_cents": settings.billing_welcome_bonus_cents,
         "payment_enabled": False,
-        "script_billing_mode": "per_successful_chapter_update",
+        "script_billing_mode": settings.billing_text_mode,
+        "text_markup": "1.5" if token_mode else None,
     }
+
+
+def script_update_price() -> int:
+    settings = get_settings()
+    return 0 if settings.billing_text_mode == "tokens" else settings.billing_script_chapter_cents
 
 
 def available(wallet: Wallet) -> int:
@@ -34,12 +41,16 @@ def available(wallet: Wallet) -> int:
 
 def lock_wallet(db: Session, tenant_id: UUID) -> Wallet:
     # Lock the existing parent even on first access, avoiding competing welcome grants.
-    if db.scalar(select(Tenant.id).where(Tenant.id == tenant_id).with_for_update()) is None:
+    # NO KEY UPDATE serializes balances without blocking FK inserts in the business
+    # transaction while provider receipts are settled in an independent transaction.
+    if db.scalar(
+        select(Tenant.id).where(Tenant.id == tenant_id).with_for_update(key_share=True)
+    ) is None:
         raise ApiError(404, ErrorCode.WALLET_NOT_FOUND)
     wallet = db.scalar(
         select(Wallet)
         .where(Wallet.tenant_id == tenant_id)
-        .with_for_update()
+        .with_for_update(key_share=True)
         .execution_options(populate_existing=True)
     )
     if wallet is None:
@@ -76,6 +87,8 @@ def _event(
     bonus: int = 0,
     frozen: int = 0,
 ) -> None:
+    if charge.amount_cents == 0:
+        return
     db.add(
         LedgerEntry(
             tenant_id=wallet.tenant_id,
@@ -105,7 +118,13 @@ def reserve(
     if charge and charge.status in {"reserved", "settled"}:
         return charge
     # Retry uses the original quote, even if deployment prices have since changed.
-    amount = charge.amount_cents if charge else amount
+    if charge and kind == "script" and get_settings().billing_text_mode == "tokens":
+        # Released legacy requests must not charge both the old tariff and actual tokens.
+        amount = 0
+        charge.amount_cents = 0
+        charge.price_snapshot = {**charge.price_snapshot, **price}
+    else:
+        amount = charge.amount_cents if charge else amount
     if amount < 0:
         raise ValueError("Negative charge")
     if available(wallet) < amount:

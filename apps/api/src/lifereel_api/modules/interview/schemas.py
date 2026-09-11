@@ -74,7 +74,7 @@ class NextQuestionRead(BaseModel):
 
 
 class InterviewTurnCreate(BaseModel):
-    round_id: UUID
+    round_id: UUID | None = None
     answer_text: str | None = Field(default=None, max_length=50000)
     asset_ids: list[UUID] = Field(default_factory=list, max_length=12)
     idempotency_key: str = Field(min_length=8, max_length=180)

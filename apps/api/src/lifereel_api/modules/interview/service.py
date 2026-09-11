@@ -55,7 +55,11 @@ def _chapter_conflicts(
 
 
 def _llm_follow_up(
-    db: Session, tenant_id: UUID, session: InterviewSession, answered: list[InterviewRound]
+    db: Session,
+    tenant_id: UUID,
+    session: InterviewSession,
+    answered: list[InterviewRound],
+    assessment: dict | None = None,
 ) -> dict[str, str] | None:
     settings = get_settings()
     if settings.llm_provider == "mock":
@@ -111,6 +115,7 @@ def _llm_follow_up(
         "known_memories": [item.claim_text for item in memories],
         "open_conflicts": [item.description for item in conflicts],
         "answered_questions": [item.question_text for item in answered],
+        "chapter_assessment": assessment,
     }
     try:
         keywords = "、".join(profile["keywords"])
@@ -259,8 +264,6 @@ def add_round(
     db: Session, tenant_id: UUID, session_id: UUID, payload: InterviewRoundCreate
 ) -> InterviewRound:
     session = get_session(db, tenant_id, session_id)
-    if session.status not in {"active", "paused"}:
-        raise ApiError(status.HTTP_409_CONFLICT, ErrorCode.INTERVIEW_INACTIVE)
     next_index = (
         db.scalar(
             select(func.max(InterviewRound.round_index)).where(
@@ -275,7 +278,6 @@ def add_round(
         round_index=next_index,
         **payload.model_dump(),
     )
-    session.status = "active"
     session.round_count = next_index
     db.add(round_)
     db.commit()
@@ -321,7 +323,12 @@ def answer_round(
 
 
 @track_usage("question")
-def suggest_next_question(db: Session, tenant_id: UUID, session_id: UUID) -> dict[str, str]:
+def suggest_next_question(
+    db: Session,
+    tenant_id: UUID,
+    session_id: UUID,
+    assessment: dict | None = None,
+) -> dict[str, str]:
     session = get_session(db, tenant_id, session_id)
     answered = [item for item in session.rounds if item.answer_text]
     if not answered:
@@ -333,7 +340,7 @@ def suggest_next_question(db: Session, tenant_id: UUID, session_id: UUID) -> dic
             )
         )
         if known_memory:
-            llm_result = _llm_follow_up(db, tenant_id, session, answered)
+            llm_result = _llm_follow_up(db, tenant_id, session, answered, assessment)
             if llm_result:
                 return {
                     "question_text": llm_result["question"],
@@ -346,7 +353,7 @@ def suggest_next_question(db: Session, tenant_id: UUID, session_id: UUID) -> dic
             "question_source": "current_round",
         }
     if get_settings().llm_provider != "mock":
-        llm_result = _llm_follow_up(db, tenant_id, session, answered)
+        llm_result = _llm_follow_up(db, tenant_id, session, answered, assessment)
         return {
             "question_text": llm_result["question"],
             "question_intent": llm_result["intent"],
@@ -383,34 +390,3 @@ def suggest_next_question(db: Session, tenant_id: UUID, session_id: UUID) -> dic
         question = "如果回到当时的那个场景，您最先看到、听到或想到的是什么？"
         intent = "sensory_detail"
     return {"question_text": question, "question_intent": intent, "question_source": source}
-
-
-def set_session_status(
-    db: Session, tenant_id: UUID, session_id: UUID, new_status: str
-) -> InterviewSession:
-    session = get_session(db, tenant_id, session_id)
-    session.status = new_status
-    if new_status == "completed":
-        session.completed_at = datetime.now(UTC)
-    db.commit()
-    return get_session(db, tenant_id, session_id)
-
-
-def resume_session(db: Session, tenant_id: UUID, session_id: UUID) -> InterviewSession:
-    session = get_session(db, tenant_id, session_id)
-    session.status = "active"
-    session.completed_at = None
-    db.flush()
-
-    if session.rounds and session.rounds[-1].answer_text:
-        next_question = suggest_next_question(db, tenant_id, session_id)
-        add_round(
-            db,
-            tenant_id,
-            session_id,
-            InterviewRoundCreate(**next_question),
-        )
-    else:
-        db.commit()
-
-    return get_session(db, tenant_id, session_id)

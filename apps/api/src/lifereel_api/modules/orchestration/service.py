@@ -19,6 +19,7 @@ from lifereel_api.modules.interview.chapter_prompts import get_chapter_prompt_pr
 from lifereel_api.modules.interview.models import (
     Chapter,
     InterviewRound,
+    InterviewSession,
     InterviewTurnWorkflow,
 )
 from lifereel_api.modules.interview.schemas import InterviewRoundCreate, InterviewTurnCreate
@@ -117,6 +118,19 @@ def create_turn(
     session_id: UUID,
     payload: InterviewTurnCreate,
 ) -> InterviewTurnWorkflow:
+    # Serialize submissions so two tabs cannot create competing continuations.
+    if (
+        db.scalar(
+            select(InterviewSession.id)
+            .where(
+                InterviewSession.id == session_id,
+                InterviewSession.tenant_id == tenant_id,
+            )
+            .with_for_update()
+        )
+        is None
+    ):
+        raise ApiError(status.HTTP_404_NOT_FOUND, ErrorCode.INTERVIEW_NOT_FOUND)
     existing = db.scalar(
         select(InterviewTurnWorkflow).where(
             InterviewTurnWorkflow.tenant_id == tenant_id,
@@ -124,6 +138,8 @@ def create_turn(
         )
     )
     if existing is not None:
+        if existing.session_id != session_id:
+            raise ApiError(status.HTTP_409_CONFLICT, ErrorCode.INTERVIEW_TURN_STATE_INVALID)
         return existing
     if not (payload.answer_text or "").strip() and not payload.asset_ids:
         raise ApiError(
@@ -132,17 +148,43 @@ def create_turn(
         )
 
     session = interview_service.get_session(db, tenant_id, session_id)
-    if session.status != "active":
-        raise ApiError(status.HTTP_409_CONFLICT, ErrorCode.INTERVIEW_INACTIVE)
-    round_ = db.scalar(
-        select(InterviewRound).where(
-            InterviewRound.id == payload.round_id,
-            InterviewRound.session_id == session.id,
-            InterviewRound.tenant_id == tenant_id,
+    latest = db.scalar(
+        select(InterviewTurnWorkflow)
+        .where(
+            InterviewTurnWorkflow.session_id == session.id,
+            InterviewTurnWorkflow.tenant_id == tenant_id,
         )
+        .order_by(InterviewTurnWorkflow.created_at.desc())
+        .limit(1)
     )
-    if round_ is None:
-        raise ApiError(status.HTTP_404_NOT_FOUND, ErrorCode.INTERVIEW_ROUND_NOT_FOUND)
+    if latest and latest.status in {"queued", "running", "failed"}:
+        raise ApiError(status.HTTP_409_CONFLICT, ErrorCode.INTERVIEW_TURN_STATE_INVALID)
+    if payload.round_id is not None:
+        round_ = db.scalar(
+            select(InterviewRound).where(
+                InterviewRound.id == payload.round_id,
+                InterviewRound.session_id == session.id,
+                InterviewRound.tenant_id == tenant_id,
+            )
+        )
+        if round_ is None:
+            raise ApiError(status.HTTP_404_NOT_FOUND, ErrorCode.INTERVIEW_ROUND_NOT_FOUND)
+    else:
+        current = session.rounds[-1] if session.rounds else None
+        if current and not current.answer_text:
+            round_ = current
+        else:
+            # A continuation is a user message, not a fabricated AI question.
+            round_ = InterviewRound(
+                tenant_id=tenant_id,
+                session_id=session.id,
+                round_index=(current.round_index if current else 0) + 1,
+                question_text="",
+                question_source="user_continuation",
+            )
+            db.add(round_)
+            db.flush()
+            session.round_count = round_.round_index
     if round_.answer_text:
         raise ApiError(status.HTTP_409_CONFLICT, ErrorCode.INTERVIEW_TURN_STATE_INVALID)
 
@@ -231,16 +273,20 @@ def _rule_missing_topics(
     return list(dict.fromkeys([*missing_required, *missing_generic]))[:4]
 
 
-def _missing_topics(
+def _assess_chapter(
     db: Session,
     tenant_id: UUID,
     claims: list[MemoryClaim],
     rounds: list[InterviewRound],
     chapter: Chapter | None,
-) -> list[str]:
+) -> dict:
     settings = get_settings()
     if settings.llm_provider == "mock":
-        return _rule_missing_topics(claims, rounds, chapter)
+        return {
+            "missing_topics": _rule_missing_topics(claims, rounds, chapter),
+            "ready_for_script": bool(claims),
+            "reason": "mock assessment",
+        }
     if settings.llm_provider != "openai-compatible":
         raise ApiError(
             status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -284,8 +330,12 @@ def _missing_topics(
             "你是中文口述史采访规划师。请根据当前章节画像、已确认记忆和完整对话，"
             "语义判断当前章节还缺少哪些最重要的信息。只输出 JSON，missing_topics 必须是"
             "字符串数组，最多 4 项；优先使用 allowed_topics 中的原文，不得根据关键词匹配"
-            "或字数猜测，不得把其他章节内容当作当前章节缺口。格式："
-            '{"missing_topics":["..."]}。',
+            "或字数猜测，不得把其他章节内容当作当前章节缺口。还要语义判断现有证据能否"
+            "支撑一段不虚构事实、包含旁白和画面描述的本章短剧本。只提供姓名、问候、"
+            "拒绝回答或离题内容时，ready_for_script 为 false，继续采访，不强行编剧。"
+            "已有具体生活细节可成稿时可以为 true，不要求所有主题完整，也不按记忆条数判断。"
+            "reason 简要说明依据。格式："
+            '{"missing_topics":["..."],"ready_for_script":false,"reason":"..."}。',
             json.dumps({**context, "allowed_topics": allowed_topics}, ensure_ascii=False),
         )
     except json.JSONDecodeError as exc:
@@ -324,7 +374,15 @@ def _missing_topics(
             status.HTTP_502_BAD_GATEWAY,
             ErrorCode.INTERVIEW_LLM_RESPONSE_INVALID,
         )
-    return topics
+    ready = result.get("ready_for_script")
+    reason = result.get("reason")
+    if type(ready) is not bool or not isinstance(reason, str) or not reason.strip():
+        raise ApiError(502, ErrorCode.INTERVIEW_LLM_RESPONSE_INVALID)
+    return {"missing_topics": topics, "ready_for_script": ready, "reason": reason[:500]}
+
+
+def _missing_topics(db, tenant_id, claims, rounds, chapter) -> list[str]:
+    return _assess_chapter(db, tenant_id, claims, rounds, chapter)["missing_topics"]
 
 
 def _topic_terms(topic: str, chapter_keywords: list[str]) -> list[str]:
@@ -440,7 +498,8 @@ def execute_turn(db: Session, tenant_id: UUID, workflow_id: UUID) -> InterviewTu
         new_claims = _new_claims_for_workflow(db, tenant_id, workflow)
         chapter = db.get(Chapter, session.chapter_id) if session.chapter_id else None
         profile = get_chapter_prompt_profile(chapter)
-        missing = _missing_topics(db, tenant_id, chapter_claims, session.rounds, chapter)
+        assessment = _assess_chapter(db, tenant_id, chapter_claims, session.rounds, chapter)
+        missing = assessment["missing_topics"]
         brief = {
             "chapter_id": str(session.chapter_id) if session.chapter_id else None,
             "chapter_title": chapter.title if chapter else "自由采访",
@@ -459,11 +518,12 @@ def execute_turn(db: Session, tenant_id: UUID, workflow_id: UUID) -> InterviewTu
             "tone": "克制、第一人称、自然口语",
             "missing_topics": missing,
             "update_mode": "replace_current_chapter",
+            "assessment": assessment,
         }
 
         project = None
         scenes = []
-        if chapter_claims:
+        if chapter_claims and assessment["ready_for_script"]:
             project, scenes, _ = script_service.generate_draft(
                 db,
                 tenant_id,
@@ -474,7 +534,12 @@ def execute_turn(db: Session, tenant_id: UUID, workflow_id: UUID) -> InterviewTu
             billing.transition(db, tenant_id, billing_key, False)
             db.commit()
 
-        next_question = interview_service.suggest_next_question(db, tenant_id, session.id)
+        next_question = interview_service.suggest_next_question(
+            db,
+            tenant_id,
+            session.id,
+            assessment=assessment,
+        )
         interview_service.add_round(
             db,
             tenant_id,

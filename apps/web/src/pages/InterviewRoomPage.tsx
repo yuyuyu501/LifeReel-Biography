@@ -2,6 +2,7 @@ import type { SourceAsset } from "@lifereel/contracts";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ScriptPriceNotice } from "../components/ScriptPriceNotice";
 import {
+  ArrowUp,
   BookOpenText,
   Check,
   CheckCircle2,
@@ -10,16 +11,14 @@ import {
   FileText,
   FileVideo,
   LoaderCircle,
-  MessageCircleMore,
   Mic2,
   Paperclip,
   RefreshCw,
-  Send,
   Square,
   Trash2,
 } from "lucide-react";
 import { type ChangeEvent, type FormEvent, useMemo, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useParams } from "react-router-dom";
 import { api } from "../api/client";
 import { ApiError, errorMessage } from "../api/errors";
 import { ErrorNotice, QueryState } from "../components/QueryState";
@@ -30,7 +29,6 @@ import {
   type EvidenceKind,
 } from "../evidenceLimits";
 import { useAudioRecorder } from "../hooks/useAudioRecorder";
-import { statusLabel } from "../statusLabels";
 
 const kindIcon = {
   audio: FileAudio,
@@ -60,7 +58,6 @@ function Attachment({ asset }: { asset: SourceAsset }) {
 
 export function InterviewRoomPage() {
   const { id = "" } = useParams();
-  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const workspace = useQuery({
     queryKey: ["interview-workspace", id],
@@ -91,7 +88,7 @@ export function InterviewRoomPage() {
 
   const submitTurn = useMutation({
     mutationFn: async () => {
-      if (!session || !current) throw new ApiError("INTERVIEW_ROUND_NOT_FOUND", 404);
+      if (!session) throw new ApiError("INTERVIEW_NOT_FOUND", 404);
       const pendingFiles = [...files];
       if (recorder.audioBlob) {
         const extension = recorder.audioBlob.type.includes("ogg") ? "ogg" : "webm";
@@ -114,7 +111,7 @@ export function InterviewRoomPage() {
         }));
       }
       return api.createInterviewTurn(id, {
-        round_id: current.id,
+        round_id: current && !current.answer_text ? current.id : undefined,
         answer_text: answer.trim() || undefined,
         asset_ids: assets.map((item) => item.id),
         idempotency_key: crypto.randomUUID(),
@@ -130,27 +127,6 @@ export function InterviewRoomPage() {
     },
   });
 
-  const complete = useMutation({
-    mutationFn: () => api.completeInterview(id),
-    onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ["interviews"] });
-      navigate("/interviews");
-    },
-  });
-  const pause = useMutation({
-    mutationFn: () => api.pauseInterview(id),
-    onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ["interviews"] });
-      navigate("/interviews");
-    },
-  });
-  const resume = useMutation({
-    mutationFn: () => api.resumeInterview(id),
-    onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ["interview-workspace", id] });
-      await queryClient.invalidateQueries({ queryKey: ["interviews"] });
-    },
-  });
   const retryWorkflow = useMutation({
     mutationFn: (jobId: string) => api.retryJob(jobId),
     onSuccess: async () => {
@@ -181,6 +157,8 @@ export function InterviewRoomPage() {
 
   function onSubmit(event: FormEvent) {
     event.preventDefault();
+    if (recorder.isRecording || submitTurn.isPending || workspace.data?.latest_workflow &&
+      ["queued", "running", "failed"].includes(workspace.data.latest_workflow.status)) return;
     if (answer.trim() || recorder.audioBlob || files.length) submitTurn.mutate();
   }
 
@@ -204,31 +182,6 @@ export function InterviewRoomPage() {
 
   return (
     <div className="page interview-room interview-workspace-page">
-      <header className="interview-topbar">
-        <div>
-          <span className="live-dot" />
-          <span>{chapter?.title ?? "自由采访"}</span>
-          <small>{statusLabel(session.status)}</small>
-        </div>
-        <div className="topbar-actions">
-          {session.status === "active" && (
-            <button className="button secondary small" disabled={pause.isPending} onClick={() => pause.mutate()}>
-              <Square size={15} /> 暂停采访
-            </button>
-          )}
-          {session.status !== "active" && (
-            <button className="button secondary small" disabled={resume.isPending} onClick={() => resume.mutate()}>
-              <MessageCircleMore size={15} /> {resume.isPending ? "正在继续" : "继续采访"}
-            </button>
-          )}
-          {session.status !== "completed" && (
-            <button className="button secondary small" disabled={complete.isPending} onClick={() => complete.mutate()}>
-              <Check size={15} /> 温暖结束
-            </button>
-          )}
-        </div>
-      </header>
-
       <div className="interview-mobile-tabs" role="tablist" aria-label="采访工作台">
         <button role="tab" aria-selected={mobilePane === "conversation"} className={mobilePane === "conversation" ? "active" : ""} onClick={() => setMobilePane("conversation")}>采访</button>
         <button role="tab" aria-selected={mobilePane === "script"} className={mobilePane === "script" ? "active" : ""} onClick={() => setMobilePane("script")}>
@@ -236,7 +189,7 @@ export function InterviewRoomPage() {
         </button>
       </div>
 
-      <ErrorNotice error={submitTurn.error || complete.error || pause.error || retryWorkflow.error || workflowError} />
+      <ErrorNotice error={submitTurn.error || retryWorkflow.error || workflowError} />
       <ScriptPriceNotice />
       {workflowError && workflow?.job_id && (
         <div className="interview-retry-action">
@@ -253,13 +206,13 @@ export function InterviewRoomPage() {
       <main className="live-interview-layout">
         <section className={`conversation-pane ${mobilePane !== "conversation" ? "mobile-hidden" : ""}`} aria-label="采访记录">
           <div className="pane-heading">
-            <div><span>INTERVIEW</span><h1>采访记录</h1></div>
+            <div><span>采访记录</span><h1>{chapter?.title ?? "自由采访"}</h1></div>
             <small>{visibleRounds.filter((item) => item.answer_text).length} 次回答</small>
           </div>
           <div className="conversation">
             {visibleRounds.map((round) => (
               <div key={round.id} className="conversation-turn">
-                <div className="question-bubble"><span className="ai-avatar">岁</span><p>{round.question_text}</p></div>
+                {round.question_text && <div className="question-bubble"><span className="ai-avatar">岁</span><p>{round.question_text}</p></div>}
                 {round.answer_text && <div className="answer-bubble"><p>{round.answer_text}</p><Check size={15} /></div>}
               </div>
             ))}
@@ -271,7 +224,6 @@ export function InterviewRoomPage() {
             )}
           </div>
 
-          {session.status === "active" && current && !current.answer_text && (
             <form className="answer-composer" onSubmit={onSubmit}>
               {recorder.audioUrl && (
                 <div className="recording-preview">
@@ -293,27 +245,22 @@ export function InterviewRoomPage() {
                   })}
                 </div>
               )}
-              <label className="answer-label" htmlFor="interview-answer">
-                <strong>说说这段往事</strong>
-                <span>可以输入文字、录下原声，或添加相关的照片、音视频和文档。</span>
-              </label>
-              <textarea id="interview-answer" value={answer} onChange={(event) => setAnswer(event.target.value)} placeholder="想到哪里就说到哪里……" rows={4} />
+              <label className="sr-only" htmlFor="interview-answer">说说这段往事</label>
+              <textarea id="interview-answer" value={answer} onChange={(event) => setAnswer(event.target.value)} placeholder="说说这段往事……" rows={3} disabled={submitTurn.isPending} />
               <div className="composer-actions">
-                <label className="button secondary small attachment-button">
+                <label className="composer-tool attachment-button" title={EVIDENCE_LIMIT_SUMMARY}>
                   <Paperclip size={17} /> 添加素材
-                  <input className="sr-only" type="file" multiple accept="image/*,audio/*,video/*,.pdf,.txt,.md" onChange={selectFiles} />
+                  <input className="sr-only" type="file" multiple accept="image/*,audio/*,video/*,.pdf,.txt,.md" onChange={selectFiles} disabled={submitTurn.isPending} />
                 </label>
-                <button type="button" className={`button secondary small ${recorder.isRecording ? "recording" : ""}`} onClick={() => recorder.isRecording ? recorder.stop() : recorder.start()}>
+                <button type="button" className={`composer-tool ${recorder.isRecording ? "recording" : ""}`} disabled={submitTurn.isPending} aria-pressed={recorder.isRecording} onClick={() => recorder.isRecording ? recorder.stop() : recorder.start()}>
                   {recorder.isRecording ? <><Square size={16} /> 停止录音</> : <><Mic2 size={17} /> {recorder.audioUrl ? "重新录制" : "录制原声"}</>}
                 </button>
-                <button className="button primary small" disabled={(!answer.trim() && !recorder.audioBlob && !files.length) || submitTurn.isPending || workflowRunning}>
-                  {submitTurn.isPending || workflowRunning ? "正在整理" : "发送并更新剧本"} <Send size={16} />
+                <button className="composer-send" aria-label={submitTurn.isPending || workflowRunning ? "正在整理" : "发送并更新剧本"} title={recorder.isRecording ? "请先停止录音" : submitTurn.isPending || workflowRunning ? "正在整理" : "发送并更新剧本"} disabled={(!answer.trim() && !recorder.audioBlob && !files.length) || recorder.isRecording || submitTurn.isPending || workflowRunning || workflow?.status === "failed"}>
+                  {submitTurn.isPending || workflowRunning ? <LoaderCircle size={20} className="composer-spinner" /> : <ArrowUp size={21} />}
                 </button>
               </div>
-              <small className="composer-limit">{EVIDENCE_LIMIT_SUMMARY}</small>
               {(fileError || recorder.error) && <p className="form-error">{fileError || recorder.error}</p>}
             </form>
-          )}
         </section>
 
         <aside className="workflow-status-rail" aria-label="实时整理状态">

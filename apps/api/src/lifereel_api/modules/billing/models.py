@@ -5,6 +5,7 @@ from uuid import UUID
 
 from sqlalchemy import (
     JSON,
+    BigInteger,
     CheckConstraint,
     DateTime,
     ForeignKey,
@@ -36,6 +37,7 @@ class Wallet(TimestampMixin, Base):
     bonus_cents: Mapped[int] = mapped_column(Integer, default=0)
     frozen_paid_cents: Mapped[int] = mapped_column(Integer, default=0)
     frozen_bonus_cents: Mapped[int] = mapped_column(Integer, default=0)
+    token_remainder_nano: Mapped[int] = mapped_column(BigInteger, default=0)
 
 
 class Charge(UUIDPrimaryKeyMixin, TimestampMixin, Base):
@@ -87,6 +89,7 @@ class UsageEvent(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     duration_ms: Mapped[int] = mapped_column(Integer)
     provider_request_id: Mapped[str | None] = mapped_column(String(200))
     error_code: Mapped[str | None] = mapped_column(String(80))
+    metering: Mapped[dict] = mapped_column(JSON, default=dict)
 
 
 class RechargeOrder(UUIDPrimaryKeyMixin, TimestampMixin, Base):

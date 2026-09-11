@@ -132,7 +132,7 @@ def test_seedance_provider_requires_api_key(monkeypatch) -> None:
         VolcengineSeedanceProvider,
     )
 
-    monkeypatch.delenv("VOLCENGINE_API_KEY", raising=False)
+    monkeypatch.setenv("VOLCENGINE_API_KEY", "")
     get_settings.cache_clear()
     with pytest.raises(VideoProviderError, match="VIDEO_PROVIDER_CONFIGURATION_INCOMPLETE"):
         VolcengineSeedanceProvider()

@@ -11,7 +11,7 @@ export function HomePage() {
   const evidence = useQuery({ queryKey: ["evidence"], queryFn: () => api.listEvidence() });
   const scripts = useQuery({ queryKey: ["scripts"], queryFn: api.listScripts });
   const overviewQueries = [people, interviews, evidence, scripts];
-  const activeInterview = interviews.data?.find((session) => session.status === "active" || session.status === "paused");
+  const activeInterview = interviews.data?.[0];
   const latestInterview = interviews.data?.[0];
   const nextAction = activeInterview
     ? { to: `/interviews/${activeInterview.id}`, label: "继续上次采访", description: `已记录 ${activeInterview.round_count} 轮对话，原有内容均已保存。`, icon: Mic2 }

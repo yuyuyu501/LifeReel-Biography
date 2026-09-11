@@ -1,4 +1,46 @@
 from io import BytesIO
+from uuid import UUID
+
+import pytest
+
+
+def test_insufficient_information_continues_interview_without_generating(client, monkeypatch):
+    from lifereel_api.modules.orchestration import service
+    from lifereel_api.modules.script import service as scripts
+
+    _, _, session = _start(client)
+    monkeypatch.setattr(
+        service,
+        "_assess_chapter",
+        lambda *args: {
+            "missing_topics": ["地点"],
+            "ready_for_script": False,
+            "reason": "仅有称呼",
+        },
+    )
+
+    def unexpected(*args, **kwargs):
+        raise AssertionError("Insufficient evidence must not trigger generation")
+
+    monkeypatch.setattr(scripts, "generate_draft", unexpected)
+    response = client.post(
+        f"/v1/interviews/{session['id']}/turns",
+        json={
+            "round_id": session["rounds"][-1]["id"],
+            "answer_text": "叫我小林就好。",
+            "idempotency_key": "not-ready-turn-001",
+        },
+    )
+    assert response.status_code == 202
+    workflow = response.json()
+    assert workflow["status"] == "completed"
+    assert workflow["error_code"] is None
+    assert workflow["next_question"]
+    assert workflow["script_project_id"] is None
+    assert workflow["script_brief"]["assessment"]["ready_for_script"] is False
+    workspace = client.get(f"/v1/interviews/{session['id']}/workspace").json()
+    assert len(workspace["session"]["rounds"]) == 2
+    assert workspace["session"]["rounds"][0]["answer_text"] == "叫我小林就好。"
 
 
 def _start(client, name="实时采访测试"):
@@ -9,6 +51,94 @@ def _start(client, name="实时采访测试"):
         json={"subject_id": person["id"], "chapter_id": chapter["id"]},
     ).json()
     return person, chapter, session
+
+
+@pytest.mark.parametrize("legacy_status", ["paused", "completed"])
+def test_legacy_status_does_not_block_answering_pending_question(client, legacy_status):
+    from lifereel_api.core.database import SessionLocal
+    from lifereel_api.modules.interview.models import InterviewSession
+
+    _, _, session = _start(client)
+    with SessionLocal() as db:
+        db.get(InterviewSession, UUID(session["id"])).status = legacy_status
+        db.commit()
+    response = client.post(
+        f"/v1/interviews/{session['id']}/turns",
+        json={
+            "answer_text": "小时候母亲教我在泉州的家里做饭。",
+            "idempotency_key": "legacy-open-conversation",
+        },
+    )
+    assert response.status_code == 202
+    assert response.json()["round_id"] == session["rounds"][-1]["id"]
+    assert response.json()["status"] == "completed"
+
+
+def test_busy_turn_keeps_original_answer_and_does_not_create_extra_round(client, monkeypatch):
+    from lifereel_api.core.config import get_settings
+    from lifereel_api.modules.jobs import service as jobs
+
+    _, _, session = _start(client)
+    monkeypatch.setattr(get_settings(), "execute_mock_jobs_inline", False)
+    monkeypatch.setattr(jobs, "enqueue", lambda job: None)
+    response = client.post(
+        f"/v1/interviews/{session['id']}/turns",
+        json={
+            "round_id": session["rounds"][-1]["id"],
+            "answer_text": "第一段回忆。",
+            "idempotency_key": "first-queued-message",
+        },
+    )
+    assert response.status_code == 202
+    competing = client.post(
+        f"/v1/interviews/{session['id']}/turns",
+        json={
+            "answer_text": "另一窗口的补充。",
+            "idempotency_key": "second-queued-message",
+        },
+    )
+    assert competing.status_code == 409
+    after = client.get(f"/v1/interviews/{session['id']}").json()
+    assert len(after["rounds"]) == 1
+    assert after["rounds"][0]["answer_text"] == "第一段回忆。"
+
+
+def test_not_ready_turn_retains_previous_chapter_script(client, monkeypatch):
+    from lifereel_api.modules.orchestration import service
+
+    _, _, session = _start(client)
+    response = client.post(
+        f"/v1/interviews/{session['id']}/turns",
+        json={
+            "round_id": session["rounds"][-1]["id"],
+            "answer_text": "1968年，我和母亲在泉州的家里一起做饭。",
+            "idempotency_key": "ready-original-turn",
+        },
+    )
+    assert response.status_code == 202
+    before = client.get(f"/v1/interviews/{session['id']}/workspace").json()
+    monkeypatch.setattr(
+        service,
+        "_assess_chapter",
+        lambda *args: {
+            "missing_topics": ["事情经过"],
+            "ready_for_script": False,
+            "reason": "需要澄清",
+        },
+    )
+    response = client.post(
+        f"/v1/interviews/{session['id']}/turns",
+        json={
+            "round_id": before["session"]["rounds"][-1]["id"],
+            "answer_text": "这部分我得再想想。",
+            "idempotency_key": "not-ready-following-turn",
+        },
+    )
+    assert response.status_code == 202
+    assert response.json()["status"] == "completed"
+    after = client.get(f"/v1/interviews/{session['id']}/workspace").json()
+    assert after["script"] == before["script"]
+    assert len(after["session"]["rounds"]) == 3
 
 
 def test_text_turn_updates_chapter_script_and_creates_next_question(client) -> None:
