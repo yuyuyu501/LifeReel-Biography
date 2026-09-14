@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import mimetypes
 import shutil
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -68,11 +69,9 @@ class LocalPrivateStorage:
 
 class S3PrivateStorage:
     def signed_url(
-        self, storage_key: str, *, expires_in: int = 3600, mime_type: str | None = None,
+        self, storage_key: str, *, expires_in: int = 3600,
     ) -> str:
         params = {"Bucket": self.bucket, "Key": storage_key}
-        if mime_type:
-            params.update(ResponseContentType=mime_type, ResponseContentDisposition="inline")
         return self.client.generate_presigned_url(
             "get_object", Params=params, ExpiresIn=expires_in,
         )
@@ -104,6 +103,9 @@ class S3PrivateStorage:
                 {"ServerSideEncryption": settings.s3_server_side_encryption}
                 if settings.s3_server_side_encryption
                 else {}
+            )
+            options["ContentType"] = (
+                mimetypes.guess_type(storage_key)[0] or "application/octet-stream"
             )
             self.client.upload_fileobj(
                 content,
@@ -155,11 +157,14 @@ def media_redirect(storage_key: str, mime_type: str):
     from fastapi.responses import RedirectResponse
 
     settings = get_settings()
-    if settings.storage_backend != "s3" or not settings.media_direct_read:
+    if (
+        settings.storage_backend != "s3" or not settings.media_direct_read
+        or not mime_type.startswith(("image/", "audio/", "video/"))
+    ):
         return None
     return RedirectResponse(
         private_storage().signed_url(
-            storage_key, expires_in=settings.media_url_seconds, mime_type=mime_type,
+            storage_key, expires_in=settings.media_url_seconds,
         ),
         status_code=307,
         headers={"Cache-Control": "private, no-store", "Referrer-Policy": "no-referrer"},

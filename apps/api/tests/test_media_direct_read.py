@@ -8,8 +8,8 @@ def test_evidence_redirect_is_tenant_scoped_and_does_not_stream(client, monkeypa
     person = client.post("/v1/persons", json={"display_name": "直读测试"}).json()
     asset = client.post(
         "/v1/evidence/assets",
-        data={"subject_id": person["id"], "kind": "document"},
-        files={"file": ("test.txt", b"test", "text/plain")},
+        data={"subject_id": person["id"], "kind": "audio"},
+        files={"file": ("test.ogg", b"OggSsynthetic-audio", "audio/ogg")},
     ).json()
     monkeypatch.setattr(get_settings(), "storage_backend", "s3")
     signed = []
@@ -22,7 +22,7 @@ def test_evidence_redirect_is_tenant_scoped_and_does_not_stream(client, monkeypa
     response = client.get(f"/v1/evidence/assets/{asset['id']}/content", follow_redirects=False)
     assert response.status_code == 307
     assert response.headers["cache-control"] == "private, no-store"
-    assert signed[0][1] == {"expires_in": 900, "mime_type": "text/plain"}
+    assert signed[0][1] == {"expires_in": 900}
     response = client.get(
         f"/v1/evidence/assets/{asset['id']}/content",
         headers={"X-Tenant-ID": str(uuid4())},
@@ -32,7 +32,7 @@ def test_evidence_redirect_is_tenant_scoped_and_does_not_stream(client, monkeypa
     assert len(signed) == 1
 
 
-def test_storage_signs_media_type_and_short_expiry():
+def test_storage_signs_short_expiry_without_unsupported_oss_overrides():
     calls = []
 
     class Client:
@@ -43,10 +43,34 @@ def test_storage_signs_media_type_and_short_expiry():
     storage = object.__new__(S3PrivateStorage)
     storage.client = Client()
     storage.bucket = "private"
-    storage.signed_url("LifeReel-Biography/test.mp4", expires_in=900, mime_type="video/mp4")
+    storage.signed_url("LifeReel-Biography/test.mp4", expires_in=900)
     assert calls[0][1]["ExpiresIn"] == 900
-    assert calls[0][1]["Params"]["ResponseContentType"] == "video/mp4"
-    assert calls[0][1]["Params"]["ResponseContentDisposition"] == "inline"
+    assert calls[0][1]["Params"] == {"Bucket": "private", "Key": "LifeReel-Biography/test.mp4"}
+
+
+def test_documents_keep_inline_site_preview(client, monkeypatch):
+    from lifereel_api.modules.evidence.storage import media_redirect
+    monkeypatch.setattr(get_settings(), "storage_backend", "s3")
+    assert media_redirect("test.pdf", "application/pdf") is None
+    assert media_redirect("test.txt", "text/plain") is None
+
+
+def test_new_s3_videos_store_correct_content_type():
+    from io import BytesIO
+    from types import SimpleNamespace
+
+    from botocore.exceptions import ClientError
+    calls = []
+    class Client:
+        exceptions = SimpleNamespace(ClientError=ClientError)
+        def head_object(self, **kwargs):
+            raise ClientError({"Error": {"Code": "404"}}, "HeadObject")
+        def upload_fileobj(self, *args, **kwargs):
+            calls.append(kwargs)
+    storage = object.__new__(S3PrivateStorage)
+    storage.client, storage.bucket = Client(), "private"
+    storage.put_file("LifeReel-Biography/generated/test.mp4", BytesIO(b"test"))
+    assert calls[0]["ExtraArgs"]["ContentType"] == "video/mp4"
 
 
 def test_streaming_private_file_does_not_read_whole_object(monkeypatch):
