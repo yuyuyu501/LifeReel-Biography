@@ -238,12 +238,17 @@ def test_followup_retry_resumes_without_repeating_completed_ai_work(client, monk
     monkeypatch.setattr(memories, "compile_memories", fail)
     monkeypatch.setattr(service, "_assess_chapter", fail)
     workflow_id = workspace["latest_workflow"]["id"]
+    monkeypatch.setattr(service.memory_recovery, "retry_after", lambda _: 0)
     result = client.post(f"/v1/internal/interview-turns/{workflow_id}/execute")
     assert result.status_code == 200
     assert result.json()["status"] == "completed"
     after = client.get(f"/v1/interviews/{session['id']}/workspace").json()
     assert after["script"] == workspace["script"]
-    assert after["latest_workflow"]["script_brief"] == checkpoint
+    final_brief = after["latest_workflow"]["script_brief"]
+    assert {k: v for k, v in final_brief.items() if k != "memory_recovery"} == {
+        k: v for k, v in checkpoint.items() if k != "memory_recovery"
+    }
+    assert final_brief["memory_recovery"]["runs"] == 2
     assert len(after["session"]["rounds"]) == 2
     assert after["latest_workflow"]["error_code"] is None
     assert client.get(f"/v1/memories?subject_id={session['subject_id']}").json() == before_claims
@@ -378,6 +383,7 @@ def test_latest_failed_turn_can_retry_but_blocks_competing_submission(client, mo
     )
     assert response.status_code == 502
     failed = client.get(f"/v1/interviews/{session['id']}/workspace").json()["latest_workflow"]
+    monkeypatch.setattr(service.memory_recovery, "retry_after", lambda _: 0)
     monkeypatch.setattr(jobs, "enqueue", lambda job: None)
     retry = client.post(f"/v1/jobs/{failed['job_id']}/retry")
     assert retry.status_code == 200

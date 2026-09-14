@@ -144,6 +144,12 @@ def _retry_job(
             )
             if latest_id != workflow.id or job.status not in {"failed", "cancelled"}:
                 raise ApiError(status.HTTP_409_CONFLICT, ErrorCode.JOB_RETRY_NOT_ALLOWED)
+            from lifereel_api.modules.memory import recovery
+
+            if not recovery.allowed(workflow):
+                raise ApiError(409, ErrorCode.MEMORY_RETRY_LIMIT_REACHED)
+            if recovery.retry_after(workflow):
+                raise ApiError(409, ErrorCode.MEMORY_RETRY_COOLDOWN)
             workflow.status = "queued"
             workflow.error_code = None
     job.status = "queued"

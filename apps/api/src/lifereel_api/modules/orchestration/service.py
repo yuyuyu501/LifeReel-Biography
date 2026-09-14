@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 from datetime import UTC, datetime
 from uuid import UUID
@@ -24,6 +25,7 @@ from lifereel_api.modules.interview.models import (
 )
 from lifereel_api.modules.interview.schemas import InterviewRoundCreate, InterviewTurnCreate
 from lifereel_api.modules.jobs import service as job_service
+from lifereel_api.modules.memory import recovery as memory_recovery
 from lifereel_api.modules.memory import service as memory_service
 from lifereel_api.modules.memory.models import MemoryClaim
 from lifereel_api.modules.memory.schemas import MemoryCompileRequest
@@ -462,6 +464,17 @@ def _complete_turn_follow_up(
 
 @track_usage("interview")
 def execute_turn(db: Session, tenant_id: UUID, workflow_id: UUID) -> InterviewTurnWorkflow:
+    from lifereel_api.modules.production.locking import execution_lock
+
+    workflow = _get_workflow(db, tenant_id, workflow_id)
+    with execution_lock(db, workflow.session_id) as acquired:
+        if not acquired:
+            # Duplicate queue delivery must not mark the active execution failed.
+            return workflow
+        return _execute_turn(db, tenant_id, workflow_id)
+
+
+def _execute_turn(db: Session, tenant_id: UUID, workflow_id: UUID) -> InterviewTurnWorkflow:
     workflow = _get_workflow(db, tenant_id, workflow_id)
     if workflow.status == "completed":
         return workflow
@@ -487,6 +500,8 @@ def execute_turn(db: Session, tenant_id: UUID, workflow_id: UUID) -> InterviewTu
         return workflow
     if workflow.status == "running":
         raise ApiError(status.HTTP_409_CONFLICT, ErrorCode.INTERVIEW_TURN_STATE_INVALID)
+    if workflow.status == "failed" and memory_recovery.retry_after(workflow):
+        raise ApiError(409, ErrorCode.MEMORY_RETRY_COOLDOWN)
 
     workflow.status = "running"
     workflow.error_code = None
@@ -498,6 +513,7 @@ def execute_turn(db: Session, tenant_id: UUID, workflow_id: UUID) -> InterviewTu
 
     billing_key = None
     try:
+        memory_recovery.begin(db, workflow)
         if workflow.script_brief.get("followup_ready") is True:
             return _complete_turn_follow_up(db, tenant_id, workflow)
         session = interview_service.get_session(db, tenant_id, workflow.session_id)
@@ -564,7 +580,19 @@ def execute_turn(db: Session, tenant_id: UUID, workflow_id: UUID) -> InterviewTu
         new_claims = _new_claims_for_workflow(db, tenant_id, workflow)
         chapter = db.get(Chapter, session.chapter_id) if session.chapter_id else None
         profile = get_chapter_prompt_profile(chapter)
-        assessment = _assess_chapter(db, tenant_id, chapter_claims, session.rounds, chapter)
+        assessment_key = hashlib.sha256(json.dumps([
+            memory_recovery.fingerprint(chapter_claims), profile,
+            [(r.question_text, r.answer_text) for r in session.rounds],
+        ], ensure_ascii=False).encode()).hexdigest()
+        saved_assessment = workflow.script_brief.get("assessment_checkpoint", {})
+        if saved_assessment.get("key") == assessment_key:
+            assessment = saved_assessment["result"]
+        else:
+            assessment = _assess_chapter(db, tenant_id, chapter_claims, session.rounds, chapter)
+            workflow.script_brief = {**workflow.script_brief, "assessment_checkpoint": {
+                "key": assessment_key, "result": assessment,
+            }}
+            db.commit()
         missing = assessment["missing_topics"]
         brief = {
             "chapter_id": str(session.chapter_id) if session.chapter_id else None,
@@ -606,7 +634,7 @@ def execute_turn(db: Session, tenant_id: UUID, workflow_id: UUID) -> InterviewTu
         workflow.script_project_id = project.id if project else None
         workflow.script_scene_ids = [str(item.id) for item in scenes]
         workflow.missing_topics = missing
-        workflow.script_brief = {**brief, "followup_ready": True}
+        workflow.script_brief = {**workflow.script_brief, **brief, "followup_ready": True}
         db.commit()
         return _complete_turn_follow_up(db, tenant_id, workflow)
     except ApiError as exc:
@@ -616,6 +644,7 @@ def execute_turn(db: Session, tenant_id: UUID, workflow_id: UUID) -> InterviewTu
         workflow = _get_workflow(db, tenant_id, workflow_id)
         workflow.status = "failed"
         workflow.error_code = exc.code.value
+        memory_recovery.failure(db, workflow, exc)
         db.commit()
         if workflow.job_id:
             job_service.fail_job(db, tenant_id, workflow.job_id, exc.code.value, None)

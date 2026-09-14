@@ -129,3 +129,15 @@ class InterviewTurnWorkflow(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     script_brief: Mapped[dict] = mapped_column(JSON, default=dict)
     error_code: Mapped[str | None] = mapped_column(String(120), nullable=True)
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    @property
+    def retry_allowed(self) -> bool:
+        from lifereel_api.modules.memory.recovery import allowed
+
+        return allowed(self)
+
+    @property
+    def retry_after_seconds(self) -> int:
+        from lifereel_api.modules.memory.recovery import retry_after
+
+        return retry_after(self) if self.status == "failed" else 0

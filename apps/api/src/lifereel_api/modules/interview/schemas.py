@@ -99,6 +99,8 @@ class InterviewTurnWorkflowRead(BaseModel):
     missing_topics: list[str]
     script_brief: dict
     error_code: str | None
+    retry_allowed: bool = True
+    retry_after_seconds: int = 0
     created_at: datetime
     updated_at: datetime
     completed_at: datetime | None

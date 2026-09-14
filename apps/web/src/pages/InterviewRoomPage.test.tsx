@@ -46,12 +46,16 @@ function response(payload: unknown) {
 let interviewStatus = "completed";
 let interviewRounds = rounds;
 let workflowStatus = "completed";
+let retryAllowed = true;
+let retryAfter = 0;
 
 beforeEach(() => {
   recorder.isRecording = false;
   interviewStatus = "completed";
   interviewRounds = rounds;
   workflowStatus = "completed";
+  retryAllowed = true;
+  retryAfter = 0;
   vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
     if (url.endsWith("/v1/interviews/session-1/workspace")) {
@@ -81,6 +85,8 @@ beforeEach(() => {
         latest_workflow: {
           id: "workflow-completed",
           status: workflowStatus,
+          retry_allowed: retryAllowed,
+          retry_after_seconds: retryAfter,
           error_code: workflowStatus === "failed" ? "SCRIPT_LLM_RESPONSE_INVALID" : null,
           job_id: "job-1",
           missing_topics: ["后来影响"],
@@ -210,12 +216,32 @@ test("allows a new message after a failed script update", async () => {
   const send = screen.getByRole("button", { name: "发送并更新剧本" });
   expect(send).toBeEnabled();
   expect(screen.getByRole("button", { name: "重新整理" })).toBeEnabled();
+  expect(screen.getByText("最新内容尚未同步")).toBeInTheDocument();
+  expect(screen.queryByText("已同步")).not.toBeInTheDocument();
+  expect(screen.getByText("我从海边长大。")).toBeInTheDocument();
   fireEvent.click(send);
   await waitFor(() => {
     const call = vi.mocked(fetch).mock.calls.find(([url, init]) => String(url).endsWith("/turns") && init?.method === "POST");
     expect(call).toBeDefined();
     expect(JSON.parse(call![1]!.body as string).answer_text).toBe("现在我已经退休，和老伴住在杭州。");
   });
+});
+
+test("disables exhausted retries while retaining the conversation", async () => {
+  workflowStatus = "failed";
+  retryAllowed = false;
+  renderPage();
+  expect(await screen.findByRole("button", { name: "已达重试上限" })).toBeDisabled();
+  expect(screen.getByText("我的家乡靠海。")).toBeInTheDocument();
+  expect(screen.getByRole("textbox", { name: "说说这段往事" })).toBeEnabled();
+});
+
+test("shows retry cooldown from the server", async () => {
+  workflowStatus = "failed";
+  retryAfter = 20;
+  const view = renderPage();
+  expect(await screen.findByRole("button", { name: "稍后可重试" })).toBeDisabled();
+  view.unmount();
 });
 
 test("waits for recording to stop before allowing a turn to be sent", async () => {

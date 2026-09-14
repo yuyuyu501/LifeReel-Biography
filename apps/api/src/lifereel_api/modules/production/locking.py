@@ -6,6 +6,7 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 _local_lock = Lock()
+_local_keys: dict[UUID, tuple[Lock, int]] = {}
 
 
 @contextmanager
@@ -13,12 +14,21 @@ def execution_lock(db: Session, run_id: UUID):
     # A dedicated connection holds the lock across checkpoint commits.
     engine = db.get_bind()
     if engine.dialect.name != "postgresql":
-        acquired = _local_lock.acquire(blocking=False)
+        with _local_lock:
+            lock, users = _local_keys.get(run_id, (Lock(), 0))
+            _local_keys[run_id] = (lock, users + 1)
+        acquired = lock.acquire(blocking=False)
         try:
             yield acquired
         finally:
             if acquired:
-                _local_lock.release()
+                lock.release()
+            with _local_lock:
+                _, users = _local_keys[run_id]
+                if users == 1:
+                    del _local_keys[run_id]
+                else:
+                    _local_keys[run_id] = (lock, users - 1)
         return
     key = run_id.int % (2**63 - 1)
     with engine.connect() as connection:

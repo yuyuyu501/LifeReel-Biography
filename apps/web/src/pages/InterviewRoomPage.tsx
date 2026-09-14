@@ -64,6 +64,7 @@ export function InterviewRoomPage() {
     enabled: Boolean(id),
     refetchInterval: (query) => {
       const state = query.state.data?.latest_workflow?.status;
+      if (state === "failed" && (query.state.data?.latest_workflow?.retry_after_seconds ?? 0) > 0) return 3000;
       return state === "queued" || state === "running" ? 1600 : false;
     },
   });
@@ -178,6 +179,10 @@ export function InterviewRoomPage() {
   const workflowError = workflow?.status === "failed" && workflow.error_code
     ? new ApiError(workflow.error_code, 500)
     : null;
+  const retryAllowed = workflow?.retry_allowed !== false;
+  const retryCooling = (workflow?.retry_after_seconds ?? 0) > 0;
+  const scriptSynchronized = workflow?.status === "completed" || workflow?.script_brief?.followup_ready === true;
+  const scriptStatus = workflowRunning ? "持续优化中" : scriptSynchronized ? "已同步" : "最新内容尚未同步";
 
   return (
     <div className="page interview-room interview-workspace-page">
@@ -193,12 +198,13 @@ export function InterviewRoomPage() {
         <div className="interview-retry-action">
           <button
             className="button secondary small"
-            disabled={retryWorkflow.isPending || submitTurn.isPending}
+            disabled={retryWorkflow.isPending || submitTurn.isPending || !retryAllowed || retryCooling}
             onClick={() => retryWorkflow.mutate(workflow.job_id!)}
           >
             <RefreshCw size={15} />
-            {retryWorkflow.isPending ? "正在重新提交" : "重新整理"}
+            {retryWorkflow.isPending ? "正在重新提交" : !retryAllowed ? "已达重试上限" : retryCooling ? "稍后可重试" : "重新整理"}
           </button>
+          {!retryAllowed && <span>本轮重试已停止，请联系管理员排查。回答和已有剧本均已保留。</span>}
         </div>
       )}
       <main className="live-interview-layout">
@@ -267,13 +273,13 @@ export function InterviewRoomPage() {
             {workflowRunning ? <LoaderCircle size={16} /> : <CheckCircle2 size={16} />}
           </span>
           <div />
-          <small>{workflowRunning ? "正在整理" : workflow?.status === "completed" ? "已经同步" : "等待内容"}</small>
+          <small>{workflowRunning ? "正在整理" : scriptSynchronized ? "已经同步" : workflowError ? "尚未同步" : "等待内容"}</small>
         </aside>
 
         <section className={`live-script-pane ${mobilePane !== "script" ? "mobile-hidden" : ""}`} aria-label="本章实时剧本">
           <div className="pane-heading script-pane-heading">
             <div><span>LIVE SCRIPT</span><h2>{chapter?.title ?? "本章剧本"}</h2></div>
-            {workspace.data.script && <small>{workflowRunning ? "持续优化中" : "已同步"}</small>}
+            {chapterScript && <small>{scriptStatus}</small>}
           </div>
           {workflowRunning && (
             <div className="script-updating"><LoaderCircle size={18} /><div><strong>采访 AI 正在整理</strong><span>识别事实、检查缺口并同步更新本章。</span></div></div>

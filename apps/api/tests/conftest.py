@@ -1,13 +1,15 @@
 from __future__ import annotations
 
 import os
+import tempfile
 from collections.abc import Generator
 from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
 
-TEST_DB = Path(__file__).parent / "test.db"
+_TEST_DIRECTORY = tempfile.TemporaryDirectory(prefix="lifereel-tests-")
+TEST_DB = Path(_TEST_DIRECTORY.name) / "test.db"
 os.environ["APP_ENV"] = "test"
 os.environ["DATABASE_URL"] = f"sqlite:///{TEST_DB.as_posix()}"
 os.environ["AUTO_CREATE_SCHEMA"] = "true"
@@ -57,3 +59,4 @@ def pytest_sessionfinish() -> None:
     engine.dispose()
     if TEST_DB.exists():
         TEST_DB.unlink()
+    _TEST_DIRECTORY.cleanup()

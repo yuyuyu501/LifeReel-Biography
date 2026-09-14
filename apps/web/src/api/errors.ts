@@ -62,6 +62,8 @@ export const ERROR_MESSAGES: Record<string, string> = {
   MEMORY_LLM_CONFIGURATION_INCOMPLETE: "记忆 AI 配置不完整，请联系管理员。",
   MEMORY_LLM_REQUEST_FAILED: "记忆 AI 暂时未完成整理，请稍后重试。",
   MEMORY_LLM_RESPONSE_INVALID: "记忆 AI 返回的整理结果无效，请稍后重试。",
+  MEMORY_RETRY_LIMIT_REACHED: "本轮整理已达到重试上限，请联系管理员排查。已保存的回答和剧本仍可查看。",
+  MEMORY_RETRY_COOLDOWN: "请稍等片刻再重新整理，避免重复消耗。",
   ASR_NOT_CONFIGURED: "语音转写服务尚未配置。",
   ASR_CONFIGURATION_INCOMPLETE: "语音转写服务配置不完整，请联系管理员。",
   ASR_REQUEST_FAILED: "语音转写失败，请稍后重试。",

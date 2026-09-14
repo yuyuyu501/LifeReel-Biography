@@ -11,6 +11,7 @@ from lifereel_api.core.errors import ApiError, ErrorCode
 from lifereel_api.modules.billing import service as billing
 from lifereel_api.modules.interview import service as interviews
 from lifereel_api.modules.jobs import service as jobs
+from lifereel_api.modules.memory import recovery
 from lifereel_api.modules.memory import service as memories
 
 
@@ -85,6 +86,7 @@ def test_insufficient_funds_stops_before_any_interview_ai(client, monkeypatch):
 
 
 def test_preprocessing_failure_releases_and_retry_keeps_original_price(client, monkeypatch):
+    monkeypatch.setattr(recovery, "COOLDOWN_SECONDS", 0)
     _, _, session = _start(client)
     original = memories.compile_memories
 
@@ -106,6 +108,7 @@ def test_preprocessing_failure_releases_and_retry_keeps_original_price(client, m
 
 
 def test_saved_script_remains_charged_when_followup_fails(client, monkeypatch):
+    monkeypatch.setattr(recovery, "COOLDOWN_SECONDS", 0)
     _, _, session = _start(client)
     original = interviews.suggest_next_question
 

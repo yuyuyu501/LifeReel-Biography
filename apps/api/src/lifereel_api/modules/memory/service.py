@@ -14,6 +14,7 @@ from lifereel_api.modules.billing.usage import track_usage
 from lifereel_api.modules.evidence.models import EvidenceObservation, SourceAsset
 from lifereel_api.modules.identity.models import Person
 from lifereel_api.modules.interview.models import InterviewRound, InterviewSession
+from lifereel_api.modules.memory import recovery
 from lifereel_api.modules.memory.models import (
     MemoryClaim,
     MemoryConflict,
@@ -27,7 +28,7 @@ from lifereel_api.modules.memory.schemas import (
     MemoryGraphRead,
     MemoryOverview,
 )
-from lifereel_api.providers.openai_compatible import OpenAICompatibleClient
+from lifereel_api.modules.memory.structured import MemoryClient
 
 YEAR_PATTERN = re.compile(r"(?<!\d)((?:18|19|20)\d{2})年?")
 BIRTH_SENTENCE_SPLIT_PATTERN = re.compile(r"[。！？!?；;，,\n]+")
@@ -87,10 +88,10 @@ def _extract_claim(text: str, source_kind: str) -> tuple[str, str, float, str, s
             status.HTTP_503_SERVICE_UNAVAILABLE,
             ErrorCode.MEMORY_LLM_CONFIGURATION_INCOMPLETE,
         )
-    client = OpenAICompatibleClient(
+    client = MemoryClient(
         settings.openai_compatible_base_url or "",
         settings.openai_compatible_api_key or "",
-        model,
+        model, stage="claim",
     )
     if not client.capabilities().configured:
         raise ApiError(
@@ -153,10 +154,10 @@ def _extract_memory_structure(
             ErrorCode.MEMORY_LLM_CONFIGURATION_INCOMPLETE,
         )
     model = settings.model_for("memory")
-    client = OpenAICompatibleClient(
+    client = MemoryClient(
         settings.openai_compatible_base_url or "",
         settings.openai_compatible_api_key or "",
-        model,
+        model, stage="graph",
     )
     if not client.capabilities().configured:
         raise ApiError(
@@ -302,10 +303,10 @@ def _generate_biography(claims: list[MemoryClaim]) -> str:
             status.HTTP_503_SERVICE_UNAVAILABLE, ErrorCode.MEMORY_LLM_CONFIGURATION_INCOMPLETE
         )
     model = settings.model_for("memory")
-    client = OpenAICompatibleClient(
+    client = MemoryClient(
         settings.openai_compatible_base_url or "",
         settings.openai_compatible_api_key or "",
-        model,
+        model, stage="biography",
     )
     if not client.capabilities().configured:
         raise ApiError(
@@ -660,6 +661,7 @@ def compile_memories(
         else set()
     )
     sessions_by_id = {item.id: item for item in sessions}
+    workflow = recovery.current_workflow(db, tenant_id)
     created = 0
     for round_ in rounds:
         if round_.id in existing_round_ids:
@@ -689,6 +691,9 @@ def compile_memories(
             )
         )
         created += 1
+        if workflow is not None:
+            # A valid source claim is durable even if graph/biography later fails.
+            db.commit()
 
     for observation, asset in observations:
         if observation.id in existing_observation_ids:
@@ -722,6 +727,8 @@ def compile_memories(
             )
         )
         created += 1
+        if workflow is not None:
+            db.commit()
     db.flush()
 
     claim_statement = select(MemoryClaim).where(MemoryClaim.tenant_id == tenant_id)
@@ -745,15 +752,21 @@ def compile_memories(
         _detect_year_conflicts(db, tenant_id, {item.subject_id for item in compiled})
     elif settings.llm_provider == "openai-compatible":
         for subject_id, subject_claims in claims_by_subject.items():
-            _compile_entities_and_timeline_ai(db, tenant_id, subject_claims)
+            digest = recovery.fingerprint(subject_claims)
+            if not recovery.completed(workflow, subject_id, "graph", digest):
+                _compile_entities_and_timeline_ai(db, tenant_id, subject_claims)
+                recovery.save(db, workflow, subject_id, "graph", digest)
             subject = db.scalar(
                 select(Person).where(
                     Person.id == subject_id,
                     Person.tenant_id == tenant_id,
                 )
             )
-            if subject is not None:
+            if subject is not None and not recovery.completed(
+                workflow, subject_id, "biography", digest,
+            ):
                 subject.biography_note = _generate_biography(subject_claims)
+                recovery.save(db, workflow, subject_id, "biography", digest)
     else:
         raise ApiError(
             status.HTTP_503_SERVICE_UNAVAILABLE,

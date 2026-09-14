@@ -159,6 +159,8 @@ export interface InterviewTurnWorkflow {
   next_question_intent: string | null;
   missing_topics: string[];
   script_brief: Record<string, unknown>;
+  retry_allowed?: boolean;
+  retry_after_seconds?: number;
   error_code: string | null;
   created_at: string;
   updated_at: string;

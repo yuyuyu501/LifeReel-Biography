@@ -229,6 +229,21 @@ def test_memory_ai_failure_rolls_back_and_interview_job_can_retry(client, monkey
         assert duplicate_failure.json()["error_code"] == "MEMORY_LLM_REQUEST_FAILED"
 
         retried = client.post(f"/v1/jobs/{job['id']}/retry")
+        assert retried.status_code == 409
+        assert retried.json()["error"]["code"] == "MEMORY_RETRY_COOLDOWN"
+        from datetime import UTC, datetime, timedelta
+
+        from lifereel_api.core.database import SessionLocal
+        from lifereel_api.modules.interview.models import InterviewTurnWorkflow
+
+        with SessionLocal() as db:
+            row = db.get(InterviewTurnWorkflow, UUID(workflow["id"]))
+            state = row.script_brief["memory_recovery"]
+            row.script_brief = {**row.script_brief, "memory_recovery": {
+                **state, "failed_at": (datetime.now(UTC) - timedelta(seconds=31)).isoformat(),
+            }}
+            db.commit()
+        retried = client.post(f"/v1/jobs/{job['id']}/retry")
         assert retried.status_code == 200
         assert retried.json()["status"] == "queued"
         workspace = client.get(f"/v1/interviews/{session['id']}/workspace").json()
