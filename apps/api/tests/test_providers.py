@@ -145,6 +145,7 @@ def test_seedance_segment_sends_native_audio_and_previous_frame(monkeypatch) -> 
         assert body["model"] == "doubao-seedance-2-0-mini-260615"
         assert body["duration"] == 15
         assert body["generate_audio"] is True
+        assert body["return_last_frame"] is True
         assert body["resolution"] == "720p"
         assert body["ratio"] == "16:9"
         assert body["content"][1] == {

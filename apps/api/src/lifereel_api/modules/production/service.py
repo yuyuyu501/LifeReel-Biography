@@ -329,6 +329,7 @@ def _execute_run(db: Session, tenant_id: UUID, run_id: UUID) -> ProductionRun:
             ErrorCode.VIDEO_REFERENCE_REJECTED.value,
             ErrorCode.VIDEO_CONTENT_REJECTED.value,
             ErrorCode.VIDEO_REFERENCE_INVALID.value,
+            ErrorCode.VIDEO_CONTINUATION_UNAVAILABLE.value,
             ErrorCode.VIDEO_PLAN_FAILED.value,
             ErrorCode.VIDEO_PLAN_INVALID.value,
             ErrorCode.VIDEO_PLAN_CONFIGURATION_INCOMPLETE.value,

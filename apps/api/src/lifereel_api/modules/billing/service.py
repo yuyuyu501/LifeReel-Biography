@@ -20,6 +20,7 @@ def prices() -> dict:
         "video_billing_mode": settings.billing_video_mode,
         "video_reserve_cents": settings.billing_video_reserve_cents,
         "video_cny_per_million": "34.5",
+        "video_reference_cny_per_million": "21",
         "video_markup": "1.5",
         "script_chapter_cents": settings.billing_script_chapter_cents,
         "welcome_bonus_cents": settings.billing_welcome_bonus_cents,

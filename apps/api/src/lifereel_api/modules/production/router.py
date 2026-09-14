@@ -121,3 +121,19 @@ def segment_content(run_id: UUID, index: int, db: Db, tenant_id: Tenant) -> Resp
         content=private_storage().get(expected), media_type="video/mp4",
         headers={"Cache-Control": "private, no-store"},
     )
+
+
+@router.post("/runs/{run_id}/continuation", response_model=ProductionRunRead)
+def retry_original(run_id: UUID, db: Db, tenant_id: Tenant) -> ProductionRunRead:
+    from lifereel_api.modules.jobs import service as jobs
+
+    run, assets = service.get_run_payload(db, tenant_id, run_id)
+    if not run.job_id:
+        raise ApiError(409, ErrorCode.JOB_RETRY_NOT_ALLOWED)
+    job = jobs.retry_job(db, tenant_id, run.job_id, resume_original=True)
+    try:
+        jobs.enqueue(job)
+    except Exception:
+        jobs.fail_job(db, tenant_id, job.id, "WORKER_ERROR", None)
+        raise ApiError(503, ErrorCode.WORKER_ERROR) from None
+    return to_read(run, assets)

@@ -15,11 +15,61 @@ MAX_REFERENCE_BYTES = 10 * 1024 * 1024
 def moderation_code(provider_code: str | None) -> str | None:
     if not provider_code:
         return None
-    if provider_code.startswith("InputImageSensitiveContentDetected"):
+    if provider_code.startswith((
+        "InputImageSensitiveContentDetected", "InputVideoSensitiveContentDetected",
+    )):
         return ErrorCode.VIDEO_REFERENCE_REJECTED.value
     if "SensitiveContentDetected" in provider_code:
         return ErrorCode.VIDEO_CONTENT_REJECTED.value
     return None
+
+
+def can_restore_original(run) -> bool:
+    blocked = blocked_segment(run)
+    if not blocked or run.status != "failed":
+        return False
+    index, segment, code = blocked
+    return bool(
+        index > 0 and code == ErrorCode.VIDEO_REFERENCE_REJECTED
+        and not segment.get("task_id") and not segment.get("reference_kind")
+        and not segment.get("original_restored") and not segment.get("reference_asset_id")
+        and run.output_manifest["segments"][index - 1].get("status") == "completed"
+    )
+
+
+def restore_original(db, run) -> None:
+    from lifereel_api.modules.evidence.storage import private_storage
+    from lifereel_api.modules.governance.service import audit
+    from lifereel_api.modules.production.continuation import prepare_original
+    from lifereel_api.modules.production.providers import (
+        VideoProviderError,
+        VolcengineSeedanceProvider,
+    )
+
+    if not can_restore_original(run):
+        raise ApiError(409, ErrorCode.JOB_RETRY_NOT_ALLOWED)
+    index, _, _ = blocked_segment(run)
+    manifest = copy.deepcopy(run.output_manifest)
+    provider = VolcengineSeedanceProvider(options=manifest["generation_config"])
+    try:
+        _, _, source = prepare_original(
+            provider, private_storage(), run, index - 1, manifest["segments"][index - 1],
+        )
+    except VideoProviderError as exc:
+        raise ApiError(422, ErrorCode.VIDEO_CONTINUATION_UNAVAILABLE) from exc
+    finally:
+        provider.client.close()
+    segment = manifest["segments"][index]
+    segment.setdefault("reference_history", []).append({
+        "replaced_at": utcnow().isoformat(), "source": source,
+        "previous_provider_error_code": segment.get("provider_error_code"),
+    })
+    segment.update({
+        "original_restored": True, "reference_kind": source["kind"],
+        "reference_sha256": source["sha256"], "provider_error_code": None, "status": "pending",
+    })
+    run.output_manifest = manifest
+    audit(db, run.tenant_id, "production.original_restored", "production_run", run.id, source)
 
 
 def blocked_segment(run):
@@ -41,6 +91,7 @@ def details(run) -> dict | None:
     return {
         "code": code, "segment_index": index,
         "rejected_asset_ids": list(dict.fromkeys([*rejected, *([current] if current else [])])),
+        "can_restore_original": can_restore_original(run),
     }
 
 

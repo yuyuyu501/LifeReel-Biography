@@ -13,6 +13,9 @@ from lifereel_api.core.config import get_settings
 
 
 class LocalPrivateStorage:
+    def signed_url(self, storage_key: str) -> str | None:
+        return None
+
     def __init__(self) -> None:
         self.root = Path(get_settings().local_storage_path).resolve()
         self.root.mkdir(parents=True, exist_ok=True)
@@ -63,6 +66,11 @@ class LocalPrivateStorage:
 
 
 class S3PrivateStorage:
+    def signed_url(self, storage_key: str) -> str:
+        return self.client.generate_presigned_url(
+            "get_object", Params={"Bucket": self.bucket, "Key": storage_key}, ExpiresIn=3600,
+        )
+
     def __init__(self) -> None:
         settings = get_settings()
         self.bucket = settings.s3_bucket

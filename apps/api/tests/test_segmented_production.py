@@ -54,7 +54,11 @@ def setup_pipeline(client, monkeypatch):
     monkeypatch.setattr(settings, "volcengine_video_generate_audio", True)
     monkeypatch.setattr(jobs, "enqueue", lambda _: None)
     monkeypatch.setattr(segmented, "require_media_tools", lambda: None)
-    monkeypatch.setattr(segmented, "last_frame", lambda _: b"reference")
+    monkeypatch.setattr(segmented, "prepare_original", lambda *args: (
+        b"reference", {}, {
+            "kind": "official_tail", "sha256": "reference", "source_task_id": "task-1",
+        },
+    ))
     monkeypatch.setattr(
         segmented, "probe_video", lambda *_: {"duration_seconds": 15, "has_audio": True}
     )

@@ -25,6 +25,7 @@ class ProviderOutput:
     mime_type: str
     extension: str
     parameters: dict
+    last_frame: bytes | None = None
 
 
 class VideoProviderError(RuntimeError):
@@ -274,10 +275,13 @@ class VolcengineSeedanceProvider:
         duration: int,
         reference_frame: bytes | None = None,
         reference_mime: str = "image/jpeg",
+        reference_video_url: str | None = None,
     ) -> str:
         if not 4 <= duration <= 15:
             raise VideoProviderError("VIDEO_DURATION_UNSUPPORTED")
         content: list[dict] = [{"type": "text", "text": prompt}]
+        if reference_frame and reference_video_url:
+            raise VideoProviderError("VIDEO_CONTINUATION_UNAVAILABLE")
         if reference_frame:
             content.append(
                 {
@@ -289,6 +293,11 @@ class VolcengineSeedanceProvider:
                     "role": "first_frame",
                 }
             )
+        if reference_video_url:
+            content.append({
+                "type": "video_url", "video_url": {"url": reference_video_url},
+                "role": "reference_video",
+            })
         result = self._request_json(
             "POST",
             f"{self.base_url}/contents/generations/tasks",
@@ -301,14 +310,17 @@ class VolcengineSeedanceProvider:
                 "generate_audio": self.generate_audio,
                 "watermark": self.watermark,
                 "seed": -1,
+                "return_last_frame": True,
             },
         )
         if not result.get("id"):
             raise VideoProviderError("VIDEO_SUBMISSION_UNCERTAIN")
-        self._record_submission(str(result["id"]), duration)
+        self._record_submission(str(result["id"]), duration, bool(reference_video_url))
         return str(result["id"])
 
-    def _record_submission(self, task_id: str, duration: int) -> None:
+    def _record_submission(
+        self, task_id: str, duration: int, has_reference_video: bool = False,
+    ) -> None:
         from lifereel_api.modules.billing.usage import record
 
         record(
@@ -316,6 +328,7 @@ class VolcengineSeedanceProvider:
             "submitted",
             {
                 "requested_duration_seconds": duration,
+                "has_reference_video": has_reference_video,
                 "resolution": self.resolution,
                 "generate_audio": self.generate_audio,
             },
@@ -347,6 +360,7 @@ class VolcengineSeedanceProvider:
                 provider_status=str(result.get("status") or ""),
             )
         content, mime_type = self._download_video(video_url, task_id)
+        frame, frame_mime = self.download_last_frame(result)
         return ProviderOutput(
             content=content,
             mime_type=mime_type,
@@ -362,8 +376,46 @@ class VolcengineSeedanceProvider:
                 "provider_status": str(result.get("status") or "succeeded"),
                 "output_host": urlparse(video_url).netloc,
                 "usage": result.get("usage") or {},
+                "original": self.original_metadata(result, content),
+                "last_frame_mime": frame_mime,
             },
+            last_frame=frame,
         )
+
+    @property
+    def source_scope(self) -> str:
+        # A rotated credential must revalidate task ownership before reusing an original.
+        return hashlib.sha256(
+            f"{self.base_url}|{self.headers['Authorization']}".encode()
+        ).hexdigest()
+
+    def original_metadata(self, result: dict, content: bytes) -> dict:
+        return {
+            "task_id": result.get("id"), "model": result.get("model"),
+            "created_at": result.get("created_at"),
+            "scope": self.source_scope, "sha256": hashlib.sha256(content).hexdigest(),
+        }
+
+    def download_last_frame(self, result: dict) -> tuple[bytes | None, str | None]:
+        url = (result.get("content") or {}).get("last_frame_url")
+        if not url:
+            return None, None
+        try:
+            with self.client.stream("GET", url) as response:
+                response.raise_for_status()
+                mime = response.headers.get("content-type", "").split(";", 1)[0]
+                if mime not in {"image/jpeg", "image/png", "image/webp"}:
+                    raise VideoProviderError("VIDEO_PROVIDER_OUTPUT_INVALID")
+                data = bytearray()
+                for chunk in response.iter_bytes():
+                    data.extend(chunk)
+                    if len(data) > 30 * 1024 * 1024:
+                        raise VideoProviderError("VIDEO_PROVIDER_OUTPUT_INVALID")
+                if not data:
+                    raise VideoProviderError("VIDEO_PROVIDER_OUTPUT_INVALID")
+                return bytes(data), mime
+        except httpx.HTTPError as exc:
+            raise VideoProviderError("VIDEO_PROVIDER_REQUEST_FAILED") from exc
 
     def _wait_for_result(self, task_id: str) -> dict[str, Any]:
         deadline = time.monotonic() + self.timeout

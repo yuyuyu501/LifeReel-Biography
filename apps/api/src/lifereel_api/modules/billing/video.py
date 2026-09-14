@@ -10,7 +10,7 @@ from lifereel_api.modules.billing import service, tokens
 from lifereel_api.modules.billing.models import Charge, UsageEvent
 
 MODEL = "doubao-seedance-2-0-mini-260615"
-VERSION = "ark-seedance-mini-720p-2026-09-x1.5"
+VERSION = "ark-seedance-mini-720p-reference-2026-09-x1.5"
 SOURCE = "https://docs.volcengine.com/docs/82379/1544106?lang=zh"
 
 
@@ -34,11 +34,16 @@ def quote(model: str, usage: dict, status: str) -> dict:
         count = usage.get("completion_tokens")
         if type(count) is not int or count < 0:
             raise ValueError("missing_completion_tokens")
-    cost = count * 23_000
+    has_video = usage.get("has_reference_video", False)
+    if type(has_video) is not bool:
+        raise ValueError("invalid_reference_mode")
+    rate = 14 if has_video else 23
+    cost = count * rate * 1000
     return {
         "version": VERSION, "source": SOURCE, "completion_tokens": count,
         "official_cost_nano": cost, "retail_nano": cost * 3 // 2,
-        "markup": "1.5", "output_cny_per_million": "23",
+        "markup": "1.5", "output_cny_per_million": str(rate),
+        "has_reference_video": has_video,
     }
 
 
@@ -88,6 +93,10 @@ def settle_run(db, run, success: bool) -> None:
     if success and not any(e.model == MODEL and e.status == "succeeded" for e in events):
         pending = True
     priced = []
+    input_modes = {
+        e.provider_request_id: e.usage.get("has_reference_video", False)
+        for e in events if e.model == MODEL and e.status == "submitted"
+    }
     receipt_keys = set()
     for event in events:
         if event.status == "submitted" or event.metering.get("status") in {
@@ -108,7 +117,13 @@ def settle_run(db, run, success: bool) -> None:
                 continue
             receipt_keys.add(receipt)
         try:
-            price = quote(event.model, event.usage, event.status)
+            usage = event.usage
+            if event.model == MODEL and usage:
+                usage = {
+                    **usage,
+                    "has_reference_video": input_modes.get(event.provider_request_id, False),
+                }
+            price = quote(event.model, usage, event.status)
         except ValueError as exc:
             pending = True
             event.metering = {"status": "pending", "reason": str(exc)}

@@ -10,9 +10,9 @@ from uuid import UUID
 from sqlalchemy.orm import Session
 
 from lifereel_api.modules.evidence.storage import private_storage
+from lifereel_api.modules.production.continuation import prepare_original, save_tail
 from lifereel_api.modules.production.media import (
     assemble_videos,
-    last_frame,
     probe_video,
     require_media_tools,
 )
@@ -76,10 +76,16 @@ def advance(db: Session, run: ProductionRun) -> ProviderOutput | None:
                         asset = reference_asset(db, run, UUID(segment["reference_asset_id"]))
                         frame = storage.get(asset.storage_key)
                         reference_options["reference_mime"] = asset.mime_type
+                        segment["reference_kind"] = "uploaded_image"
                     elif index:
-                        previous = directory / "previous.mp4"
-                        previous.write_bytes(storage.get(segments[index - 1]["storage_key"]))
-                        frame = last_frame(previous)
+                        frame, reference_options, source = prepare_original(
+                            provider, storage, run, index - 1, segments[index - 1],
+                        )
+                        segment.update({
+                            "reference_kind": source["kind"],
+                            "reference_sha256": source["sha256"],
+                            "reference_source_task_id": source["source_task_id"],
+                        })
                     if frame:
                         segment["reference_sha256"] = hashlib.sha256(frame).hexdigest()
                     prompt = (
@@ -95,6 +101,12 @@ def advance(db: Session, run: ProductionRun) -> ProviderOutput | None:
                         f"旁白说：{json.dumps(segment['narration'], ensure_ascii=False)}。"
                         "无背景音乐，低音量自然环境声，旁白优先。不添加字幕或片尾。"
                     )
+                    if reference_options.get("reference_video_url"):
+                        prompt = (
+                            f"将视频1向后延长{segment['duration_seconds']}秒，"
+                            "从视频1的结尾继续，只输出新增内容，不回放或重复原视频。"
+                            "保持原视频的人物、场景、动作方向和旁白音色。" + prompt
+                        )
                     segment["status"] = "submitting"
                     segment["prompt"] = prompt
                     checkpoint(db, run, manifest)
@@ -107,7 +119,9 @@ def advance(db: Session, run: ProductionRun) -> ProviderOutput | None:
                             "pending" if exc.provider_status == "rejected" else "submission_unknown"
                         )
                         segment["provider_error_code"] = exc.provider_error_code
-                        if moderation_code(exc.provider_error_code) and frame:
+                        if moderation_code(exc.provider_error_code) and segment.get(
+                            "reference_sha256"
+                        ):
                             segment.setdefault("rejected_reference_hashes", []).append(
                                 segment["reference_sha256"]
                             )
@@ -140,6 +154,11 @@ def advance(db: Session, run: ProductionRun) -> ProviderOutput | None:
                     f"segment-{index}.mp4"
                 )
                 storage.put(key, output.content)
+                if output.last_frame:
+                    save_tail(
+                        storage, run, index, segment, output.last_frame,
+                        output.parameters["last_frame_mime"],
+                    )
                 segment.update(
                     {
                         "status": "completed",

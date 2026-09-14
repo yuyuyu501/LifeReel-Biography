@@ -41,38 +41,6 @@ def probe_video(path: Path, require_audio: bool = True) -> dict:
         raise VideoProviderError("VIDEO_PROVIDER_OUTPUT_INVALID") from exc
 
 
-def last_frame(path: Path) -> bytes:
-    try:
-        result = subprocess.run(
-            [
-                "ffmpeg",
-                "-v",
-                "error",
-                "-sseof",
-                "-0.15",
-                "-i",
-                str(path),
-                "-frames:v",
-                "1",
-                "-vf",
-                "scale=640:-2",
-                "-f",
-                "image2pipe",
-                "-vcodec",
-                "mjpeg",
-                "-",
-            ],
-            capture_output=True,
-            check=True,
-            timeout=30,
-        )
-        if not result.stdout:
-            raise ValueError("No reference frame")
-        return result.stdout
-    except (subprocess.SubprocessError, ValueError) as exc:
-        raise VideoProviderError("VIDEO_ASSEMBLY_FAILED") from exc
-
-
 def assemble_videos(paths: list[Path], directory: Path, config: dict) -> tuple[bytes, dict]:
     require_media_tools()
     dimensions = {"16:9": (1280, 720), "9:16": (720, 1280), "1:1": (720, 720)}

@@ -10,7 +10,8 @@ export function StudioRecovery({ run, subjectId, canSpend, onSettled }: {
   run: ProductionRun; subjectId: string; canSpend: boolean; onSettled: () => Promise<void>;
 }) {
   const [assetId, setAssetId] = useState("");
-  const files = useQuery({ queryKey: ["evidence", subjectId], queryFn: () => api.listEvidence(subjectId) });
+  const canRestore = run.recovery?.can_restore_original === true;
+  const files = useQuery({ queryKey: ["evidence", subjectId], queryFn: () => api.listEvidence(subjectId), enabled: !canRestore });
   const candidates = files.data?.filter((asset) => asset.subject_id === subjectId && asset.kind === "photo"
     && asset.status === "ready" && ["image/jpeg", "image/png", "image/webp"].includes(asset.mime_type)
     && asset.byte_size <= 10 * 1024 * 1024 && !run.recovery?.rejected_asset_ids.includes(asset.id)) ?? [];
@@ -18,6 +19,16 @@ export function StudioRecovery({ run, subjectId, canSpend, onSettled }: {
   const replace = useMutation({
     mutationFn: (id: string) => api.replaceProductionReference(run.id, id), onSettled,
   });
+  const restore = useMutation({ mutationFn: () => api.restoreProductionOriginal(run.id), onSettled });
+
+  if (canRestore) return <section className="studio-recovery" aria-label="恢复连续生成">
+    <h3>继续第 {(run.recovery?.segment_index ?? 0) + 1} 段</h3>
+    <ErrorNotice error={restore.error} />
+    <p className="studio-muted">已完成片段保留，使用原始素材继续生成。</p>
+    <button className="button primary small" disabled={!canSpend || restore.isPending}
+      title={!canSpend ? "余额不足，请先充值" : undefined}
+      onClick={() => restore.mutate()}><Play size={15} aria-hidden="true" /> {restore.isPending ? "正在提交" : "继续生成"}</button>
+  </section>;
 
   return <section className="studio-recovery" aria-label="处理参考图">
     <h3>更换第 {(run.recovery?.segment_index ?? 0) + 1} 段参考图</h3>

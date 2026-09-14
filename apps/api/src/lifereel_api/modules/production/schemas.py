@@ -33,6 +33,7 @@ class ProductionRecovery(BaseModel):
     code: str
     segment_index: int
     rejected_asset_ids: list[UUID] = Field(default_factory=list)
+    can_restore_original: bool = False
 
 
 class ProductionRunRead(BaseModel):

@@ -341,7 +341,7 @@ export interface ProductionRun {
   created_at: string;
   updated_at: string;
   assets: GeneratedAsset[];
-  recovery?: { code: string; segment_index: number; rejected_asset_ids: UUID[] } | null;
+  recovery?: { code: string; segment_index: number; rejected_asset_ids: UUID[]; can_restore_original?: boolean } | null;
 }
 
 export interface ProductionSettings {
@@ -376,7 +376,7 @@ export interface WalletSummary {
   token_remainder_nano?: number;
   prices: { version: string; video_cents_per_second: number; script_chapter_cents: number;
     video_billing_mode?: "tokens" | "per_second"; video_reserve_cents?: number;
-    video_cny_per_million?: string; video_markup?: string;
+    video_cny_per_million?: string; video_reference_cny_per_million?: string; video_markup?: string;
     welcome_bonus_cents: number; payment_enabled: boolean; script_billing_mode: string };
 }
 export interface WalletEntry {

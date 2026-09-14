@@ -321,7 +321,7 @@ test("rejected references offer an inline replacement and a retained clip, never
     { ...replacementImage, id: "foreign-image", subject_id: "person-2", original_filename: "别人的.png" }]);
   renderPage(<StudioPage />, "/studio");
   expect(await screen.findByText("更换第 2 段参考图")).toBeVisible();
-  expect(screen.getByRole("alert")).toHaveTextContent("参考图未通过");
+  expect(screen.getByRole("alert")).toHaveTextContent("续接素材未通过");
   expect(screen.queryByText("视频服务暂时无法连接")).not.toBeInTheDocument();
   expect(screen.queryByRole("button", { name: "重新尝试" })).not.toBeInTheDocument();
   expect(screen.getByRole("button", { name: "生成影像" })).toBeDisabled();
@@ -344,6 +344,27 @@ test("missing replacement images lead to interview uploads without generating", 
   expect(await screen.findByText("暂无可用的图片素材")).toBeVisible();
   expect(screen.getByRole("link", { name: "前往采访添加素材" })).toHaveAttribute("href", "/interviews");
   expect(vi.mocked(fetch).mock.calls.some(([, init]) => init?.method === "POST")).toBe(false);
+});
+
+test("legacy continuation uses the original clip without requiring another photo", async () => {
+  mockRecovery([]);
+  const original = vi.mocked(fetch).getMockImplementation()!;
+  vi.mocked(fetch).mockImplementation(async (input, init) => {
+    if (String(input).endsWith("/v1/production/runs")) return response([{
+      ...rejectedRun, recovery: { ...rejectedRun.recovery, can_restore_original: true },
+    }]);
+    return original(input, init);
+  });
+  renderPage(<StudioPage />, "/studio");
+  const button = await screen.findByRole("button", { name: "继续生成" });
+  expect(button).toBeEnabled();
+  expect(screen.queryByText("暂无可用的图片素材")).not.toBeInTheDocument();
+  expect(screen.queryByLabelText("参考图片")).not.toBeInTheDocument();
+  expect(screen.queryByRole("link", { name: "前往采访添加素材" })).not.toBeInTheDocument();
+  fireEvent.click(button);
+  await waitFor(() => expect(fetch).toHaveBeenCalledWith(expect.stringContaining("/blocked-run/continuation"),
+    expect.objectContaining({ method: "POST" })));
+  expect(window.confirm).not.toHaveBeenCalled();
 });
 
 test.each(["failed", "completed"])("terminal %s immediately refreshes the frozen wallet", async (status) => {

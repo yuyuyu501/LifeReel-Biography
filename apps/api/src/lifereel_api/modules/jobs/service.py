@@ -53,7 +53,10 @@ def get_job(db: Session, tenant_id: UUID, job_id: UUID) -> Job:
 
 def retry_job(
     db: Session, tenant_id: UUID, job_id: UUID, *, reference_asset_id: UUID | None = None,
+    resume_original: bool = False,
 ) -> Job:
+    if resume_original and reference_asset_id:
+        raise ApiError(409, ErrorCode.JOB_RETRY_NOT_ALLOWED)
     job = get_job(db, tenant_id, job_id)
     if job.kind == "production.render":
         from lifereel_api.modules.production.locking import execution_lock
@@ -70,14 +73,18 @@ def retry_job(
                     raise ApiError(409, ErrorCode.JOB_RETRY_NOT_ALLOWED)
                 db.refresh(job)
                 db.refresh(run)
-                return _retry_job(db, tenant_id, job_id, reference_asset_id=reference_asset_id)
-    if reference_asset_id:
+                return _retry_job(
+                    db, tenant_id, job_id, reference_asset_id=reference_asset_id,
+                    resume_original=resume_original,
+                )
+    if reference_asset_id or resume_original:
         raise ApiError(409, ErrorCode.JOB_RETRY_NOT_ALLOWED)
     return _retry_job(db, tenant_id, job_id)
 
 
 def _retry_job(
     db: Session, tenant_id: UUID, job_id: UUID, *, reference_asset_id: UUID | None = None,
+    resume_original: bool = False,
 ) -> Job:
     job = get_job(db, tenant_id, job_id)
     if job.status not in {"failed", "cancelled"}:
@@ -94,9 +101,12 @@ def _retry_job(
             from lifereel_api.modules.production.recovery import (
                 assert_retry_allowed,
                 replace_reference,
+                restore_original,
             )
 
-            if reference_asset_id:
+            if resume_original:
+                restore_original(db, run)
+            elif reference_asset_id:
                 replace_reference(db, run, reference_asset_id)
             else:
                 assert_retry_allowed(run)

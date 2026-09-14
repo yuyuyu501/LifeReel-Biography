@@ -53,7 +53,7 @@ export function WalletPage() {
             <span>当前价格</span>
             {w.prices.video_billing_mode === "tokens" ? <>
               <span>影像按实际 token 用量计费（官方标准价 × {w.prices.video_markup ?? "1.5"}）</span>
-              <span>720p 每百万输出 token ¥{w.prices.video_cny_per_million ?? "34.5"}，分镜规划按文本 AI 单价计费。</span>
+              <span>720p 每百万计费 token：无视频参考 ¥{w.prices.video_cny_per_million ?? "34.5"}，有视频参考 ¥{w.prices.video_reference_cny_per_million ?? "21"}。分镜规划按文本 AI 单价计费。</span>
               <span>每次预冻结 {money(w.prices.video_reserve_cents ?? 2400)}，按实际用量多退少补；欠款结清后可再次生成。</span>
             </> : <span>
               影像 {money(w.prices.video_cents_per_second)} / 秒（

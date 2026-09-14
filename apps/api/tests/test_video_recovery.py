@@ -76,7 +76,10 @@ def blocked_run(client, monkeypatch):
                     provider_error_code=REJECTION,
                 )
             task = f"task-{len(submissions)}"
-            record(MODEL, "submitted", {"requested_duration_seconds": duration}, 0, task)
+            record(MODEL, "submitted", {
+                "requested_duration_seconds": duration,
+                "has_reference_video": bool(options.get("reference_video_url")),
+            }, 0, task)
             return task
 
         def fetch_segment(self, task, duration):

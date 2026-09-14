@@ -246,6 +246,8 @@ export const api = {
   revokeConsent: (consentId: string) =>
     request<ConsentGrant>(`/v1/consents/${consentId}/revoke`, { method: "POST" }),
   listProductionRuns: () => request<ProductionRun[]>("/v1/production/runs"),
+  restoreProductionOriginal: (runId: string) =>
+    request<ProductionRun>(`/v1/production/runs/${runId}/continuation`, { method: "POST" }),
   replaceProductionReference: (runId: string, referenceAssetId: string) =>
     request<ProductionRun>(`/v1/production/runs/${runId}/reference`, {
       method: "POST", body: JSON.stringify({ reference_asset_id: referenceAssetId }),
