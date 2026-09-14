@@ -274,6 +274,7 @@ test.each([
   ["PLAN_DURATION_MISMATCH", "分镜时长与分配方案不一致，暂未生成视频"],
   ["PLAN_NARRATION_MISMATCH", "分镜旁白与原剧本不一致，暂未生成视频"],
   ["PLAN_SCHEMA_INVALID", "分镜字段缺失或格式不符合要求，暂未生成视频"],
+  ["PLAN_BOUNDARY_INVALID", "旁白分段位置不正确，暂未生成视频"],
   [undefined, "分镜结果未通过校验，暂未生成视频"],
 ])("shows specific planning failure %s without raw AI output", async (code, message) => {
   const original = vi.mocked(fetch).getMockImplementation()!;

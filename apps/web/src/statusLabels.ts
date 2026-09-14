@@ -58,6 +58,7 @@ const labels = {
   PLAN_SEGMENT_COUNT_MISMATCH: "分镜段数与预计时长不匹配，暂未生成视频",
   PLAN_DURATION_MISMATCH: "分镜时长与分配方案不一致，暂未生成视频",
   PLAN_NARRATION_MISMATCH: "分镜旁白与原剧本不一致，暂未生成视频",
+  PLAN_BOUNDARY_INVALID: "旁白分段位置不正确，暂未生成视频",
   PLAN_REQUEST_FAILED: "分镜 AI 请求未完成，已停止自动重试",
   VIDEO_PLAN_CONFIGURATION_INCOMPLETE: "分镜 AI 尚未配置",
   VIDEO_ASSEMBLY_UNAVAILABLE: "视频拼接工具不可用",

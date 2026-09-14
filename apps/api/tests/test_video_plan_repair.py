@@ -18,9 +18,9 @@ def example():
     plan = {
         "continuity": "纪实", "voice": "普通话",
         "segments": [
-            {"scene_id": "s1", "duration_seconds": 11, "narration": phrase,
+            {"scene_id": "s1", "end_offset": end,
              "visual_prompt": "镜头"}
-            for phrase in ["第一句。", "第二句。"]
+            for end in [4, 8]
         ],
     }
     return scenes, plan
@@ -56,8 +56,7 @@ def test_balanced_duration_unchanged(duration, expected):
 
 
 @pytest.mark.parametrize("kind,code", [
-    ("narration", "PLAN_NARRATION_MISMATCH"),
-    ("duration", "PLAN_DURATION_MISMATCH"),
+    ("boundary", "PLAN_BOUNDARY_INVALID"),
     ("count", "PLAN_SEGMENT_COUNT_MISMATCH"),
     ("chapter", "PLAN_CHAPTER_MISMATCH"),
     ("schema", "PLAN_SCHEMA_INVALID"),
@@ -65,10 +64,8 @@ def test_balanced_duration_unchanged(duration, expected):
 def test_targeted_repair_receives_previous_result_and_specific_issue(monkeypatch, kind, code):
     scenes, valid = example()
     invalid = copy.deepcopy(valid)
-    if kind == "narration":
-        invalid["segments"][0]["narration"] = "改写的秘密。"
-    elif kind == "duration":
-        invalid["segments"][0]["duration_seconds"] = 15
+    if kind == "boundary":
+        invalid["segments"][0]["end_offset"] = 100
     elif kind == "count":
         invalid["segments"].pop()
     elif kind == "chapter":
@@ -78,7 +75,8 @@ def test_targeted_repair_receives_previous_result_and_specific_issue(monkeypatch
     requests = fake_client(monkeypatch, [invalid, valid])
     recorded = []
     result = planning.plan_video(scenes, {}, on_failure=lambda *args: recorded.append(args))
-    assert result == valid
+    assert result == planning.materialize_plan(valid, scenes)
+    assert "".join(part["narration"] for part in result["segments"]) == scenes[0]["narration"]
     correction = requests[1]["correction"]
     assert correction["issues"][0]["code"] == code
     assert json.loads(correction["previous_response"]) == invalid
@@ -92,7 +90,9 @@ def test_malformed_json_is_captured_and_repaired(monkeypatch):
     raw = '{"voice": "unfinished'
     requests = fake_client(monkeypatch, [json.JSONDecodeError("bad", raw, 9), valid])
     recorded = []
-    assert planning.plan_video(scenes, {}, on_failure=lambda *args: recorded.append(args)) == valid
+    assert planning.plan_video(
+        scenes, {}, on_failure=lambda *args: recorded.append(args),
+    ) == planning.materialize_plan(valid, scenes)
     assert recorded[0][0]["issues"] == [
         {"code": "PLAN_JSON_INVALID", "field": "$", "position": 9},
     ]
