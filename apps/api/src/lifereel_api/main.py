@@ -18,6 +18,7 @@ from lifereel_api.modules.governance import models as governance_models  # noqa:
 from lifereel_api.modules.identity import models as identity_models  # noqa: F401
 from lifereel_api.modules.interview import models as interview_models  # noqa: F401
 from lifereel_api.modules.jobs import models as job_models  # noqa: F401
+from lifereel_api.modules.jobs.dispatch import router as worker_router
 from lifereel_api.modules.memory import models as memory_models  # noqa: F401
 from lifereel_api.modules.orchestration import service as orchestration_service  # noqa: F401
 from lifereel_api.modules.production import models as production_models  # noqa: F401
@@ -51,6 +52,7 @@ app.add_middleware(
 )
 install_error_handlers(app)
 app.include_router(api_router)
+app.include_router(worker_router)
 
 
 @app.get("/health", tags=["system"])

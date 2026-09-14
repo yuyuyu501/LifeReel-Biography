@@ -4,6 +4,8 @@ import tempfile
 from functools import lru_cache
 from pathlib import Path
 
+from lifereel_api.core.capacity import limited
+from lifereel_api.core.config import get_settings
 from lifereel_api.providers.base import ProviderCapabilities
 
 
@@ -11,7 +13,8 @@ from lifereel_api.providers.base import ProviderCapabilities
 def _load_model(model_name: str, device: str, compute_type: str):
     from faster_whisper import WhisperModel
 
-    return WhisperModel(model_name, device=device, compute_type=compute_type)
+    return WhisperModel(model_name, device=device, compute_type=compute_type,
+                        cpu_threads=get_settings().whisper_cpu_threads, num_workers=1)
 
 
 class FasterWhisperClient:
@@ -27,11 +30,13 @@ class FasterWhisperClient:
             configured=bool(self.model_name),
         )
 
-    def transcribe(self, filename: str, content: bytes, mime_type: str) -> str:
+    @limited("asr")
+    def transcribe(self, filename: str, content: bytes | Path, mime_type: str) -> str:
         suffix = Path(filename).suffix.lower()[:12] or ".audio"
         with tempfile.TemporaryDirectory(prefix="lifereel-whisper-") as temp_dir:
-            source = Path(temp_dir) / f"source{suffix}"
-            source.write_bytes(content)
+            source = content if isinstance(content, Path) else Path(temp_dir) / f"source{suffix}"
+            if isinstance(content, bytes):
+                source.write_bytes(content)
             model = _load_model(self.model_name, self.device, self.compute_type)
             segments, _ = model.transcribe(
                 str(source),

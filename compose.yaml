@@ -30,6 +30,11 @@ services:
       MAX_EVIDENCE_AUDIO_BYTES: ${MAX_EVIDENCE_AUDIO_BYTES:-524288000}
       MAX_EVIDENCE_VIDEO_BYTES: ${MAX_EVIDENCE_VIDEO_BYTES:-2147483648}
       AUTO_CREATE_SCHEMA: "false"
+      JOB_QUEUE_BACKEND: database
+      EXECUTE_MOCK_JOBS_INLINE: "false"
+      INTERVIEW_CONCURRENCY: ${INTERVIEW_CONCURRENCY:-3}
+      VIDEO_CONCURRENCY: ${VIDEO_CONCURRENCY:-1}
+      MEDIA_DIRECT_READ: ${MEDIA_DIRECT_READ:-${OSS_DIRECT_UPLOAD_ENABLED:-false}}
       LLM_PROVIDER: ${LLM_PROVIDER:-mock}
       REGISTRATION_ENABLED: ${REGISTRATION_ENABLED:-false}
       BILLING_PRICE_VERSION: ${BILLING_PRICE_VERSION:-standard-2026-09-luna20}
@@ -121,6 +126,9 @@ services:
       REDIS_URL: redis://redis:6379/0
       API_INTERNAL_URL: http://api:8000
       API_ACCESS_KEY: ${API_ACCESS_KEY:?Set API_ACCESS_KEY in .env}
+      INTERVIEW_CONCURRENCY: ${INTERVIEW_CONCURRENCY:-3}
+      VIDEO_CONCURRENCY: ${VIDEO_CONCURRENCY:-1}
+    stop_grace_period: 60s
     dns:
       - ${CONTAINER_DNS_SERVER:-223.5.5.5}
     depends_on:
@@ -129,7 +137,7 @@ services:
       api:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "python", "-c", "import os, redis; assert redis.from_url(os.environ['REDIS_URL']).ping()"]
+      test: ["CMD", "python", "-c", "import time; from pathlib import Path; assert time.time()-float(Path('/tmp/lifereel-worker-heartbeat').read_text()) < 15"]
       interval: 15s
       timeout: 5s
       retries: 5

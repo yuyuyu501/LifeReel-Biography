@@ -3,7 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 from datetime import UTC, datetime
-from uuid import UUID
+from uuid import NAMESPACE_URL, UUID, uuid5
 
 from fastapi import status
 from sqlalchemy import select
@@ -463,18 +463,25 @@ def _complete_turn_follow_up(
 
 
 @track_usage("interview")
-def execute_turn(db: Session, tenant_id: UUID, workflow_id: UUID) -> InterviewTurnWorkflow:
+def execute_turn(
+    db: Session, tenant_id: UUID, workflow_id: UUID, *, recover_interrupted: bool = False,
+) -> InterviewTurnWorkflow:
     from lifereel_api.modules.production.locking import execution_lock
 
     workflow = _get_workflow(db, tenant_id, workflow_id)
-    with execution_lock(db, workflow.session_id) as acquired:
+    session = db.get(InterviewSession, workflow.session_id)
+    # Chapters share one person's graph and biography, so serialize that person's updates.
+    lock_key = uuid5(NAMESPACE_URL, f"lifereel:interview:{session.subject_id}")
+    with execution_lock(db, lock_key) as acquired:
         if not acquired:
             # Duplicate queue delivery must not mark the active execution failed.
             return workflow
-        return _execute_turn(db, tenant_id, workflow_id)
+        return _execute_turn(db, tenant_id, workflow_id, recover_interrupted=recover_interrupted)
 
 
-def _execute_turn(db: Session, tenant_id: UUID, workflow_id: UUID) -> InterviewTurnWorkflow:
+def _execute_turn(
+    db: Session, tenant_id: UUID, workflow_id: UUID, *, recover_interrupted: bool = False,
+) -> InterviewTurnWorkflow:
     workflow = _get_workflow(db, tenant_id, workflow_id)
     if workflow.status == "completed":
         return workflow
@@ -498,8 +505,21 @@ def _execute_turn(db: Session, tenant_id: UUID, workflow_id: UUID) -> InterviewT
         raise ApiError(status.HTTP_409_CONFLICT, ErrorCode.INTERVIEW_TURN_STATE_INVALID)
     if workflow.status == "completed":
         return workflow
-    if workflow.status == "running":
+    if workflow.status == "running" and not recover_interrupted:
         raise ApiError(status.HTTP_409_CONFLICT, ErrorCode.INTERVIEW_TURN_STATE_INVALID)
+    if workflow.status == "running":
+        from lifereel_api.modules.billing.models import Charge
+
+        # A crashed paid call without a receipt must be reconciled, not resubmitted.
+        holds = db.scalars(select(Charge).where(
+            Charge.tenant_id == tenant_id, Charge.kind == "token_hold", Charge.status == "reserved",
+        ))
+        if any(h.price_snapshot.get("reference") == str(workflow.id) for h in holds):
+            workflow.status = "failed"
+            workflow.error_code = ErrorCode.BILLING_USAGE_PENDING.value
+            db.commit()
+            job_service.fail_job(db, tenant_id, workflow.job_id, workflow.error_code, None)
+            return workflow
     if workflow.status == "failed" and memory_recovery.retry_after(workflow):
         raise ApiError(409, ErrorCode.MEMORY_RETRY_COOLDOWN)
 

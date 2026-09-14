@@ -5,6 +5,7 @@ import shutil
 import subprocess
 from pathlib import Path
 
+from lifereel_api.core.capacity import limited
 from lifereel_api.modules.production.providers import VideoProviderError
 
 
@@ -41,6 +42,7 @@ def probe_video(path: Path, require_audio: bool = True) -> dict:
         raise VideoProviderError("VIDEO_PROVIDER_OUTPUT_INVALID") from exc
 
 
+@limited("assembly")
 def assemble_videos(paths: list[Path], directory: Path, config: dict) -> tuple[bytes, dict]:
     require_media_tools()
     dimensions = {"16:9": (1280, 720), "9:16": (720, 1280), "1:1": (720, 720)}
@@ -59,6 +61,10 @@ def assemble_videos(paths: list[Path], directory: Path, config: dict) -> tuple[b
                     "-v",
                     "error",
                     "-y",
+                    "-threads",
+                    "2",
+                    "-filter_threads",
+                    "1",
                     "-i",
                     str(path),
                     "-map",

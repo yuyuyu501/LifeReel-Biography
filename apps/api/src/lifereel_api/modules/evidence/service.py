@@ -15,6 +15,7 @@ from pypdf import PdfReader
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from lifereel_api.core.capacity import limited
 from lifereel_api.core.config import get_settings
 from lifereel_api.core.errors import ApiError, ErrorCode
 from lifereel_api.modules.billing.usage import track_usage
@@ -26,7 +27,7 @@ from lifereel_api.modules.evidence.models import (
     TranscriptVersion,
 )
 from lifereel_api.modules.evidence.schemas import TranscriptCreate, TranscriptRevisionCreate
-from lifereel_api.modules.evidence.storage import private_storage
+from lifereel_api.modules.evidence.storage import private_file, private_storage
 from lifereel_api.modules.identity.models import Person
 from lifereel_api.modules.interview.models import InterviewSession
 from lifereel_api.providers.openai_compatible import OpenAICompatibleClient
@@ -196,6 +197,7 @@ def get_asset(db: Session, tenant_id: UUID, asset_id: UUID) -> SourceAsset:
     return asset
 
 
+@limited("transcription")
 def transcribe_asset(db: Session, tenant_id: UUID, asset_id: UUID) -> Transcript:
     asset = get_asset(db, tenant_id, asset_id)
     if asset.kind not in {"audio", "video"}:
@@ -241,11 +243,16 @@ def transcribe_asset(db: Session, tenant_id: UUID, asset_id: UUID) -> Transcript
     if not client.capabilities().configured:
         raise ApiError(status.HTTP_503_SERVICE_UNAVAILABLE, ErrorCode.ASR_CONFIGURATION_INCOMPLETE)
     try:
-        text = client.transcribe(
-            asset.original_filename,
-            private_storage().get(asset.storage_key),
-            asset.mime_type,
-        ).strip()
+        if settings.asr_provider == "faster-whisper":
+            with private_file(asset.storage_key, asset.byte_size,
+                              Path(asset.original_filename).suffix.lower()) as source:
+                text = client.transcribe(asset.original_filename, source, asset.mime_type).strip()
+        else:
+            text = client.transcribe(
+                asset.original_filename, private_storage().get(asset.storage_key), asset.mime_type,
+            ).strip()
+    except ApiError:
+        raise
     except Exception as exc:
         raise ApiError(status.HTTP_502_BAD_GATEWAY, ErrorCode.ASR_REQUEST_FAILED) from exc
     if not text:
@@ -288,18 +295,23 @@ def _document_text(asset: SourceAsset, content: bytes) -> str:
     return content.decode("utf-8-sig", errors="replace").strip()
 
 
-def _video_frames(content: bytes, suffix: str) -> list[tuple[str, bytes]]:
+@limited("decode")
+def _video_frames(content: bytes | Path, suffix: str) -> list[tuple[str, bytes]]:
     ffmpeg = shutil.which("ffmpeg")
     if not ffmpeg:
         return []
     with tempfile.TemporaryDirectory(prefix="lifereel-observe-") as temp_dir:
-        source = Path(temp_dir) / f"source{suffix or '.mp4'}"
-        source.write_bytes(content)
+        source = (
+            content if isinstance(content, Path) else Path(temp_dir) / f"source{suffix or '.mp4'}"
+        )
+        if isinstance(content, bytes):
+            source.write_bytes(content)
         output_pattern = str(Path(temp_dir) / "frame-%02d.jpg")
         subprocess.run(
             [
                 ffmpeg,
                 "-y",
+                "-threads", "2", "-filter_threads", "1",
                 "-i",
                 str(source),
                 "-vf",
@@ -310,6 +322,7 @@ def _video_frames(content: bytes, suffix: str) -> list[tuple[str, bytes]]:
             ],
             check=True,
             capture_output=True,
+            timeout=180,
         )
         frame_paths = sorted(Path(temp_dir).glob("frame-*.jpg"))
         return [("image/jpeg", path.read_bytes()) for path in frame_paths]
@@ -333,7 +346,9 @@ def list_observations(db: Session, tenant_id: UUID, asset_id: UUID) -> list[Evid
 def analyze_asset(db: Session, tenant_id: UUID, asset_id: UUID) -> EvidenceObservation:
     asset = get_asset(db, tenant_id, asset_id)
     settings = get_settings()
-    content = private_storage().get(asset.storage_key)
+    content = (
+        private_storage().get(asset.storage_key) if asset.kind not in {"audio", "video"} else b""
+    )
     transcript_version: TranscriptVersion | None = None
     provider = "local"
     model_name: str | None = None
@@ -362,7 +377,9 @@ def analyze_asset(db: Session, tenant_id: UUID, asset_id: UUID) -> EvidenceObser
                     settings.openai_compatible_api_key or "",
                     vision_model,
                 )
-                frames = _video_frames(content, Path(asset.original_filename).suffix.lower())
+                suffix = Path(asset.original_filename).suffix.lower()
+                with private_file(asset.storage_key, asset.byte_size, suffix) as source:
+                    frames = _video_frames(source, suffix)
                 if not client.capabilities().configured:
                     raise ApiError(
                         status.HTTP_503_SERVICE_UNAVAILABLE,

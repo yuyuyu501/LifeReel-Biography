@@ -1,4 +1,5 @@
 export const ERROR_MESSAGES: Record<string, string> = {
+  RESOURCE_BUSY: "当前处理任务较多，请稍后重试。已保存的内容不会丢失。",
   WALLET_NOT_FOUND: "未找到所属家庭的钱包。",
   WALLET_INSUFFICIENT_BALANCE: "钱包可用余额不足，已暂停新的调用或任务。请前往钱包查看余额。",
   BILLING_STATE_INVALID: "扣费状态异常，请刷新后重试或联系管理员。",

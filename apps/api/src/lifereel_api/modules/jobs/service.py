@@ -196,6 +196,16 @@ def _fail_job(
         job.status = "failed"
         job.error_code = error_code
         job.error_message = (error_message or error_code)[:4000]
+        if job.kind == "interview.turn.process":
+            from lifereel_api.modules.interview.models import InterviewTurnWorkflow
+
+            workflow = db.scalar(select(InterviewTurnWorkflow).where(
+                InterviewTurnWorkflow.job_id == job.id,
+                InterviewTurnWorkflow.tenant_id == tenant_id,
+            ))
+            if workflow is not None and workflow.status != "completed":
+                workflow.status = "failed"
+                workflow.error_code = error_code
         if job.kind == "production.render":
             from lifereel_api.modules.production.models import ProductionRun
 
@@ -227,6 +237,9 @@ def complete_job(db: Session, tenant_id: UUID, job_id: UUID, result: dict) -> Jo
 
 def enqueue(job: Job) -> None:
     settings = get_settings()
+    if settings.job_queue_backend == "database":
+        # The committed job row is the queue; no second write can lose the delivery.
+        return
     client = redis.from_url(settings.redis_url, decode_responses=True)
     client.rpush(
         settings.worker_queue,

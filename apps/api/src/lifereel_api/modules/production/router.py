@@ -11,7 +11,8 @@ from lifereel_api.core.config import get_settings
 from lifereel_api.core.database import get_db
 from lifereel_api.core.errors import ApiError, ErrorCode
 from lifereel_api.core.tenant import get_tenant_id
-from lifereel_api.modules.evidence.storage import private_storage
+from lifereel_api.modules.evidence.storage import media_redirect, private_storage
+from lifereel_api.modules.jobs.dispatch import require_execution_access
 from lifereel_api.modules.production import service
 from lifereel_api.modules.production.models import GeneratedAsset
 from lifereel_api.modules.production.recovery import details
@@ -74,7 +75,8 @@ def runs(db: Db, tenant_id: Tenant) -> list[ProductionRunRead]:
     ]
 
 
-@router.post("/runs/{run_id}/execute", response_model=ProductionRunRead)
+@router.post("/runs/{run_id}/execute", response_model=ProductionRunRead,
+             dependencies=[Depends(require_execution_access)])
 def execute(run_id: UUID, db: Db, tenant_id: Tenant) -> ProductionRunRead:
     run = service.execute_run(db, tenant_id, run_id)
     _, assets = service.get_run_payload(db, tenant_id, run.id)
@@ -86,6 +88,9 @@ def asset_content(asset_id: UUID, db: Db, tenant_id: Tenant) -> Response:
     asset = db.get(GeneratedAsset, asset_id)
     if asset is None or asset.tenant_id != tenant_id:
         raise ApiError(status.HTTP_404_NOT_FOUND, ErrorCode.PRODUCTION_ASSET_NOT_FOUND)
+    redirect = media_redirect(asset.storage_key, asset.mime_type)
+    if redirect is not None:
+        return redirect
     return Response(content=private_storage().get(asset.storage_key), media_type=asset.mime_type)
 
 
@@ -117,6 +122,9 @@ def segment_content(run_id: UUID, index: int, db: Db, tenant_id: Tenant) -> Resp
     expected = f"LifeReel-Biography/generated/{tenant_id}/{run.id}/segment-{index}.mp4"
     if segment.get("status") != "completed" or segment.get("storage_key") != expected:
         raise ApiError(404, ErrorCode.PRODUCTION_ASSET_NOT_FOUND)
+    redirect = media_redirect(expected, "video/mp4")
+    if redirect is not None:
+        return redirect
     return Response(
         content=private_storage().get(expected), media_type="video/mp4",
         headers={"Cache-Control": "private, no-store"},

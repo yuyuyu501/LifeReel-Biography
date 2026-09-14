@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import shutil
 from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
-from tempfile import NamedTemporaryFile
+from tempfile import NamedTemporaryFile, TemporaryDirectory
 from typing import BinaryIO
 
 import boto3
@@ -66,9 +67,14 @@ class LocalPrivateStorage:
 
 
 class S3PrivateStorage:
-    def signed_url(self, storage_key: str) -> str:
+    def signed_url(
+        self, storage_key: str, *, expires_in: int = 3600, mime_type: str | None = None,
+    ) -> str:
+        params = {"Bucket": self.bucket, "Key": storage_key}
+        if mime_type:
+            params.update(ResponseContentType=mime_type, ResponseContentDisposition="inline")
         return self.client.generate_presigned_url(
-            "get_object", Params={"Bucket": self.bucket, "Key": storage_key}, ExpiresIn=3600,
+            "get_object", Params=params, ExpiresIn=expires_in,
         )
 
     def __init__(self) -> None:
@@ -133,3 +139,28 @@ class S3PrivateStorage:
 
 def private_storage():
     return S3PrivateStorage() if get_settings().storage_backend == "s3" else LocalPrivateStorage()
+
+
+@contextmanager
+def private_file(storage_key: str, size: int, suffix: str):
+    with TemporaryDirectory(prefix="lifereel-source-") as directory:
+        source = Path(directory) / f"source{suffix}"
+        with source.open("wb") as output:
+            for chunk in private_storage().iter_range(storage_key, 0, size - 1):
+                output.write(chunk)
+        yield source
+
+
+def media_redirect(storage_key: str, mime_type: str):
+    from fastapi.responses import RedirectResponse
+
+    settings = get_settings()
+    if settings.storage_backend != "s3" or not settings.media_direct_read:
+        return None
+    return RedirectResponse(
+        private_storage().signed_url(
+            storage_key, expires_in=settings.media_url_seconds, mime_type=mime_type,
+        ),
+        status_code=307,
+        headers={"Cache-Control": "private, no-store", "Referrer-Policy": "no-referrer"},
+    )

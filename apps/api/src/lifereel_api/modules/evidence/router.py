@@ -26,7 +26,7 @@ from lifereel_api.modules.evidence.schemas import (
     TranscriptSegmentRead,
     TranscriptVersionRead,
 )
-from lifereel_api.modules.evidence.storage import private_storage
+from lifereel_api.modules.evidence.storage import media_redirect, private_storage
 
 router = APIRouter(prefix="/evidence", tags=["evidence"])
 Db = Annotated[Session, Depends(get_db)]
@@ -136,6 +136,9 @@ def asset_content(
     range_header: Annotated[str | None, Header(alias="Range")] = None,
 ) -> Response:
     asset = service.get_asset(db, tenant_id, asset_id)
+    redirect = media_redirect(asset.storage_key, asset.mime_type)
+    if redirect is not None:
+        return redirect
     start, end = (0, asset.byte_size - 1)
     response_status = status.HTTP_200_OK
     headers = {

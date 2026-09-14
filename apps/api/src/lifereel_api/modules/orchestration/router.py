@@ -13,6 +13,7 @@ from lifereel_api.modules.interview.schemas import (
     InterviewTurnWorkflowRead,
     InterviewWorkspaceRead,
 )
+from lifereel_api.modules.jobs.dispatch import require_execution_access
 from lifereel_api.modules.orchestration import service
 
 router = APIRouter(tags=["interview-orchestration"])
@@ -42,6 +43,7 @@ def workspace(session_id: UUID, db: Db, tenant_id: Tenant) -> InterviewWorkspace
 @router.post(
     "/internal/interview-turns/{workflow_id}/execute",
     response_model=InterviewTurnWorkflowRead,
+    dependencies=[Depends(require_execution_access)],
 )
 def execute_turn(workflow_id: UUID, db: Db, tenant_id: Tenant) -> InterviewTurnWorkflowRead:
     return service.execute_turn(db, tenant_id, workflow_id)

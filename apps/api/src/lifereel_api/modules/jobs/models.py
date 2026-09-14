@@ -1,8 +1,19 @@
 from __future__ import annotations
 
+from datetime import datetime
 from uuid import UUID
 
-from sqlalchemy import JSON, ForeignKey, Integer, String, Text, UniqueConstraint, Uuid
+from sqlalchemy import (
+    JSON,
+    DateTime,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+    Uuid,
+)
 from sqlalchemy.orm import Mapped, mapped_column
 
 from lifereel_api.core.database import Base
@@ -13,6 +24,7 @@ class Job(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "jobs"
     __table_args__ = (
         UniqueConstraint("tenant_id", "idempotency_key", name="uq_job_tenant_idempotency"),
+        Index("ix_jobs_dispatch", "kind", "status", "lease_expires_at", "created_at"),
     )
 
     tenant_id: Mapped[UUID] = mapped_column(
@@ -26,3 +38,7 @@ class Job(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     error_code: Mapped[str | None] = mapped_column(String(120), nullable=True)
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
     attempt_count: Mapped[int] = mapped_column(Integer, default=0)
+    lease_token: Mapped[UUID | None] = mapped_column(Uuid, nullable=True)
+    lease_expires_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True,
+    )

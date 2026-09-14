@@ -10,6 +10,7 @@ from lifereel_api.core.database import get_db
 from lifereel_api.core.errors import ApiError, ErrorCode
 from lifereel_api.core.tenant import get_tenant_id
 from lifereel_api.modules.jobs import service
+from lifereel_api.modules.jobs.dispatch import require_execution_access
 from lifereel_api.modules.jobs.schemas import JobFailure, JobRead
 
 router = APIRouter(prefix="/jobs", tags=["jobs"])
@@ -38,7 +39,8 @@ def retry(job_id: UUID, db: Db, tenant_id: Tenant) -> JobRead:
     return job
 
 
-@router.post("/{job_id}/fail", response_model=JobRead)
+@router.post("/{job_id}/fail", response_model=JobRead,
+             dependencies=[Depends(require_execution_access)])
 def fail(job_id: UUID, payload: JobFailure, db: Db, tenant_id: Tenant) -> JobRead:
     return service.fail_job(
         db,

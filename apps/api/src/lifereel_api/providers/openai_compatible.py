@@ -9,6 +9,7 @@ from typing import Any
 
 import httpx
 
+from lifereel_api.core.capacity import limited
 from lifereel_api.modules.billing import tokens
 from lifereel_api.modules.billing.usage import current_context, record
 from lifereel_api.providers.base import ProviderCapabilities
@@ -31,6 +32,7 @@ class OpenAICompatibleClient:
     def headers(self) -> dict[str, str]:
         return {"Authorization": f"Bearer {self.api_key}"}
 
+    @limited("llm")
     def _chat(self, messages: list[dict[str, Any]], json_output: bool = False) -> str:
         payload: dict[str, Any] = {
             "model": self.model,

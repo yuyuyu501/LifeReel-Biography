@@ -26,6 +26,11 @@ server {
     proxy_set_header X-Forwarded-Proto $scheme;
     proxy_set_header X-API-Key "${API_ACCESS_KEY}";
     proxy_set_header X-Tenant-ID "";
+    proxy_set_header X-Worker-Key "";
+  }
+
+  location ^~ /v1/internal/worker {
+    return 404;
   }
 
   location = /health {

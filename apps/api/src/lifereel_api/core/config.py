@@ -63,6 +63,17 @@ class Settings(BaseSettings):
     max_evidence_video_bytes: int = 2 * 1024 * 1024 * 1024
     execute_mock_jobs_inline: bool = True
     worker_queue: str = "lifereel:jobs"
+    job_queue_backend: Literal["redis", "database"] = "database"
+    interview_concurrency: int = Field(default=3, ge=1, le=8)
+    video_concurrency: int = Field(default=1, ge=1, le=4)
+    job_lease_seconds: int = Field(default=120, ge=60, le=600)
+    db_pool_size: int = Field(default=20, ge=5, le=50)
+    db_max_overflow: int = Field(default=10, ge=0, le=50)
+    media_direct_read: bool = True
+    media_url_seconds: int = Field(default=900, ge=60, le=3600)
+    llm_concurrency: int = Field(default=4, ge=1, le=8)
+    llm_min_interval_seconds: float = Field(default=0.25, ge=0, le=10)
+    resource_wait_seconds: int = Field(default=120, ge=1, le=600)
 
     llm_provider: str = "mock"
     asr_provider: str = "mock"
@@ -80,6 +91,7 @@ class Settings(BaseSettings):
     whisper_model_path: str | None = None
     whisper_device: str = "cpu"
     whisper_compute_type: str = "int8"
+    whisper_cpu_threads: int = Field(default=2, ge=1, le=4)
     media_provider_name: str = "generic-media"
     media_provider_base_url: str | None = None
     media_provider_api_key: str | None = None

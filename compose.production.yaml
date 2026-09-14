@@ -50,9 +50,18 @@ services:
       REDIS_URL: redis://redis:6379/0
       AUTO_CREATE_SCHEMA: "false"
       EXECUTE_MOCK_JOBS_INLINE: "false"
+      JOB_QUEUE_BACKEND: database
+      INTERVIEW_CONCURRENCY: ${INTERVIEW_CONCURRENCY:-3}
+      VIDEO_CONCURRENCY: ${VIDEO_CONCURRENCY:-1}
+      DB_POOL_SIZE: "20"
+      DB_MAX_OVERFLOW: "10"
+      LLM_CONCURRENCY: "4"
+      MEDIA_DIRECT_READ: "true"
+      MEDIA_URL_SECONDS: "900"
       STORAGE_BACKEND: s3
       WHISPER_DEVICE: cpu
       WHISPER_COMPUTE_TYPE: int8
+      WHISPER_CPU_THREADS: "2"
       WHISPER_MODEL_PATH: /models/whisper-small
       LOCAL_STORAGE_PATH: /data/private
       MANUAL_WECHAT_QR_PATH: /data/payments/wechat-qr.png
@@ -85,12 +94,15 @@ services:
       REDIS_URL: redis://redis:6379/0
       API_INTERNAL_URL: http://api:8000
       API_ACCESS_KEY: ${API_ACCESS_KEY:?Set API_ACCESS_KEY}
+      INTERVIEW_CONCURRENCY: ${INTERVIEW_CONCURRENCY:-3}
+      VIDEO_CONCURRENCY: ${VIDEO_CONCURRENCY:-1}
     mem_limit: 256m
+    stop_grace_period: 60s
     depends_on:
       api:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "python", "-c", "import redis; assert redis.from_url('redis://redis:6379/0').ping()"]
+      test: ["CMD", "python", "-c", "import time; from pathlib import Path; assert time.time()-float(Path('/tmp/lifereel-worker-heartbeat').read_text()) < 15"]
       interval: 15s
       timeout: 5s
       retries: 5
