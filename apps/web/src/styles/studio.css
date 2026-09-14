@@ -132,7 +132,7 @@
 }
 .studio-specs {
   display: grid;
-  grid-template-columns: minmax(160px, 2fr) repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 16px;
   margin: 20px 0;
 }
@@ -312,12 +312,6 @@
   }
   .studio-detail {
     padding-left: 20px;
-  }
-  .studio-specs {
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-  }
-  .studio-specs .studio-model {
-    grid-column: 1 / -1;
   }
 }
 @media (max-width: 900px) {

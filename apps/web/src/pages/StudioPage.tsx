@@ -7,7 +7,7 @@ import { api, generatedAssetUrl, productionSegmentUrl } from "../api/client";
 import { EmptyState } from "../components/EmptyState";
 import { ErrorNotice, QueryState } from "../components/QueryState";
 import { hasQueryIssue } from "../queryHelpers";
-import { providerLabel, statusLabel } from "../statusLabels";
+import { statusLabel } from "../statusLabels";
 import { StudioRecovery } from "./StudioRecovery";
 
 function matchesChapter(run: ProductionRun, project: ScriptProject, scene: ScriptScene) {
@@ -127,7 +127,6 @@ export function StudioPage() {
             <div className="studio-parameters">
               <div className="studio-selection-heading"><div><span className="eyebrow">当前章节</span><h2>{selected.scene.heading}</h2></div><span className="studio-mode-label">{segmented ? "整章生成" : "试生成片段"}</span></div>
               <dl className="studio-specs" aria-label="视频参数">
-                <div className="studio-model"><dt>生成模型</dt><dd>{settings.data?.model || providerLabel(settings.data?.provider ?? "")}</dd></div>
                 <div><dt>目标画质</dt><dd>{settings.data?.resolution ?? "由服务决定"}</dd></div>
                 <div><dt>画面比例</dt><dd>{settings.data?.ratio ?? "由服务决定"}</dd></div>
                 <div><dt>目标时长</dt><dd>{seconds(segmented ? selected.scene.duration_seconds : settings.data?.duration_seconds)}</dd></div>

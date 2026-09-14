@@ -137,6 +137,11 @@ test("keeps the image studio focused on production", async () => {
   expect(await screen.findByRole("button", { name: "生成影像" })).toBeEnabled();
   expect(screen.queryByText("制作授权待补齐")).not.toBeInTheDocument();
   expect(screen.queryByText("任务记录")).not.toBeInTheDocument();
+  expect(screen.queryByText("生成模型")).not.toBeInTheDocument();
+  expect(screen.queryByText("doubao-seedance-1-0-pro-fast-251015")).not.toBeInTheDocument();
+  expect(screen.getByLabelText("视频参数").querySelectorAll("dt")).toHaveLength(4);
+  expect(screen.getByText("720p")).toBeInTheDocument();
+  expect(screen.getByText("16:9")).toBeInTheDocument();
   expect(screen.getByText("5 秒")).toBeInTheDocument();
   expect(screen.getByText("无声片段")).toBeInTheDocument();
   expect(screen.queryByText("待人工审核")).not.toBeInTheDocument();
@@ -242,6 +247,8 @@ test("segmented production shows chapter duration and checkpoint progress", asyn
   });
   renderPage(<StudioPage />, "/studio");
   expect(await screen.findByText("整章生成")).toBeVisible();
+  expect(screen.queryByText("生成模型")).not.toBeInTheDocument();
+  expect(screen.queryByText("doubao-seedance-2-0-mini-260615")).not.toBeInTheDocument();
   expect(screen.getByText("12 秒")).toBeVisible();
   expect(screen.queryByText("5 秒")).not.toBeInTheDocument();
   expect(screen.getByText("原生音频")).toBeVisible();
