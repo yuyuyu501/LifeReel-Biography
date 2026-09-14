@@ -93,7 +93,7 @@ export const ERROR_MESSAGES: Record<string, string> = {
   VIDEO_CONTENT_REJECTED: "视频内容未通过平台审核，请先修改相关剧本内容。",
   VIDEO_REFERENCE_INVALID: "请选择该家人名下另一张不超过 10MB 的 JPEG、PNG 或 WebP 图片，不可重复使用已被拒的图片。",
   VIDEO_PLAN_FAILED: "分镜 AI 暂时不可用，请稍后重试。",
-  VIDEO_PLAN_INVALID: "分镜未完整保留剧本，请重试。",
+  VIDEO_PLAN_INVALID: "分镜结果未通过校验，暂未生成视频。",
   VIDEO_PLAN_CONFIGURATION_INCOMPLETE: "请先配置分镜 AI 服务。",
   VIDEO_ASSEMBLY_UNAVAILABLE: "视频拼接工具不可用，请检查服务配置。",
   VIDEO_ASSEMBLY_FAILED: "视频拼接失败，已生成片段会保留，请重试。",

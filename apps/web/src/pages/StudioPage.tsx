@@ -58,6 +58,9 @@ export function StudioPage() {
   const selected = entries.find(({ scene }) => scene.id === sceneId) ?? entries[0];
   const chapterRuns = selected ? (productionRuns.data ?? []).filter((run) => matchesChapter(run, selected.project, selected.scene)) : [];
   const activeRun = chapterRuns.find((run) => run.id === runId) ?? chapterRuns[0];
+  const planningIssue = ["VIDEO_PLAN_INVALID", "VIDEO_PLAN_FAILED"].includes(activeRun?.error_message ?? "")
+    ? activeRun?.output_manifest?.planning_diagnostics?.at(-1)?.issues[0]?.code : undefined;
+  const productionError = statusLabel(planningIssue, statusLabel(activeRun?.error_message, "视频生成失败，请稍后重试。"));
   const activeAsset = activeRun?.assets.find((asset) => asset.mime_type.startsWith("video/"));
   const completedSegments = activeRun?.output_manifest?.segments?.flatMap((segment, index) => segment.status === "completed" ? [{ ...segment, index }] : []) ?? [];
   const selectedPartial = completedSegments.find((segment) => partial?.runId === activeRun?.id && partial?.index === segment.index) ?? completedSegments[0];
@@ -150,7 +153,7 @@ export function StudioPage() {
             {chapterRuns.length > 1 && <label className="studio-version">生成版本<select value={activeRun?.id} onChange={(event) => setRunId(event.target.value)}>{chapterRuns.map((run, index) => <option key={run.id} value={run.id}>{index === 0 ? "最新 · " : ""}{new Date(run.created_at).toLocaleString("zh-CN")} · {statusLabel(run.status)}</option>)}</select></label>}
             {progressText && <p className="studio-muted" role="status">{progressText}</p>}
             <div id="studio-panel-video" role="tabpanel" aria-labelledby="studio-tab-video" hidden={view !== "video"}>
-              {activeRun?.error_message && <div className="notice error" role="alert">{statusLabel(activeRun.error_message, "视频生成失败，请稍后重试。")}{activeRun.job_id && !blocked && <button className="button secondary small" disabled={retry.isPending || (!hasBalance && activeRun.output_manifest?.billing?.status !== "pending")} onClick={() => retry.mutate(activeRun.job_id!)}><RefreshCw size={15} aria-hidden="true" /> 重新尝试</button>}</div>}
+              {activeRun?.error_message && <div className="notice error" role="alert">{productionError}{activeRun.job_id && !blocked && <button className="button secondary small" disabled={retry.isPending || (!hasBalance && activeRun.output_manifest?.billing?.status !== "pending")} onClick={() => retry.mutate(activeRun.job_id!)}><RefreshCw size={15} aria-hidden="true" /> 重新尝试</button>}</div>}
               {activeRun?.recovery?.code === "VIDEO_REFERENCE_REJECTED" && <StudioRecovery key={`${activeRun.id}:${activeRun.updated_at}`} run={activeRun} subjectId={effectiveSubjectId} canSpend={hasBalance || activeRun.output_manifest?.billing?.status === "pending"} onSettled={refreshSettlement} />}
               {blocked && activeRun?.error_message === "VIDEO_CONTENT_REJECTED" && <Link to={`/scripts/${effectiveSubjectId}`}>查看并修改剧本</Link>}
               {!activeAsset && selectedPartial && activeRun && <label className="studio-version">已完成片段<select value={selectedPartial.index} onChange={(event) => setPartial({ runId: activeRun.id, index: Number(event.target.value) })}>

@@ -65,7 +65,7 @@ def setup_pipeline(client, monkeypatch):
     monkeypatch.setattr(
         segmented,
         "plan_video",
-        lambda snapshot, subject: {
+        lambda snapshot, subject, **kwargs: {
             "continuity": subject["display_name"],
             "voice": "男声",
             "segments": [

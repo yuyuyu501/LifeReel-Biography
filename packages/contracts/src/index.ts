@@ -334,6 +334,7 @@ export interface ProductionRun {
     script_snapshot?: ScriptScene[];
     stage?: "planning" | "generating" | "assembling" | "completed";
     completed_segments?: number;
+    planning_diagnostics?: Array<{ attempt: number; diagnostic_id: string; issues: Array<{ code: string; field: string }> }>;
     segments?: Array<{ status: string; duration_seconds: number; narration: string }>;
     target_duration_seconds?: number;
     billing_quote?: { amount_cents: number; target_seconds: number; version: string; title: string };

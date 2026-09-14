@@ -270,6 +270,30 @@ test("changing family clears the previous chapter and video", async () => {
   expect(screen.queryByText(project.scenes[0].narration)).not.toBeInTheDocument();
 });
 
+test.each([
+  ["PLAN_DURATION_MISMATCH", "分镜时长与分配方案不一致，暂未生成视频"],
+  ["PLAN_NARRATION_MISMATCH", "分镜旁白与原剧本不一致，暂未生成视频"],
+  ["PLAN_SCHEMA_INVALID", "分镜字段缺失或格式不符合要求，暂未生成视频"],
+  [undefined, "分镜结果未通过校验，暂未生成视频"],
+])("shows specific planning failure %s without raw AI output", async (code, message) => {
+  const original = vi.mocked(fetch).getMockImplementation()!;
+  vi.mocked(fetch).mockImplementation(async (input, init) => {
+    if (String(input).endsWith("/v1/production/runs")) return response([{
+      id: "plan-failed", project_id: project.id, job_id: "job-1", status: "failed",
+      error_message: "VIDEO_PLAN_INVALID", assets: [], created_at: "2026-09-14T00:00:00Z",
+      output_manifest: { scene_id: "scene-1", planning_diagnostics: code ? [{
+        attempt: 3, diagnostic_id: "private-diagnostic", issues: [{ code, field: "segments.0" }],
+      }] : undefined },
+    }]);
+    return original(input, init);
+  });
+  renderPage(<StudioPage />, "/studio");
+  expect(await screen.findByRole("alert")).toHaveTextContent(message);
+  expect(screen.queryByText("private-diagnostic")).not.toBeInTheDocument();
+  expect(screen.queryByText("分镜未完整保留剧本，请重试")).not.toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "重新尝试" })).toBeEnabled();
+});
+
 test("compares a video with its saved script and isolates other chapters", async () => {
   const original = vi.mocked(fetch).getMockImplementation()!;
   vi.mocked(fetch).mockImplementation(async (input, init) => {

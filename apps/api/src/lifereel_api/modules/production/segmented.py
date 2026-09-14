@@ -5,7 +5,7 @@ import hashlib
 import json
 import tempfile
 from pathlib import Path
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from sqlalchemy.orm import Session
 
@@ -43,8 +43,33 @@ def advance(db: Session, run: ProductionRun) -> ProviderOutput | None:
     config = manifest["generation_config"]
     if not manifest.get("plan"):
         manifest["stage"] = "planning"
+        manifest["planning_diagnostics"] = []
         checkpoint(db, run, manifest)
-        manifest["plan"] = plan_video(manifest["script_snapshot"], manifest.get("subject", {}))
+        diagnostic_id = uuid4().hex
+
+        def record_failure(diagnostic: dict, response: object) -> None:
+            # Raw model content stays private, outside manifests returned by public APIs.
+            key = (
+                f"LifeReel-Biography/diagnostics/{run.tenant_id}/{run.id}/"
+                f"{diagnostic_id}/attempt-{diagnostic['attempt']}.json"
+            )
+            text = json.dumps(response, ensure_ascii=False)
+            payload = {
+                **diagnostic, "response": text[:64000], "truncated": len(text) > 64000,
+            }
+            try:
+                private_storage().put(key, json.dumps(payload, ensure_ascii=False).encode("utf-8"))
+            except Exception:
+                raise VideoProviderError("VIDEO_PLAN_FAILED") from None
+            manifest["planning_diagnostics"] = [
+                *manifest["planning_diagnostics"],
+                {**diagnostic, "diagnostic_id": diagnostic_id},
+            ][-3:]
+            checkpoint(db, run, manifest)
+
+        manifest["plan"] = plan_video(
+            manifest["script_snapshot"], manifest.get("subject", {}), on_failure=record_failure,
+        )
         manifest["segments"] = [
             {**segment, "status": "pending"} for segment in manifest["plan"]["segments"]
         ]
