@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import copy
+import hashlib
 import json
 import tempfile
 from pathlib import Path
+from uuid import UUID
 
 from sqlalchemy.orm import Session
 
@@ -21,6 +23,11 @@ from lifereel_api.modules.production.providers import (
     VideoProviderError,
     VolcengineSeedanceProvider,
 )
+from lifereel_api.modules.production.recovery import (
+    assert_retry_allowed,
+    moderation_code,
+    reference_asset,
+)
 
 
 def checkpoint(db: Session, run: ProductionRun, manifest: dict) -> None:
@@ -31,6 +38,7 @@ def checkpoint(db: Session, run: ProductionRun, manifest: dict) -> None:
 def advance(db: Session, run: ProductionRun) -> ProviderOutput | None:
     """Process at most one cloud segment per queue delivery, then assemble on the next."""
     require_media_tools()
+    assert_retry_allowed(run)
     manifest = copy.deepcopy(run.output_manifest or {})
     config = manifest["generation_config"]
     if not manifest.get("plan"):
@@ -63,10 +71,17 @@ def advance(db: Session, run: ProductionRun) -> ProviderOutput | None:
             try:
                 if not segment.get("task_id"):
                     frame = None
-                    if index:
+                    reference_options = {}
+                    if segment.get("reference_asset_id"):
+                        asset = reference_asset(db, run, UUID(segment["reference_asset_id"]))
+                        frame = storage.get(asset.storage_key)
+                        reference_options["reference_mime"] = asset.mime_type
+                    elif index:
                         previous = directory / "previous.mp4"
                         previous.write_bytes(storage.get(segments[index - 1]["storage_key"]))
                         frame = last_frame(previous)
+                    if frame:
+                        segment["reference_sha256"] = hashlib.sha256(frame).hexdigest()
                     prompt = (
                         "连续纪实镜头，家庭传记情景重现。"
                         f"这是本章第{index + 1}/{len(segments)}段，"
@@ -85,13 +100,17 @@ def advance(db: Session, run: ProductionRun) -> ProviderOutput | None:
                     checkpoint(db, run, manifest)
                     try:
                         segment["task_id"] = provider.submit_segment(
-                            prompt, segment["duration_seconds"], frame
+                            prompt, segment["duration_seconds"], frame, **reference_options
                         )
                     except VideoProviderError as exc:
                         segment["status"] = (
                             "pending" if exc.provider_status == "rejected" else "submission_unknown"
                         )
                         segment["provider_error_code"] = exc.provider_error_code
+                        if moderation_code(exc.provider_error_code) and frame:
+                            segment.setdefault("rejected_reference_hashes", []).append(
+                                segment["reference_sha256"]
+                            )
                         checkpoint(db, run, manifest)
                         if segment["status"] == "submission_unknown":
                             raise VideoProviderError("VIDEO_SUBMISSION_UNCERTAIN") from exc
@@ -105,6 +124,10 @@ def advance(db: Session, run: ProductionRun) -> ProviderOutput | None:
                         segment.setdefault("previous_task_ids", []).append(segment.pop("task_id"))
                         segment["status"] = "pending"
                     segment["provider_error_code"] = exc.provider_error_code
+                    if moderation_code(exc.provider_error_code) and segment.get("reference_sha256"):
+                        segment.setdefault("rejected_reference_hashes", []).append(
+                            segment["reference_sha256"]
+                        )
                     checkpoint(db, run, manifest)
                     raise
                 clip = directory / "clip.mp4"

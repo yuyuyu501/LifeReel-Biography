@@ -278,6 +278,34 @@
   gap: 12px;
   align-items: center;
 }
+.studio-recovery {
+  padding-block: 4px 20px;
+  margin-bottom: 16px;
+  border-bottom: 1px solid var(--line);
+}
+.studio-recovery h3 {
+  margin: 0 0 8px;
+  font-size: 16px;
+}
+.studio-recovery .studio-version select {
+  width: min(100%, 360px);
+}
+.studio-reference-preview {
+  display: block;
+  width: min(100%, 240px);
+  aspect-ratio: 4 / 3;
+  object-fit: contain;
+  background: var(--fog);
+  margin-bottom: 12px;
+}
+.studio-material-link {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: fit-content;
+  margin-top: 12px;
+  font-size: 13px;
+}
 @media (max-width: 1100px) {
   .studio-workspace {
     grid-template-columns: 200px minmax(0, 1fr);

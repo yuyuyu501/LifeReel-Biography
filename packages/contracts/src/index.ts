@@ -341,6 +341,7 @@ export interface ProductionRun {
   created_at: string;
   updated_at: string;
   assets: GeneratedAsset[];
+  recovery?: { code: string; segment_index: number; rejected_asset_ids: UUID[] } | null;
 }
 
 export interface ProductionSettings {

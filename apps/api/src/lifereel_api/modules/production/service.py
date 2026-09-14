@@ -213,6 +213,9 @@ def _execute_run(db: Session, tenant_id: UUID, run_id: UUID) -> ProductionRun:
         raise ApiError(status.HTTP_404_NOT_FOUND, ErrorCode.PRODUCTION_RUN_NOT_FOUND)
     if run.status == "completed":
         return run
+    from lifereel_api.modules.production.recovery import assert_retry_allowed
+
+    assert_retry_allowed(run)
     project = db.get(ScriptProject, run.project_id)
     job = db.get(Job, run.job_id) if run.job_id else None
     if project is None or job is None:
@@ -323,6 +326,9 @@ def _execute_run(db: Session, tenant_id: UUID, run_id: UUID) -> ProductionRun:
             ErrorCode.VIDEO_PROVIDER_TIMEOUT.value,
             ErrorCode.VIDEO_PROVIDER_OUTPUT_INVALID.value,
             ErrorCode.VIDEO_PROVIDER_FAILED.value,
+            ErrorCode.VIDEO_REFERENCE_REJECTED.value,
+            ErrorCode.VIDEO_CONTENT_REJECTED.value,
+            ErrorCode.VIDEO_REFERENCE_INVALID.value,
             ErrorCode.VIDEO_PLAN_FAILED.value,
             ErrorCode.VIDEO_PLAN_INVALID.value,
             ErrorCode.VIDEO_PLAN_CONFIGURATION_INCOMPLETE.value,

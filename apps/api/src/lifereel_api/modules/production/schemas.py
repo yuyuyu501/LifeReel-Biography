@@ -25,6 +25,16 @@ class GeneratedAssetRead(BaseModel):
     generation_parameters: dict
 
 
+class ReferenceRetry(BaseModel):
+    reference_asset_id: UUID
+
+
+class ProductionRecovery(BaseModel):
+    code: str
+    segment_index: int
+    rejected_asset_ids: list[UUID] = Field(default_factory=list)
+
+
 class ProductionRunRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: UUID
@@ -40,3 +50,4 @@ class ProductionRunRead(BaseModel):
     created_at: datetime
     updated_at: datetime
     assets: list[GeneratedAssetRead] = Field(default_factory=list)
+    recovery: ProductionRecovery | None = None

@@ -1,13 +1,14 @@
 import type { ProductionRun, ScriptProject, ScriptScene } from "@lifereel/contracts";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Ban, BookOpen, Check, Film, Play, RefreshCw, Send } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import { api, generatedAssetUrl } from "../api/client";
+import { api, generatedAssetUrl, productionSegmentUrl } from "../api/client";
 import { EmptyState } from "../components/EmptyState";
 import { ErrorNotice, QueryState } from "../components/QueryState";
 import { hasQueryIssue } from "../queryHelpers";
 import { providerLabel, statusLabel } from "../statusLabels";
+import { StudioRecovery } from "./StudioRecovery";
 
 function matchesChapter(run: ProductionRun, project: ScriptProject, scene: ScriptScene) {
   if (run.project_id !== project.id) return false;
@@ -32,6 +33,7 @@ export function StudioPage() {
   const [view, setView] = useState<"video" | "script">("video");
   const [media, setMedia] = useState<{ id: string; duration: number; width: number; height: number } | null>(null);
   const [mediaError, setMediaError] = useState("");
+  const [partial, setPartial] = useState<{ runId: string; index: number } | null>(null);
   const people = useQuery({ queryKey: ["persons"], queryFn: api.listPersons });
   const scripts = useQuery({ queryKey: ["scripts"], queryFn: api.listScripts });
   const settings = useQuery({ queryKey: ["production-settings"], queryFn: api.productionSettings });
@@ -40,6 +42,14 @@ export function StudioPage() {
     queryKey: ["production-runs"], queryFn: api.listProductionRuns,
     refetchInterval: (query) => query.state.data?.some((run) => ["queued", "running"].includes(run.status)) ? 3000 : false,
   });
+  const terminalRuns = productionRuns.data?.filter((run) => ["completed", "failed", "cancelled"].includes(run.status))
+    .map((run) => `${run.id}:${run.status}:${run.updated_at}:${run.output_manifest?.billing?.status}`).join("|");
+  useEffect(() => {
+    if (terminalRuns) {
+      void queryClient.invalidateQueries({ queryKey: ["wallet"] });
+      void queryClient.invalidateQueries({ queryKey: ["wallet-ledger"] });
+    }
+  }, [terminalRuns, queryClient]);
   const publications = useQuery({ queryKey: ["publications"], queryFn: api.listPublications });
   const requestedProject = scripts.data?.find((project) => project.id === searchParams.get("project"));
   const effectiveSubjectId = subjectId || requestedProject?.subject_id || people.data?.find((person) => person.is_subject)?.id || "";
@@ -49,6 +59,10 @@ export function StudioPage() {
   const chapterRuns = selected ? (productionRuns.data ?? []).filter((run) => matchesChapter(run, selected.project, selected.scene)) : [];
   const activeRun = chapterRuns.find((run) => run.id === runId) ?? chapterRuns[0];
   const activeAsset = activeRun?.assets.find((asset) => asset.mime_type.startsWith("video/"));
+  const completedSegments = activeRun?.output_manifest?.segments?.flatMap((segment, index) => segment.status === "completed" ? [{ ...segment, index }] : []) ?? [];
+  const selectedPartial = completedSegments.find((segment) => partial?.runId === activeRun?.id && partial?.index === segment.index) ?? completedSegments[0];
+  const blocked = activeRun?.status === "failed" && (Boolean(activeRun.recovery) || ["VIDEO_REFERENCE_REJECTED", "VIDEO_CONTENT_REJECTED"].includes(activeRun.error_message ?? ""));
+  const blocksCurrentScript = blocked && (activeRun?.output_manifest?.script_version ?? selected?.project.version_number) === selected?.project.version_number;
   const publication = publications.data?.find((item) => item.production_run_id === activeRun?.id && item.status === "published");
   const isGenerating = chapterRuns.some((run) => ["queued", "running"].includes(run.status));
   const displayedScene = activeRun?.output_manifest?.script_snapshot?.[0] ?? selected?.scene;
@@ -76,6 +90,10 @@ export function StudioPage() {
     await queryClient.invalidateQueries({ queryKey: ["wallet"] });
     await refresh();
   } });
+  const refreshSettlement = async () => {
+    await queryClient.invalidateQueries({ queryKey: ["wallet"] });
+    await refresh();
+  };
   const queries = [people, scripts, settings, productionRuns, publications, wallet];
 
   return <div className="page film-studio-page">
@@ -115,7 +133,7 @@ export function StudioPage() {
                 <div><dt>目标时长</dt><dd>{seconds(segmented ? selected.scene.duration_seconds : settings.data?.duration_seconds)}</dd></div>
                 <div><dt>声音</dt><dd>{settings.data?.generate_audio === true ? "原生音频" : settings.data?.generate_audio === false ? "无声片段" : "由服务决定"}</dd></div>
               </dl>
-              <div className="studio-generate-row"><span className="studio-muted">剧本预估 {seconds(selected.scene.duration_seconds)}</span><button className="button primary" disabled={produce.isPending || isGenerating || quote === undefined || !hasBalance} title={!hasBalance ? "余额不足，请先充值" : undefined} onClick={() => produce.mutate(selected)}><Play size={16} aria-hidden="true" /> {isGenerating ? "正在生成" : "生成影像"}</button></div>
+              <div className="studio-generate-row"><span className="studio-muted">剧本预估 {seconds(selected.scene.duration_seconds)}</span><button className="button primary" disabled={produce.isPending || isGenerating || quote === undefined || !hasBalance || blocksCurrentScript} title={blocksCurrentScript ? "请先处理下方的审核问题" : !hasBalance ? "余额不足，请先充值" : undefined} onClick={() => produce.mutate(selected)}><Play size={16} aria-hidden="true" /> {isGenerating ? "正在生成" : "生成影像"}</button></div>
             </div>
             <div className="studio-preview-toolbar">
               <div role="tablist" aria-label="预览内容" className="studio-tabs" onKeyDown={(event) => {
@@ -133,15 +151,21 @@ export function StudioPage() {
             {chapterRuns.length > 1 && <label className="studio-version">生成版本<select value={activeRun?.id} onChange={(event) => setRunId(event.target.value)}>{chapterRuns.map((run, index) => <option key={run.id} value={run.id}>{index === 0 ? "最新 · " : ""}{new Date(run.created_at).toLocaleString("zh-CN")} · {statusLabel(run.status)}</option>)}</select></label>}
             {progressText && <p className="studio-muted" role="status">{progressText}</p>}
             <div id="studio-panel-video" role="tabpanel" aria-labelledby="studio-tab-video" hidden={view !== "video"}>
-              {activeRun?.error_message && <div className="notice error" role="alert">{statusLabel(activeRun.error_message, "视频生成失败，请稍后重试。")}{activeRun.job_id && <button className="button secondary small" disabled={retry.isPending || (!hasBalance && activeRun.output_manifest?.billing?.status !== "pending")} onClick={() => retry.mutate(activeRun.job_id!)}><RefreshCw size={15} aria-hidden="true" /> 重新尝试</button>}</div>}
+              {activeRun?.error_message && <div className="notice error" role="alert">{statusLabel(activeRun.error_message, "视频生成失败，请稍后重试。")}{activeRun.job_id && !blocked && <button className="button secondary small" disabled={retry.isPending || (!hasBalance && activeRun.output_manifest?.billing?.status !== "pending")} onClick={() => retry.mutate(activeRun.job_id!)}><RefreshCw size={15} aria-hidden="true" /> 重新尝试</button>}</div>}
+              {activeRun?.recovery?.code === "VIDEO_REFERENCE_REJECTED" && <StudioRecovery key={`${activeRun.id}:${activeRun.updated_at}`} run={activeRun} subjectId={effectiveSubjectId} canSpend={hasBalance || activeRun.output_manifest?.billing?.status === "pending"} onSettled={refreshSettlement} />}
+              {blocked && activeRun?.error_message === "VIDEO_CONTENT_REJECTED" && <Link to={`/scripts/${effectiveSubjectId}`}>查看并修改剧本</Link>}
+              {!activeAsset && selectedPartial && activeRun && <label className="studio-version">已完成片段<select value={selectedPartial.index} onChange={(event) => setPartial({ runId: activeRun.id, index: Number(event.target.value) })}>
+                {completedSegments.map((segment) => <option key={segment.index} value={segment.index}>第 {segment.index + 1} 段 · {seconds(segment.duration_seconds)}</option>)}
+              </select><span>已完成 {completedSegments.length} / {activeRun.output_manifest?.segments?.length} 段，整章尚未完成</span></label>}
               <div className="studio-screen">
                 {activeAsset ? <video key={activeAsset.id} aria-label={`${selected.scene.heading}视频`} controls playsInline preload="metadata" src={generatedAssetUrl(activeAsset.id)} onLoadedMetadata={(event) => {
                   const video = event.currentTarget;
                   setMedia({ id: activeAsset.id, duration: video.duration, width: video.videoWidth, height: video.videoHeight });
                   setMediaError("");
-                }} onError={() => setMediaError(activeAsset.id)} /> : <EmptyState icon={Film} title={isGenerating ? "正在生成本章影像" : activeRun?.status === "failed" ? "本次生成未完成" : "本章尚无影像"} description={isGenerating ? "等待生成结果" : ""} />}
+                }} onError={() => setMediaError(activeAsset.id)} /> : selectedPartial && activeRun ? <video key={`${activeRun.id}:${selectedPartial.index}`} aria-label={`第 ${selectedPartial.index + 1} 段视频`} controls playsInline preload="metadata" src={productionSegmentUrl(activeRun.id, selectedPartial.index)} onError={() => setMediaError(`${activeRun.id}:${selectedPartial.index}`)} /> : <EmptyState icon={Film} title={isGenerating ? "正在生成本章影像" : activeRun?.status === "failed" ? "本次生成未完成" : "本章尚无影像"} description={isGenerating ? "等待生成结果" : ""} />}
               </div>
               {activeAsset && mediaError === activeAsset.id && <div className="notice error" role="alert">视频加载失败，请检查网络后重试。</div>}
+              {!activeAsset && selectedPartial && mediaError === `${activeRun?.id}:${selectedPartial.index}` && <div className="notice error" role="alert">片段加载失败，请稍后刷新页面。</div>}
               {activeAsset && <div className="studio-output-meta"><span>实际时长 {seconds(actualMedia?.duration)}</span><span>实际尺寸 {actualMedia ? `${actualMedia.width} × ${actualMedia.height}` : "读取中"}</span><span>{parameters?.generate_audio === false ? "无声" : parameters?.generate_audio === true ? "有声" : "声音信息未提供"}</span></div>}
               {activeAsset && <div className="studio-publish-row">{publication ? <><span className="studio-muted">已发布给家人</span><button className="button secondary small danger" disabled={withdraw.isPending} onClick={() => withdraw.mutate(publication.id)}><Ban size={15} aria-hidden="true" /> 撤回发布</button></> : <button className="button secondary small" disabled={publish.isPending || activeRun?.status !== "completed"} onClick={() => activeRun && publish.mutate(activeRun.id)}><Send size={16} aria-hidden="true" /> 发布给家人</button>}</div>}
             </div>

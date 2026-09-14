@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { beforeEach, vi } from "vitest";
 import { ScriptBookPage } from "./ScriptBookPage";
@@ -72,13 +72,14 @@ function response(payload: unknown) {
 
 function renderPage(element: React.ReactNode, initialEntry: string, routePath = "*") {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  return render(
+  const result = render(
     <QueryClientProvider client={queryClient}>
       <MemoryRouter initialEntries={[initialEntry]}>
         <Routes><Route path={routePath} element={element} /></Routes>
       </MemoryRouter>
     </QueryClientProvider>,
   );
+  return { ...result, queryClient };
 }
 
 beforeEach(() => {
@@ -283,4 +284,85 @@ test("compares a video with its saved script and isolates other chapters", async
   fireEvent.click(screen.getByRole("button", { name: /02.*远行求学/ }));
   expect(screen.queryByText("生成当时的旁白")).not.toBeInTheDocument();
   expect(screen.getByText(project.scenes[1].narration)).toBeVisible();
+});
+
+const rejectedRun = {
+  id: "blocked-run", project_id: project.id, job_id: "blocked-job", status: "failed",
+  error_message: "VIDEO_REFERENCE_REJECTED", provider: "volcengine-seedance", assets: [],
+  created_at: "2026-09-14T01:12:10Z", updated_at: "2026-09-14T01:15:43Z",
+  recovery: { code: "VIDEO_REFERENCE_REJECTED", segment_index: 1, rejected_asset_ids: ["rejected-image"] },
+  output_manifest: { scene_id: "scene-1", script_version: 1,
+    segments: [{ status: "completed", duration_seconds: 15 }, { status: "pending", duration_seconds: 15 }],
+    billing: { status: "settled", charged_cents: 1121 } },
+};
+const replacementImage = { id: "replacement-image", subject_id: person.id, kind: "photo", status: "ready",
+  mime_type: "image/png", byte_size: 1000, original_filename: "老宅.png" };
+
+function mockRecovery(files: unknown[] = [replacementImage]) {
+  const original = vi.mocked(fetch).getMockImplementation()!;
+  vi.mocked(fetch).mockImplementation(async (input, init) => {
+    const url = String(input);
+    if (url.endsWith("/v1/production/runs")) return response([rejectedRun]);
+    if (url.includes("/v1/evidence/assets?")) return response(files);
+    if (url.endsWith("/reference")) return response({ ...rejectedRun, status: "queued", recovery: null });
+    return original(input, init);
+  });
+}
+
+test("rejected references offer an inline replacement and a retained clip, never blind retry", async () => {
+  mockRecovery([replacementImage, { ...replacementImage, id: "rejected-image", original_filename: "被拒.png" },
+    { ...replacementImage, id: "foreign-image", subject_id: "person-2", original_filename: "别人的.png" }]);
+  renderPage(<StudioPage />, "/studio");
+  expect(await screen.findByText("更换第 2 段参考图")).toBeVisible();
+  expect(screen.getByRole("alert")).toHaveTextContent("参考图未通过");
+  expect(screen.queryByText("视频服务暂时无法连接")).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "重新尝试" })).not.toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "生成影像" })).toBeDisabled();
+  expect(screen.getByLabelText("第 1 段视频")).toHaveAttribute("src", expect.stringContaining("/blocked-run/segments/0/content"));
+  await screen.findByRole("option", { name: "老宅.png" });
+  expect(screen.queryByRole("option", { name: "被拒.png" })).not.toBeInTheDocument();
+  expect(screen.queryByRole("option", { name: "别人的.png" })).not.toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "使用此图继续生成" })).toBeDisabled();
+  fireEvent.change(screen.getByLabelText("参考图片"), { target: { value: replacementImage.id } });
+  expect(screen.getByRole("img", { name: "参考图：老宅.png" })).toBeVisible();
+  fireEvent.click(screen.getByRole("button", { name: "使用此图继续生成" }));
+  await waitFor(() => expect(fetch).toHaveBeenCalledWith(expect.stringContaining("/blocked-run/reference"),
+    expect.objectContaining({ method: "POST", body: JSON.stringify({ reference_asset_id: replacementImage.id }) })));
+  expect(window.confirm).not.toHaveBeenCalled();
+});
+
+test("missing replacement images lead to interview uploads without generating", async () => {
+  mockRecovery([]);
+  renderPage(<StudioPage />, "/studio");
+  expect(await screen.findByText("暂无可用的图片素材")).toBeVisible();
+  expect(screen.getByRole("link", { name: "前往采访添加素材" })).toHaveAttribute("href", "/interviews");
+  expect(vi.mocked(fetch).mock.calls.some(([, init]) => init?.method === "POST")).toBe(false);
+});
+
+test.each(["failed", "completed"])("terminal %s immediately refreshes the frozen wallet", async (status) => {
+  const original = vi.mocked(fetch).getMockImplementation()!;
+  let balance = -405;
+  const running = { ...rejectedRun, status: "running", recovery: null, error_message: null };
+  vi.mocked(fetch).mockImplementation(async (input, init) => {
+    if (String(input).endsWith("/v1/wallet")) return response({ available_cents: balance,
+      prices: { video_billing_mode: "tokens", video_reserve_cents: 2400 } });
+    if (String(input).endsWith("/v1/production/runs")) return response([running]);
+    return original(input, init);
+  });
+  const { queryClient } = renderPage(<StudioPage />, "/studio");
+  expect(await screen.findByRole("button", { name: "正在生成" })).toBeDisabled();
+  balance = 874;
+  act(() => queryClient.setQueryData(["production-runs"], [{ ...running, status,
+    updated_at: "2026-09-14T01:16:00Z", error_message: status === "failed" ? "VIDEO_PROVIDER_TIMEOUT" : null }]));
+  await waitFor(() => expect(screen.getByRole("button", { name: "生成影像" })).toBeEnabled());
+  if (status === "failed") expect(screen.getByRole("button", { name: "重新尝试" })).toBeEnabled();
+});
+
+test("an updated script can generate after an older version was rejected", async () => {
+  mockRecovery();
+  const original = vi.mocked(fetch).getMockImplementation()!;
+  vi.mocked(fetch).mockImplementation(async (input, init) => String(input).endsWith("/v1/scripts")
+    ? response([{ ...project, version_number: 2 }]) : original(input, init));
+  renderPage(<StudioPage />, "/studio");
+  expect(await screen.findByRole("button", { name: "生成影像" })).toBeEnabled();
 });

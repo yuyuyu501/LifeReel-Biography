@@ -246,6 +246,10 @@ export const api = {
   revokeConsent: (consentId: string) =>
     request<ConsentGrant>(`/v1/consents/${consentId}/revoke`, { method: "POST" }),
   listProductionRuns: () => request<ProductionRun[]>("/v1/production/runs"),
+  replaceProductionReference: (runId: string, referenceAssetId: string) =>
+    request<ProductionRun>(`/v1/production/runs/${runId}/reference`, {
+      method: "POST", body: JSON.stringify({ reference_asset_id: referenceAssetId }),
+    }),
   productionSettings: () => request<ProductionSettings>("/v1/production/settings"),
   startProduction: (payload: {
     quoted_amount_cents?: number;
@@ -277,6 +281,10 @@ export const api = {
 
 export function generatedAssetUrl(assetId: string) {
   return `${API_BASE_URL}/v1/production/assets/${assetId}/content`;
+}
+
+export function productionSegmentUrl(runId: string, index: number) {
+  return `${API_BASE_URL}/v1/production/runs/${runId}/segments/${index}/content`;
 }
 
 export function evidenceAssetUrl(assetId: string) {

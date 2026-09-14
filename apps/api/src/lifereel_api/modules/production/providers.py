@@ -273,6 +273,7 @@ class VolcengineSeedanceProvider:
         prompt: str,
         duration: int,
         reference_frame: bytes | None = None,
+        reference_mime: str = "image/jpeg",
     ) -> str:
         if not 4 <= duration <= 15:
             raise VideoProviderError("VIDEO_DURATION_UNSUPPORTED")
@@ -282,7 +283,7 @@ class VolcengineSeedanceProvider:
                 {
                     "type": "image_url",
                     "image_url": {
-                        "url": "data:image/jpeg;base64,"
+                        "url": f"data:{reference_mime};base64,"
                         + base64.b64encode(reference_frame).decode()
                     },
                     "role": "first_frame",
@@ -391,7 +392,7 @@ class VolcengineSeedanceProvider:
                     provider_error_code or "VIDEO_PROVIDER_FAILED",
                 )
                 raise VideoProviderError(
-                    "VIDEO_PROVIDER_FAILED",
+                    self._moderation_code(provider_error_code) or "VIDEO_PROVIDER_FAILED",
                     task_id=task_id,
                     provider_status=provider_status,
                     provider_error_code=provider_error_code,
@@ -411,7 +412,7 @@ class VolcengineSeedanceProvider:
             raise VideoProviderError("VIDEO_PROVIDER_REQUEST_FAILED") from exc
         if response.is_error:
             provider_error_code = self._provider_error_code(response)
-            error_code = (
+            error_code = self._moderation_code(provider_error_code) or (
                 "VIDEO_PROVIDER_CONFIGURATION_INCOMPLETE"
                 if response.status_code in {401, 403}
                 or provider_error_code == "InvalidEndpointOrModel.NotFound"
@@ -427,6 +428,12 @@ class VolcengineSeedanceProvider:
         if not isinstance(payload, dict):
             raise VideoProviderError("VIDEO_PROVIDER_OUTPUT_INVALID")
         return payload
+
+    @staticmethod
+    def _moderation_code(provider_error_code: str | None) -> str | None:
+        from lifereel_api.modules.production.recovery import moderation_code
+
+        return moderation_code(provider_error_code)
 
     @staticmethod
     def _provider_error_code(response: httpx.Response) -> str | None:

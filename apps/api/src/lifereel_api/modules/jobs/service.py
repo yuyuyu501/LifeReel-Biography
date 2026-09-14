@@ -51,7 +51,9 @@ def get_job(db: Session, tenant_id: UUID, job_id: UUID) -> Job:
     return job
 
 
-def retry_job(db: Session, tenant_id: UUID, job_id: UUID) -> Job:
+def retry_job(
+    db: Session, tenant_id: UUID, job_id: UUID, *, reference_asset_id: UUID | None = None,
+) -> Job:
     job = get_job(db, tenant_id, job_id)
     if job.kind == "production.render":
         from lifereel_api.modules.production.locking import execution_lock
@@ -68,11 +70,15 @@ def retry_job(db: Session, tenant_id: UUID, job_id: UUID) -> Job:
                     raise ApiError(409, ErrorCode.JOB_RETRY_NOT_ALLOWED)
                 db.refresh(job)
                 db.refresh(run)
-                return _retry_job(db, tenant_id, job_id)
+                return _retry_job(db, tenant_id, job_id, reference_asset_id=reference_asset_id)
+    if reference_asset_id:
+        raise ApiError(409, ErrorCode.JOB_RETRY_NOT_ALLOWED)
     return _retry_job(db, tenant_id, job_id)
 
 
-def _retry_job(db: Session, tenant_id: UUID, job_id: UUID) -> Job:
+def _retry_job(
+    db: Session, tenant_id: UUID, job_id: UUID, *, reference_asset_id: UUID | None = None,
+) -> Job:
     job = get_job(db, tenant_id, job_id)
     if job.status not in {"failed", "cancelled"}:
         raise ApiError(status.HTTP_409_CONFLICT, ErrorCode.JOB_RETRY_NOT_ALLOWED)
@@ -85,6 +91,15 @@ def _retry_job(db: Session, tenant_id: UUID, job_id: UUID) -> Job:
             )
         )
         if run is not None and run.status != "completed":
+            from lifereel_api.modules.production.recovery import (
+                assert_retry_allowed,
+                replace_reference,
+            )
+
+            if reference_asset_id:
+                replace_reference(db, run, reference_asset_id)
+            else:
+                assert_retry_allowed(run)
             billing.video_reserve(db, run)
             run.status = "queued"
             run.error_message = None

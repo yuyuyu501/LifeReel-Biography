@@ -14,10 +14,13 @@ from lifereel_api.core.tenant import get_tenant_id
 from lifereel_api.modules.evidence.storage import private_storage
 from lifereel_api.modules.production import service
 from lifereel_api.modules.production.models import GeneratedAsset
+from lifereel_api.modules.production.recovery import details
 from lifereel_api.modules.production.schemas import (
     GeneratedAssetRead,
+    ProductionRecovery,
     ProductionRunRead,
     ProductionStart,
+    ReferenceRetry,
 )
 
 router = APIRouter(prefix="/production", tags=["production"])
@@ -46,8 +49,13 @@ def production_settings(tenant_id: Tenant) -> dict:
 
 
 def to_read(run, assets) -> ProductionRunRead:
+    recovery = details(run)
     return ProductionRunRead.model_validate(run).model_copy(
-        update={"assets": [GeneratedAssetRead.model_validate(item) for item in assets]}
+        update={
+            "assets": [GeneratedAssetRead.model_validate(item) for item in assets],
+            "recovery": ProductionRecovery.model_validate(recovery) if recovery else None,
+            "error_message": recovery["code"] if recovery else run.error_message,
+        }
     )
 
 
@@ -79,3 +87,37 @@ def asset_content(asset_id: UUID, db: Db, tenant_id: Tenant) -> Response:
     if asset is None or asset.tenant_id != tenant_id:
         raise ApiError(status.HTTP_404_NOT_FOUND, ErrorCode.PRODUCTION_ASSET_NOT_FOUND)
     return Response(content=private_storage().get(asset.storage_key), media_type=asset.mime_type)
+
+
+@router.post("/runs/{run_id}/reference", response_model=ProductionRunRead)
+def retry_reference(
+    run_id: UUID, payload: ReferenceRetry, db: Db, tenant_id: Tenant,
+) -> ProductionRunRead:
+    from lifereel_api.modules.jobs import service as jobs
+
+    run, assets = service.get_run_payload(db, tenant_id, run_id)
+    if not run.job_id:
+        raise ApiError(409, ErrorCode.JOB_RETRY_NOT_ALLOWED)
+    job = jobs.retry_job(db, tenant_id, run.job_id, reference_asset_id=payload.reference_asset_id)
+    try:
+        jobs.enqueue(job)
+    except Exception:
+        jobs.fail_job(db, tenant_id, job.id, "WORKER_ERROR", None)
+        raise ApiError(503, ErrorCode.WORKER_ERROR) from None
+    return to_read(run, assets)
+
+
+@router.get("/runs/{run_id}/segments/{index}/content")
+def segment_content(run_id: UUID, index: int, db: Db, tenant_id: Tenant) -> Response:
+    run, _ = service.get_run_payload(db, tenant_id, run_id)
+    segments = (run.output_manifest or {}).get("segments", [])
+    if not 0 <= index < len(segments):
+        raise ApiError(404, ErrorCode.PRODUCTION_ASSET_NOT_FOUND)
+    segment = segments[index]
+    expected = f"LifeReel-Biography/generated/{tenant_id}/{run.id}/segment-{index}.mp4"
+    if segment.get("status") != "completed" or segment.get("storage_key") != expected:
+        raise ApiError(404, ErrorCode.PRODUCTION_ASSET_NOT_FOUND)
+    return Response(
+        content=private_storage().get(expected), media_type="video/mp4",
+        headers={"Cache-Control": "private, no-store"},
+    )
