@@ -293,6 +293,23 @@ def _rule_missing_topics(
     return list(dict.fromkeys([*missing_required, *missing_generic]))[:4]
 
 
+def _validate_assessment(result) -> dict:
+    if not isinstance(result, dict):
+        raise ValueError("ASSESSMENT_OBJECT_REQUIRED")
+    raw_topics = result.get("missing_topics")
+    if not isinstance(raw_topics, list) or any(not isinstance(item, str) for item in raw_topics):
+        raise ValueError("ASSESSMENT_TOPICS_INVALID")
+    topics = list(dict.fromkeys(item.strip() for item in raw_topics if item.strip()))
+    if len(topics) > 4 or any(len(item) > 120 for item in topics):
+        raise ValueError("ASSESSMENT_TOPICS_LIMIT")
+    ready, reason = result.get("ready_for_script"), result.get("reason")
+    if type(ready) is not bool:
+        raise ValueError("ASSESSMENT_READINESS_INVALID")
+    if not isinstance(reason, str) or not reason.strip():
+        raise ValueError("ASSESSMENT_REASON_REQUIRED")
+    return {"missing_topics": topics, "ready_for_script": ready, "reason": reason.strip()[:500]}
+
+
 def _assess_chapter(
     db: Session,
     tenant_id: UUID,
@@ -345,62 +362,46 @@ def _assess_chapter(
         "当时感受",
         "后来影响",
     ]
-    try:
-        result = client.chat_json(
-            "你是中文口述史采访规划师。请根据当前章节画像、已确认记忆和完整对话，"
-            "语义判断当前章节还缺少哪些最重要的信息。只输出 JSON，missing_topics 必须是"
-            "字符串数组，最多 4 项；优先使用 allowed_topics 中的原文，不得根据关键词匹配"
-            "或字数猜测，不得把其他章节内容当作当前章节缺口。还要语义判断现有证据能否"
-            "支撑一段不虚构事实、包含旁白和画面描述的本章短剧本。只提供姓名、问候、"
-            "拒绝回答或离题内容时，ready_for_script 为 false，继续采访，不强行编剧。"
-            "已有具体生活细节可成稿时可以为 true，不要求所有主题完整，也不按记忆条数判断。"
-            "用户要求重写剧本时，应依据已有claims判断是否可生成，不要求用户重复讲述。"
-            "评估目标是含剧情、分镜、人物对话（可只有旁白）、场景描述的四部分剧本。"
-            "reason 简要说明依据。格式："
-            '{"missing_topics":["..."],"ready_for_script":false,"reason":"..."}。',
-            json.dumps({**context, "allowed_topics": allowed_topics}, ensure_ascii=False),
+    system = (
+        "你是中文口述史采访规划师。请根据当前章节画像、已确认记忆和完整对话，"
+        "语义判断当前章节还缺少哪些最重要的信息。只输出 JSON，missing_topics 必须是"
+        "字符串数组，最多 4 项，每项不超过120字；allowed_topics仅供参考，允许使用"
+        "本章具体缺失细节的自然语言描述，不必逐字匹配词表。不得根据关键词匹配"
+        "或字数猜测，不得把其他章节内容当作当前章节缺口。还要语义判断现有证据能否"
+        "支撑一段不虚构事实、包含旁白和画面描述的本章短剧本。只提供姓名、问候、"
+        "拒绝回答或离题内容时，ready_for_script 为 false，继续采访，不强行编剧。"
+        "已有具体生活细节可成稿时可以为 true，不要求所有主题完整，也不按记忆条数判断。"
+        "用户要求重写剧本时，应依据已有claims判断是否可生成，不要求用户重复讲述。"
+        "评估目标是含剧情、分镜、人物对话（可只有旁白）、场景描述的四部分剧本。"
+        "reason 简要说明依据。格式："
+        '{"missing_topics":["..."],"ready_for_script":false,"reason":"..."}。'
+    )
+    issues = []
+    for attempt in range(2):
+        retry_hint = (
+            "\n上次返回未通过格式校验，原因码：" + issues[-1]
+            + "。请根据原始资料重新输出完整JSON；信息不足时正常返回false，不要强行编剧。"
+            if attempt else ""
         )
-    except json.JSONDecodeError as exc:
-        raise ApiError(
-            status.HTTP_502_BAD_GATEWAY,
-            ErrorCode.INTERVIEW_LLM_RESPONSE_INVALID,
-        ) from exc
-    except ApiError:
-        raise
-    except Exception as exc:
-        raise ApiError(
-            status.HTTP_502_BAD_GATEWAY,
-            ErrorCode.INTERVIEW_LLM_REQUEST_FAILED,
-        ) from exc
-    if not isinstance(result, dict):
-        raise ApiError(
-            status.HTTP_502_BAD_GATEWAY,
-            ErrorCode.INTERVIEW_LLM_RESPONSE_INVALID,
-        )
-    raw_topics = result.get("missing_topics")
-    if not isinstance(raw_topics, list) or any(not isinstance(item, str) for item in raw_topics):
-        raise ApiError(
-            status.HTTP_502_BAD_GATEWAY,
-            ErrorCode.INTERVIEW_LLM_RESPONSE_INVALID,
-        )
-    allowed = set(allowed_topics)
-    normalized = [item.strip() for item in raw_topics if item.strip()]
-    if any(item not in allowed for item in normalized):
-        raise ApiError(
-            status.HTTP_502_BAD_GATEWAY,
-            ErrorCode.INTERVIEW_LLM_RESPONSE_INVALID,
-        )
-    topics = list(dict.fromkeys(normalized))
-    if len(topics) > 4:
-        raise ApiError(
-            status.HTTP_502_BAD_GATEWAY,
-            ErrorCode.INTERVIEW_LLM_RESPONSE_INVALID,
-        )
-    ready = result.get("ready_for_script")
-    reason = result.get("reason")
-    if type(ready) is not bool or not isinstance(reason, str) or not reason.strip():
-        raise ApiError(502, ErrorCode.INTERVIEW_LLM_RESPONSE_INVALID)
-    return {"missing_topics": topics, "ready_for_script": ready, "reason": reason[:500]}
+        try:
+            result = client.chat_json(
+                system + retry_hint,
+                json.dumps({**context, "allowed_topics": allowed_topics}, ensure_ascii=False),
+            )
+        except json.JSONDecodeError:
+            issues.append("ASSESSMENT_JSON_INVALID")
+            continue
+        except ApiError:
+            raise
+        except Exception as exc:
+            raise ApiError(502, ErrorCode.INTERVIEW_LLM_REQUEST_FAILED) from exc
+        try:
+            return _validate_assessment(result)
+        except ValueError as exc:
+            issues.append(str(exc))
+    error = ApiError(502, ErrorCode.INTERVIEW_LLM_RESPONSE_INVALID)
+    error.diagnostic = {"stage": "chapter_assessment", "issues": issues}
+    raise error
 
 
 def _missing_topics(db, tenant_id, claims, rounds, chapter) -> list[str]:
