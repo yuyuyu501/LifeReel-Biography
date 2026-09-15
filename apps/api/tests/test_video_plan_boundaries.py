@@ -98,3 +98,24 @@ def test_empty_narration_cannot_create_fake_spoken_content():
     scenes[0]["narration"] = ""
     with pytest.raises(planning.PlanValidationError, match="PLAN_BOUNDARY_INVALID"):
         planning.materialize_plan(raw, scenes)
+
+
+@pytest.mark.parametrize("end", [5, 8])
+def test_dialogue_roles_survive_line_and_segment_boundaries(end):
+    lines = [
+        {"kind": "narration", "speaker": "Subject", "text": "第一句。"},
+        {"kind": "dialogue", "speaker": "Mother", "text": "回来，好。"},
+    ]
+    narration = "\n".join(line["text"] for line in lines)
+    _, raw = example()
+    raw["segments"][0]["end_offset"] = end
+    raw["segments"][1]["end_offset"] = len(narration)
+    scenes = [{"id": "s1", "duration_seconds": 22, "narration": narration, "dialogues": lines}]
+    result = planning.materialize_plan(raw, scenes)
+    assert "".join(part["narration"] for part in result["segments"]) == narration
+    for line in lines:
+        restored = "".join(
+            item["text"] for part in result["segments"] for item in part["dialogues"]
+            if item["speaker"] == line["speaker"] and item["kind"] == line["kind"]
+        )
+        assert restored == line["text"]

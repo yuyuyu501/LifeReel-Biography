@@ -69,6 +69,8 @@ class ScriptScene(UUIDPrimaryKeyMixin, Base):
     )
     order_index: Mapped[int] = mapped_column(Integer)
     heading: Mapped[str] = mapped_column(String(180))
+    plot: Mapped[str | None] = mapped_column(Text, nullable=True)
+    dialogues: Mapped[list[dict] | None] = mapped_column(JSON, nullable=True)
     narration: Mapped[str] = mapped_column(Text)
     visual_prompt: Mapped[str] = mapped_column(Text)
     duration_seconds: Mapped[int] = mapped_column(Integer, default=12)

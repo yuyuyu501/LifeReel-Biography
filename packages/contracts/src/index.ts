@@ -259,11 +259,20 @@ export interface MemoryGraph {
   edges: MemoryGraphEdge[];
 }
 
+export interface ScriptDialogue {
+  kind: "narration" | "dialogue";
+  speaker: string;
+  text: string;
+}
+
 export interface ScriptScene {
   id: UUID;
   chapter_id: UUID | null;
   order_index: number;
   heading: string;
+  plot?: string | null;
+  dialogues?: ScriptDialogue[] | null;
+  shots?: ScriptShot[];
   narration: string;
   visual_prompt: string;
   duration_seconds: number;
@@ -335,7 +344,8 @@ export interface ProductionRun {
     stage?: "planning" | "generating" | "assembling" | "completed";
     completed_segments?: number;
     planning_diagnostics?: Array<{ attempt: number; diagnostic_id: string; issues: Array<{ code: string; field: string }> }>;
-    segments?: Array<{ status: string; duration_seconds: number; narration: string }>;
+    plan?: { continuity?: string; voice?: string };
+    segments?: Array<{ status: string; duration_seconds: number; narration: string; visual_prompt?: string; prompt?: string }>;
     target_duration_seconds?: number;
     billing_quote?: { amount_cents: number; target_seconds: number; version: string; title: string };
     billing?: { status: "pending" | "settled"; reserved_cents: number; charged_cents?: number };

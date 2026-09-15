@@ -21,6 +21,7 @@ import { useParams } from "react-router-dom";
 import { api } from "../api/client";
 import { ApiError, errorMessage } from "../api/errors";
 import { ErrorNotice, QueryState } from "../components/QueryState";
+import { ScriptSections } from "../components/ScriptSections";
 import {
   EVIDENCE_LIMITS,
   EVIDENCE_LIMIT_SUMMARY,
@@ -288,14 +289,12 @@ export function InterviewRoomPage() {
             <div className="live-script-empty">
               <BookOpenText size={31} />
               <h3>剧本会从第一段讲述开始</h3>
-              <p>回答左侧问题或添加一份素材，本章旁白和画面建议会在这里持续成稿。</p>
             </div>
           ) : (
             <article className="live-manuscript">
               <section>
                 <header><h3>{chapterScript.heading}</h3></header>
-                <p>{chapterScript.narration}</p>
-                <div className="live-visual-note"><strong>画面建议</strong><p>{chapterScript.visual_prompt}</p></div>
+                <ScriptSections scene={chapterScript} shots={workspace.data?.script?.shots} />
                 <footer><span>{chapterScript.duration_seconds} 秒</span><span>{chapterScript.source_claim_ids.length} 条来源</span></footer>
               </section>
             </article>

@@ -125,6 +125,9 @@ test("shows saved answers and only the current unanswered question", async () =>
   expect(screen.getByText("海边给您留下了什么印象？")).toBeInTheDocument();
   expect(screen.queryByText("旧会话里没有回答的问题")).not.toBeInTheDocument();
   expect(screen.getByText("海边的家乡")).toBeInTheDocument();
+  for (const name of ["剧情", "分镜", "人物对话", "场景描述"]) {
+    expect(screen.getByRole("heading", { name })).toBeInTheDocument();
+  }
   expect(screen.getByText("已同步")).toBeInTheDocument();
   expect(screen.queryByText("第 2 稿")).not.toBeInTheDocument();
   expect(screen.queryByText("01")).not.toBeInTheDocument();

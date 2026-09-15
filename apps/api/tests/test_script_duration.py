@@ -26,6 +26,8 @@ def test_script_duration_is_ai_chosen_and_must_be_in_range(monkeypatch, duration
         assert json.loads(user)["duration_range_seconds"] == {"min": 15, "max": 30}
         return {"chapter": {
             "heading": "Chapter", "narration": "A short memory.", "visual_prompt": "A home.",
+            "plot": "A memory of home.",
+            "dialogues": [{"kind": "narration", "speaker": "Test", "text": "A short memory."}],
             "duration_seconds": duration, "source_claim_ids": [str(claim.id)],
             "shots": [{"visual_prompt": "Home", "duration_seconds": 6,
                        "source_claim_ids": [str(claim.id)]}],

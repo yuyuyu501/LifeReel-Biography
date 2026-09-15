@@ -109,7 +109,9 @@ test("groups every person's scripts into one book", async () => {
 test("opens a family book with generation and chapter reading", async () => {
   renderPage(<ScriptBookPage />, "/scripts/person-1", "/scripts/:subjectId");
   expect(await screen.findByRole("heading", { name: "林奶奶的人生剧本" })).toBeInTheDocument();
-  expect(screen.getByRole("button", { name: "生成整本剧本" })).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "生成所选章节" })).toBeInTheDocument();
+  expect(screen.queryByText("生成结构")).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "多章节" })).not.toBeInTheDocument();
   expect(screen.getByRole("heading", { name: "章节目录" })).toBeInTheDocument();
   expect(screen.queryByRole("heading", { name: "剧本版本" })).not.toBeInTheDocument();
   expect(screen.getByRole("heading", { name: "泉州旧巷" })).toBeInTheDocument();
@@ -129,6 +131,31 @@ test("keeps the script book focused on reading and generation", async () => {
   expect(screen.queryByRole("button", { name: "通过" })).not.toBeInTheDocument();
   expect(screen.queryByRole("button", { name: "驳回" })).not.toBeInTheDocument();
   expect(screen.queryByText("待人工审核")).not.toBeInTheDocument();
+});
+
+test("generating chapter two selects its new scene and never submits a multi-chapter request", async () => {
+  const original = vi.mocked(fetch).getMockImplementation()!;
+  const updated = { ...project, scenes: [project.scenes[0], {
+    ...project.scenes[1], id: "new-scene-2", chapter_id: "chapter-2", heading: "更新后的求学往事",
+  }] };
+  let generated = false;
+  vi.mocked(fetch).mockImplementation(async (input, init) => {
+    if (String(input).endsWith("/v1/chapters")) return response([chapter,
+      { ...chapter, id: "chapter-2", order_index: 2, title: "求学" }]);
+    if (String(input).endsWith("/v1/scripts/generate")) {
+      expect(JSON.parse(String(init?.body))).toMatchObject({ mode: "single_chapter", chapter_id: "chapter-2" });
+      generated = true;
+      return response(updated);
+    }
+    if (generated && String(input).endsWith("/v1/scripts")) return response([updated]);
+    return original(input, init);
+  });
+  renderPage(<ScriptBookPage />, "/scripts/person-1", "/scripts/:subjectId");
+  fireEvent.change(await screen.findByLabelText("采访章节"), { target: { value: "chapter-2" } });
+  fireEvent.click(screen.getByRole("button", { name: "生成所选章节" }));
+  expect(await screen.findByRole("heading", { name: "更新后的求学往事" })).toBeVisible();
+  await waitFor(() => expect(screen.getByRole("button", { name: "生成所选章节" })).toBeEnabled());
+  expect(screen.queryByRole("heading", { name: "泉州旧巷" })).not.toBeInTheDocument();
 });
 
 test("keeps the image studio focused on production", async () => {
@@ -205,7 +232,7 @@ test("a positive balance below the full hold still permits one video", async () 
 
 test("script retry reuses its update ID and the next success uses a new ID", async () => {
   const original = vi.mocked(fetch).getMockImplementation()!;
-  const requests: Array<{ idempotency_key: string }> = [];
+  const requests: Array<{ idempotency_key: string; mode: string; chapter_id: string }> = [];
   vi.mocked(fetch).mockImplementation(async (input, init) => {
     if (String(input).endsWith("/v1/scripts/generate")) {
       requests.push(JSON.parse(String(init?.body)));
@@ -215,15 +242,17 @@ test("script retry reuses its update ID and the next success uses a new ID", asy
     return original(input, init);
   });
   renderPage(<ScriptBookPage />, "/scripts/person-1", "/scripts/:subjectId");
-  const button = await screen.findByRole("button", { name: "生成整本剧本" });
+  const button = await screen.findByRole("button", { name: "生成所选章节" });
   fireEvent.click(button);
   await screen.findByRole("alert");
-  fireEvent.click(screen.getByRole("button", { name: "生成整本剧本" }));
+  fireEvent.click(screen.getByRole("button", { name: "生成所选章节" }));
   await waitFor(() => expect(requests).toHaveLength(2));
-  await waitFor(() => expect(screen.getByRole("button", { name: "生成整本剧本" })).toBeEnabled());
+  await waitFor(() => expect(screen.getByRole("button", { name: "生成所选章节" })).toBeEnabled());
+  expect(requests[0].mode).toBe("single_chapter");
+  expect(requests[0].chapter_id).toBe("chapter-1");
   expect(requests[0].idempotency_key).toBeTruthy();
   expect(requests[1].idempotency_key).toBe(requests[0].idempotency_key);
-  fireEvent.click(screen.getByRole("button", { name: "生成整本剧本" }));
+  fireEvent.click(screen.getByRole("button", { name: "生成所选章节" }));
   await waitFor(() => expect(requests).toHaveLength(3));
   expect(requests[2].idempotency_key).not.toBe(requests[0].idempotency_key);
 });

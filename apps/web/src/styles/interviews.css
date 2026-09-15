@@ -560,31 +560,6 @@
   font-family: "Songti SC", STSong, serif;
   font-size: 19px;
 }
-.live-manuscript > section > p {
-  margin: 13px 0 15px;
-  color: var(--ink-soft);
-  font-family: "Songti SC", STSong, serif;
-  font-size: 16px;
-  line-height: 1.95;
-}
-.live-visual-note {
-  margin-left: 38px;
-  padding: 11px 13px;
-  border-left: 3px solid var(--green);
-  background: var(--green-soft);
-}
-.live-visual-note strong {
-  display: block;
-  margin-bottom: 3px;
-  color: var(--green-dark);
-  font-size: 10px;
-}
-.live-visual-note p {
-  margin: 0;
-  color: var(--ink-soft);
-  font-size: 11px;
-  line-height: 1.65;
-}
 .live-manuscript footer {
   margin: 12px 0 0;
   display: flex;
@@ -705,8 +680,6 @@
     padding-right: 16px;
     padding-left: 16px;
   }
-  .live-manuscript > section > p,
-  .live-visual-note,
   .live-manuscript footer {
     margin-left: 0;
   }

@@ -127,6 +127,9 @@ def workflow_checks(tenant_id):
                 "chapter": {
                     "heading": "童年",
                     "narration": "我在家乡长大。",
+                    "plot": "回忆家乡。",
+                    "dialogues": [{"kind": "narration", "speaker": "主人公",
+                                   "text": "我在家乡长大。"}],
                     "visual_prompt": "家乡",
                     "duration_seconds": 18,
                     "source_claim_ids": ids,

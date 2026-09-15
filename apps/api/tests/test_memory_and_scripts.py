@@ -75,6 +75,16 @@ def test_compile_memories_and_generate_traceable_script(client) -> None:
     assert "locked_at" not in payload
     assert payload["scenes"][0]["source_claim_ids"] == [claim["id"]]
     assert answer in payload["scenes"][0]["narration"]
+    scene = payload["scenes"][0]
+    assert scene["plot"]
+    assert scene["dialogues"][0]["kind"] == "narration"
+    assert scene["narration"] == "\n".join(line["text"] for line in scene["dialogues"])
+    assert payload["shots"][0]["scene_id"] == scene["id"]
+    saved = client.get(f"/v1/scripts/{payload['id']}").json()
+    assert saved["scenes"] == payload["scenes"]
+    workspace = client.get(f"/v1/interviews/{interview['id']}/workspace").json()
+    assert workspace["script"]["scenes"] == payload["scenes"]
+    assert workspace["script"]["shots"] == payload["shots"]
 
     removed_review = client.post(
         f"/v1/scripts/{payload['id']}/review", json={"status": "approved"}
@@ -283,6 +293,9 @@ def test_openai_compatible_script_uses_structured_evidence_references(
             "chapter": {
                 "heading": "码头清晨",
                 "narration": "我年轻时在码头工作，每天伴着船笛开始一天。",
+                "plot": "主人公回忆年轻时在码头工作的清晨。",
+                "dialogues": [{"kind": "narration", "speaker": "主人公",
+                               "text": "我年轻时在码头工作，每天伴着船笛开始一天。"}],
                 "visual_prompt": "清晨的旧码头，不出现未经授权的正脸。",
                 "duration_seconds": 22,
                 "source_claim_ids": [claim["id"], "00000000-0000-0000-0000-000000000099"],

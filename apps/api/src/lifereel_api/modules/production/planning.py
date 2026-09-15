@@ -97,7 +97,28 @@ def materialize_plan(raw: dict, scenes: list[dict]) -> dict:
             })
             start = end
             cursor += 1
-    return validate_plan(result, scenes)
+    result = validate_plan(result, scenes)
+    cursor = 0
+    for scene in scenes:
+        count = len(segment_durations(scene["duration_seconds"]))
+        parts = result["segments"][cursor:cursor + count]
+        lines = scene.get("dialogues") or []
+        if lines and "\n".join(line["text"] for line in lines) == scene["narration"]:
+            segment_start = 0
+            for part in parts:
+                segment_end = segment_start + len(part["narration"])
+                line_start = 0
+                spoken_lines = []
+                for line in lines:
+                    line_end = line_start + len(line["text"])
+                    left, right = max(segment_start, line_start), min(segment_end, line_end)
+                    if left < right:
+                        spoken_lines.append({**line, "text": scene["narration"][left:right]})
+                    line_start = line_end + 1
+                part["dialogues"] = spoken_lines
+                segment_start = segment_end
+        cursor += len(parts)
+    return result
 
 
 class PlanValidationError(ValueError):
@@ -203,6 +224,8 @@ def plan_video(
         "每章从位置0开始，结束位置严格递增，最后一段必须结束于 narration_length，覆盖全文。"
         "程序会按选定位置直接截取原文，包括标点及空白。优先按自然句界切分，"
         "结合 durations 均衡分配旁白，保证每段能在时长内读完。"
+        "scene.plot是剧情，shots是剧本分镜，visual_prompt是场景描述，dialogues是说话人信息；"
+        "生成镜头须参考这些内容，dialogue台词按对应人物呈现，旁白不要求人物口型同步。"
         "统一人物性别、年龄、衣着、环境和声线；依据人物称谓与资料，不能把爷爷拍成奶奶。"
         "没有真实肖像时采用纪实情景重现，不声称还原本人真实容貌。"
         "生成 continuity 作为全部片段统一的视觉人物描述，voice 为统一的普通话旁白声线"

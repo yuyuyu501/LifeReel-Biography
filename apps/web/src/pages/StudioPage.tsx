@@ -9,6 +9,7 @@ import { ErrorNotice, QueryState } from "../components/QueryState";
 import { hasQueryIssue } from "../queryHelpers";
 import { statusLabel } from "../statusLabels";
 import { StudioRecovery } from "./StudioRecovery";
+import { ScriptSections } from "../components/ScriptSections";
 
 function matchesChapter(run: ProductionRun, project: ScriptProject, scene: ScriptScene) {
   if (run.project_id !== project.id) return false;
@@ -177,8 +178,9 @@ export function StudioPage() {
                 {activeRun && !activeRun.output_manifest?.script_snapshot && <p className="notice">此历史视频未保存剧本快照，以下为当前章节内容。</p>}
                 {activeRun?.output_manifest?.script_version != null && activeRun.output_manifest.script_version !== selected.project.version_number && <p className="notice">剧本已更新，以下保留本次视频生成时的内容。</p>}
                 <h3>{displayedScene?.heading}</h3>
-                <h4>旁白</h4><p>{displayedScene?.narration || "暂无旁白"}</p>
-                <h4>画面描述</h4><p>{displayedScene?.visual_prompt || "暂无画面描述"}</p>
+                {displayedScene && <ScriptSections scene={displayedScene}
+                  shots={activeRun?.output_manifest?.script_snapshot ? [] : selected.project.shots}
+                  production={activeRun?.output_manifest} />}
               </article>
             </div>
           </> : <EmptyState icon={BookOpen} title="还没有可制作的章节" description="" />}

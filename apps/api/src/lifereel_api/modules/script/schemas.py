@@ -1,9 +1,17 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
+
+
+class ScriptDialogue(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    kind: Literal["narration", "dialogue"]
+    speaker: str = Field(min_length=1, max_length=100)
+    text: str = Field(min_length=1, max_length=2000)
 
 
 class ScriptGenerateRequest(BaseModel):
@@ -22,6 +30,8 @@ class ScriptSceneRead(BaseModel):
     chapter_id: UUID | None
     order_index: int
     heading: str
+    plot: str | None = None
+    dialogues: list[ScriptDialogue] | None = None
     narration: str
     visual_prompt: str
     duration_seconds: int

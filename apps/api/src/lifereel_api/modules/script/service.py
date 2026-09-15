@@ -23,7 +23,7 @@ from lifereel_api.modules.interview.models import Chapter
 from lifereel_api.modules.memory.models import MemoryClaim
 from lifereel_api.modules.production.locking import execution_lock
 from lifereel_api.modules.script.models import ScriptProject, ScriptScene, ScriptShot
-from lifereel_api.modules.script.schemas import ScriptGenerateRequest
+from lifereel_api.modules.script.schemas import ScriptDialogue, ScriptGenerateRequest
 from lifereel_api.providers.openai_compatible import OpenAICompatibleClient
 
 logger = logging.getLogger(__name__)
@@ -63,6 +63,9 @@ def _rule_scenes(
     return [
         {
             "heading": chapter_title,
+            "plot": memories,
+            "dialogues": [{"kind": "narration", "speaker": subject_name,
+                           "text": f"{introduction}{memories}"}],
             "narration": f"{introduction}{memories}",
             "visual_prompt": visual_prompt,
             "duration_seconds": duration,
@@ -140,9 +143,18 @@ def _llm_scenes(
             "不要靠加速朗读或超过30秒塞入内容。各镜头时长之和应等于本章总时长。"
             "chapter.source_claim_ids 和每个镜头的 source_claim_ids 必须填写实际支撑内容的"
             "claim_id，且只能引用输入中的 claim_id。未核对信息保留不确定语气。"
+            "剧本分为四部分：plot是简洁的剧情概述（事情如何发生和发展，不是旁白复写）；"
+            "shots是含景别、动作、运镜与时长的分镜；dialogues是按播放顺序排列的所有口播；"
+            "visual_prompt是整体场景描述，说明有据可查的年代、地点、环境、人物外观与氛围。"
+            "dialogues每项包含kind（narration或dialogue）、speaker、text。"
+            "旁白用narration标记，人物原话只有证据中确实提供时才使用dialogue，禁止编造对话。"
+            "只有旁白也必须用dialogues列表表达。不输出独立narration，程序会从dialogues顺序拼接。"
+            "对话和旁白的总朗读时长必须计入章节时长，不得把说明文字写入口播。"
             "输出严格 JSON，以下结构中的22秒仅为格式示例，实际时长须独立估算："
             '{"title":"整本书名（可选）","chapter":{"heading":"本章标题",'
-            '"narration":"一份连续的本章旁白","visual_prompt":"本章整体画面方向",'
+            '"plot":"本章剧情概述",'
+            '"dialogues":[{"kind":"narration","speaker":"主人公","text":"本章旁白"}],'
+            '"visual_prompt":"本章场景描述",'
             '"duration_seconds":22,"source_claim_ids":["..."],'
             '"shots":[{"shot_type":"wide|medium|closeup|detail|archive",'
             '"visual_prompt":"...","duration_seconds":6,"source_claim_ids":["..."]}]}}。',
@@ -211,12 +223,23 @@ def _llm_scenes(
             raise ValueError("chapter has no generated shots")
         shots = _fit_shot_durations(shots, duration)
         heading = str(raw_chapter.get("heading") or profile["title"]).strip()[:180]
-        narration = str(raw_chapter["narration"]).strip()
+        plot = raw_chapter["plot"]
+        if not isinstance(plot, str) or not plot.strip() or len(plot) > 4000:
+            raise ValueError("invalid chapter plot")
+        raw_dialogues = raw_chapter["dialogues"]
+        if not isinstance(raw_dialogues, list) or not 1 <= len(raw_dialogues) <= 40:
+            raise ValueError("invalid chapter dialogues")
+        dialogues = [ScriptDialogue.model_validate(line).model_dump() for line in raw_dialogues]
+        if any(not line["text"].strip() or not line["speaker"].strip() for line in dialogues):
+            raise ValueError("empty spoken line")
+        narration = "\n".join(line["text"] for line in dialogues)
         visual_prompt = str(raw_chapter["visual_prompt"]).strip()
         if not heading or not narration or not visual_prompt:
             raise ValueError("chapter text is empty")
         scene = {
             "heading": heading,
+            "plot": plot.strip(),
+            "dialogues": dialogues,
             "narration": narration,
             "visual_prompt": visual_prompt,
             "duration_seconds": duration,
@@ -526,6 +549,8 @@ def _generate_draft(
             chapter_id=scene_payload["chapter_id"],
             order_index=insert_at + offset,
             heading=scene_payload["heading"],
+            plot=scene_payload.get("plot"),
+            dialogues=scene_payload.get("dialogues"),
             narration=scene_payload["narration"],
             visual_prompt=scene_payload["visual_prompt"],
             duration_seconds=scene_payload["duration_seconds"],

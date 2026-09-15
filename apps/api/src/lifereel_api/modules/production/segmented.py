@@ -121,16 +121,23 @@ def advance(db: Session, run: ProductionRun) -> ProviderOutput | None:
                         "保持同一人物身份、性别、年龄、服装；参考帧存在时延续其场景和外貌。"
                         f"本段画面：{segment['visual_prompt']}。"
                         f"统一旁白声线：{manifest['plan']['voice']}。"
-                        "以下引号内是本段全部普通话旁白，完整清晰读完，不念说明文字、不增删旁白，"
-                        "不要重复前段旁白，不要截断最后一句。"
-                        f"旁白说：{json.dumps(segment['narration'], ensure_ascii=False)}。"
-                        "无背景音乐，低音量自然环境声，旁白优先。不添加字幕或片尾。"
+                        "以下引号内是本段全部普通话口播（旁白与人物对话），按角色分配完整清晰读完，"
+                        "未指定角色的使用旁白。不要念说明文字，不增删口播，不重复前段，不截断最后一句。"
+                        f"口播全文：{json.dumps(segment['narration'], ensure_ascii=False)}。"
+                        "无背景音乐，低音量自然环境声，口播优先。不添加字幕或片尾。"
                     )
                     if reference_options.get("reference_video_url"):
                         prompt = (
                             f"将视频1向后延长{segment['duration_seconds']}秒，"
                             "从视频1的结尾继续，只输出新增内容，不回放或重复原视频。"
                             "保持原视频的人物、场景、动作方向和旁白音色。" + prompt
+                        )
+                    if segment.get("dialogues"):
+                        prompt += (
+                            "本段口播角色分配如下，kind为narration的作为画外旁白，kind为dialogue的"
+                            "由对应人物说出；角色标签是说明，不朗读。上文所列口播全文仅朗读一次，"
+                            "以下分配不增加或重复台词，不克隆真人声音："
+                            + json.dumps(segment["dialogues"], ensure_ascii=False)
                         )
                     segment["status"] = "submitting"
                     segment["prompt"] = prompt

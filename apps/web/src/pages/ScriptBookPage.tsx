@@ -12,6 +12,7 @@ import { EmptyState } from "../components/EmptyState";
 import { ErrorNotice, QueryState } from "../components/QueryState";
 import { hasQueryIssue } from "../queryHelpers";
 import { ScriptPriceNotice } from "../components/ScriptPriceNotice";
+import { ScriptSections } from "../components/ScriptSections";
 
 export function ScriptBookPage() {
   const { subjectId = "" } = useParams();
@@ -20,7 +21,6 @@ export function ScriptBookPage() {
   const chapters = useQuery({ queryKey: ["chapters"], queryFn: api.listChapters });
   const scripts = useQuery({ queryKey: ["scripts"], queryFn: api.listScripts });
   const [title, setTitle] = useState("");
-  const [mode, setMode] = useState<"single_chapter" | "multi_chapter">("multi_chapter");
   const [chapterId, setChapterId] = useState("");
   const [selectedSceneId, setSelectedSceneId] = useState("");
   const generationRequest = useRef<{ fingerprint: string; id: string } | null>(null);
@@ -49,10 +49,14 @@ export function ScriptBookPage() {
 
   const generate = useMutation({
     mutationFn: api.generateScript,
-    onSuccess: async (updatedProject) => {
+    onSuccess: async (updatedProject, variables) => {
       generationRequest.current = null;
       setTitle("");
-      setSelectedSceneId(updatedProject.scenes[0]?.id ?? "");
+      queryClient.setQueryData(["scripts"], (current: typeof scripts.data) =>
+        current?.some((item) => item.id === updatedProject.id)
+          ? current.map((item) => item.id === updatedProject.id ? updatedProject : item)
+          : [...(current ?? []), updatedProject]);
+      setSelectedSceneId(updatedProject.scenes.find((scene) => scene.chapter_id === variables.chapter_id)?.id ?? "");
       await queryClient.invalidateQueries({ queryKey: ["scripts"] });
     },
     onSettled: () => queryClient.invalidateQueries({ queryKey: ["wallet"] }),
@@ -60,13 +64,13 @@ export function ScriptBookPage() {
 
   function submit(event: FormEvent) {
     event.preventDefault();
-    if (generate.isPending) return;
+    if (generate.isPending || !chapterId) return;
     const payload = {
       subject_id: subjectId,
       title: title || undefined,
-      mode,
+      mode: "single_chapter" as const,
       audience: "family" as const,
-      chapter_id: mode === "single_chapter" ? chapterId : undefined,
+      chapter_id: chapterId,
     };
     const fingerprint = JSON.stringify(payload);
     if (generationRequest.current?.fingerprint !== fingerprint) {
@@ -108,20 +112,13 @@ export function ScriptBookPage() {
         <form onSubmit={submit}>
           <ScriptPriceNotice />
           <label>剧本名称<input value={title} onChange={(event) => setTitle(event.target.value)} placeholder={project?.title || `${displayName}的生命片段`} /></label>
-          <fieldset>
-            <legend>生成结构</legend>
-            <div className="mode-switch">
-              <button type="button" className={mode === "single_chapter" ? "active" : ""} aria-pressed={mode === "single_chapter"} onClick={() => setMode("single_chapter")}>单章节</button>
-              <button type="button" className={mode === "multi_chapter" ? "active" : ""} aria-pressed={mode === "multi_chapter"} onClick={() => setMode("multi_chapter")}>多章节</button>
-            </div>
-          </fieldset>
-          {mode === "single_chapter" && <label>采访章节
+          <label>采访章节
             <select required value={chapterId} onChange={(event) => setChapterId(event.target.value)}>
               {chapters.data?.map((chapter) => <option key={chapter.id} value={chapter.id}>{String(chapter.order_index).padStart(2, "0")} · {chapter.title}</option>)}
             </select>
-          </label>}
-          <button className="button primary" disabled={generate.isPending || (mode === "single_chapter" && !chapterId)}>
-            <Sparkles size={18} /> {generate.isPending ? "正在生成章节……" : mode === "multi_chapter" ? "生成整本剧本" : "生成所选章节"}
+          </label>
+          <button className="button primary" disabled={generate.isPending || !chapterId}>
+            <Sparkles size={18} /> {generate.isPending ? "正在生成章节……" : "生成所选章节"}
           </button>
         </form>
         <ErrorNotice error={generate.error} />
@@ -158,11 +155,7 @@ export function ScriptBookPage() {
               <section className="manuscript-chapter">
                 <div className="chapter-number">第 {String(selectedScene.order_index).padStart(2, "0")} 章</div>
                 <h3>{selectedScene.heading}</h3>
-                <p>{selectedScene.narration}</p>
-                <div className="chapter-visual-note">
-                  <strong>画面建议</strong>
-                  <p>{selectedScene.visual_prompt}</p>
-                </div>
+                <ScriptSections scene={selectedScene} shots={project.shots} />
                 <footer><span>{selectedScene.duration_seconds} 秒</span><span>引用 {selectedScene.source_claim_ids.length} 条记忆</span></footer>
               </section>
             </div>

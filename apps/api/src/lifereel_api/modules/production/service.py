@@ -24,7 +24,7 @@ from lifereel_api.modules.production.models import GeneratedAsset, ProductionRun
 from lifereel_api.modules.production.planning import segment_durations
 from lifereel_api.modules.production.providers import VideoProviderError, get_video_provider
 from lifereel_api.modules.production.schemas import ProductionStart
-from lifereel_api.modules.script.models import ScriptProject, ScriptScene
+from lifereel_api.modules.script.models import ScriptProject, ScriptScene, ScriptShot
 
 logger = logging.getLogger(__name__)
 
@@ -73,16 +73,29 @@ def start_production(db: Session, tenant_id: UUID, payload: ProductionStart) -> 
                     raise VideoProviderError("VIDEO_DURATION_UNSUPPORTED")
             except VideoProviderError as exc:
                 raise ApiError(422, ErrorCode.VIDEO_DURATION_UNSUPPORTED) from exc
+    shot_rows = list(db.scalars(
+        select(ScriptShot).where(ScriptShot.scene_id.in_([scene.id for scene in scenes]))
+        .order_by(ScriptShot.order_index)
+    ))
     snapshot = [
         {
             "id": str(scene.id),
             "chapter_id": str(scene.chapter_id) if scene.chapter_id else None,
             "order_index": scene.order_index,
             "heading": scene.heading,
+            "plot": scene.plot,
+            "dialogues": scene.dialogues,
             "narration": scene.narration,
             "visual_prompt": scene.visual_prompt,
             "duration_seconds": scene.duration_seconds,
             "source_claim_ids": scene.source_claim_ids,
+            "shots": [
+                {"id": str(shot.id), "scene_id": str(shot.scene_id),
+                 "order_index": shot.order_index, "shot_type": shot.shot_type,
+                 "visual_prompt": shot.visual_prompt, "duration_seconds": shot.duration_seconds,
+                 "source_claim_ids": shot.source_claim_ids}
+                for shot in shot_rows if shot.scene_id == scene.id
+            ],
         }
         for scene in scenes
     ]
