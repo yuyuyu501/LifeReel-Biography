@@ -97,6 +97,7 @@ export const api = {
     sessionId: string,
     payload: {
       round_id?: string;
+      action?: "interview" | "regenerate_script";
       answer_text?: string;
       asset_ids: string[];
       idempotency_key: string;
@@ -130,6 +131,10 @@ export const api = {
       body: JSON.stringify(payload),
     }),
   listScripts: () => request<ScriptProject[]>("/v1/scripts"),
+  updateScriptScene: (projectId: string, sceneId: string, payload: import("@lifereel/contracts").ScriptSceneUpdate) =>
+    request<ScriptProject>(`/v1/scripts/${projectId}/scenes/${sceneId}`, {
+      method: "PATCH", body: JSON.stringify(payload),
+    }),
   generateScript: (payload: {
     subject_id: string;
     idempotency_key?: string;

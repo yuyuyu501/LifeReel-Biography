@@ -271,6 +271,15 @@
   align-items: end;
   gap: 12px;
 }
+.chapter-generator .wallet-note {
+  grid-column: 1 / -1;
+}
+.generation-chapter-name {
+  margin: 0;
+  align-self: center;
+  font-size: 13px;
+  color: var(--ink-soft);
+}
 .chapter-generator label {
   min-width: 0;
   margin: 0;

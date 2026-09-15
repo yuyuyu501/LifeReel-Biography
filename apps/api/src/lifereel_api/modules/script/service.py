@@ -19,11 +19,15 @@ from lifereel_api.modules.interview.chapter_prompts import (
     ChapterPromptProfile,
     get_chapter_prompt_profile,
 )
-from lifereel_api.modules.interview.models import Chapter
+from lifereel_api.modules.interview.models import Chapter, InterviewSession, InterviewTurnWorkflow
 from lifereel_api.modules.memory.models import MemoryClaim
 from lifereel_api.modules.production.locking import execution_lock
 from lifereel_api.modules.script.models import ScriptProject, ScriptScene, ScriptShot
-from lifereel_api.modules.script.schemas import ScriptDialogue, ScriptGenerateRequest
+from lifereel_api.modules.script.schemas import (
+    ScriptDialogue,
+    ScriptGenerateRequest,
+    ScriptSceneUpdate,
+)
 from lifereel_api.providers.openai_compatible import OpenAICompatibleClient
 
 logger = logging.getLogger(__name__)
@@ -136,6 +140,9 @@ def _llm_scenes(
             "相关的信息，不得引入其他生命章节，不得补写未提供的事实。每次调用都要把全部"
             "证据融合为一份完整、连续的当前章节稿件，而不是新增草稿、场景或片段列表。"
             "使用第一人称、自然口语和克制情感；新信息应融入原有叙事并改善连贯性。"
+            "update_brief.current_script是当前稿件，可能包含用户手动修改，应保留其表达偏好；"
+            "update_brief.script_instructions是用户本次重写要求，只用于调整叙事、分镜、台词或场景，"
+            "不得当作人物生平事实，不得越过本章主题或证据边界。仍须完整返回四部分。"
             "本章短视频总时长必须在15至30秒之间，根据最终旁白实际字数、自然停顿和"
             "画面节奏选择整数秒，不要每次都写30秒。口述旁白约每秒3至4个汉字，"
             "为停顿和转场留出时间；信息较少可用15至20秒，较丰富用21至30秒。"
@@ -468,6 +475,21 @@ def _generate_draft(
             "chapter_profile": profile,
             "update_mode": "replace_current_chapter",
         }
+        current_scene = db.scalar(select(ScriptScene).join(ScriptProject).where(
+            ScriptProject.tenant_id == tenant_id, ScriptProject.subject_id == subject.id,
+            ScriptProject.status != "superseded", ScriptScene.chapter_id == chapter_id,
+        ))
+        if current_scene:
+            current_shots = list(db.scalars(select(ScriptShot).where(
+                ScriptShot.scene_id == current_scene.id,
+            ).order_by(ScriptShot.order_index)))
+            chapter_brief["current_script"] = {
+                "heading": current_scene.heading, "plot": current_scene.plot,
+                "dialogues": current_scene.dialogues, "narration": current_scene.narration,
+                "visual_prompt": current_scene.visual_prompt,
+                "shots": [{"visual_prompt": shot.visual_prompt, "shot_type": shot.shot_type,
+                           "duration_seconds": shot.duration_seconds} for shot in current_shots],
+            }
         chapter_payload = payload.model_copy(
             update={"chapter_id": chapter_id, "mode": "single_chapter"}
         )
@@ -594,3 +616,51 @@ def _generate_draft(
         billing.transition(db, tenant_id, key, True)
     db.commit()
     return get_project(db, tenant_id, project.id)
+
+
+def update_scene(db, tenant_id, project_id, scene_id, payload: ScriptSceneUpdate):
+    project, _, _ = get_project(db, tenant_id, project_id)
+    with execution_lock(db, project.subject_id) as acquired:
+        if not acquired:
+            raise ApiError(409, ErrorCode.SCRIPT_EDIT_BUSY)
+        db.refresh(project)
+        if project.version_number != payload.expected_version:
+            raise ApiError(409, ErrorCode.SCRIPT_EDIT_CONFLICT)
+        scene = db.scalar(select(ScriptScene).where(
+            ScriptScene.id == scene_id, ScriptScene.project_id == project_id,
+            ScriptScene.tenant_id == tenant_id,
+        ))
+        if scene is None:
+            raise ApiError(409, ErrorCode.SCRIPT_EDIT_CONFLICT)
+        busy = db.scalar(select(InterviewTurnWorkflow.id).join(InterviewSession).where(
+            InterviewSession.subject_id == project.subject_id,
+            InterviewTurnWorkflow.tenant_id == tenant_id,
+            InterviewTurnWorkflow.status.in_(["queued", "running"]),
+        ).limit(1))
+        if busy:
+            raise ApiError(409, ErrorCode.SCRIPT_EDIT_BUSY)
+        if (payload.shots and sum(shot.duration_seconds for shot in payload.shots)
+                != payload.duration_seconds) or any(
+            not line.speaker.strip() or not line.text.strip() for line in payload.dialogues
+        ):
+            raise ApiError(422, ErrorCode.SCRIPT_CONTENT_INVALID)
+        scene.heading = payload.heading
+        scene.plot = payload.plot or None
+        scene.dialogues = [line.model_dump() for line in payload.dialogues]
+        scene.narration = "\n".join(line.text for line in payload.dialogues)
+        scene.visual_prompt = payload.visual_prompt
+        scene.duration_seconds = payload.duration_seconds
+        old_shots = list(db.scalars(select(ScriptShot).where(ScriptShot.scene_id == scene.id)
+                                   .order_by(ScriptShot.order_index)))
+        db.execute(delete(ScriptShot).where(ScriptShot.scene_id == scene.id))
+        for index, shot in enumerate(payload.shots):
+            previous = old_shots[index] if index < len(old_shots) else None
+            sources = previous.source_claim_ids if (
+                previous and previous.visual_prompt == shot.visual_prompt
+            ) else []
+            db.add(ScriptShot(tenant_id=tenant_id, scene_id=scene.id, order_index=index + 1,
+                              **shot.model_dump(), source_claim_ids=sources))
+        project.version_number += 1
+        project.status = "draft"
+        db.commit()
+        return get_project(db, tenant_id, project.id)

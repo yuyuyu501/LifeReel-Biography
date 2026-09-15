@@ -182,6 +182,11 @@ def test_missing_topics_are_decided_by_ai_semantics(monkeypatch) -> None:
 
 
 def test_memory_ai_failure_rolls_back_and_interview_job_can_retry(client, monkeypatch) -> None:
+    from lifereel_api.modules.orchestration import intent
+
+    monkeypatch.setattr(intent, "classify_turn", lambda message: {
+        "action": "interview", "has_new_facts": True, "instructions": "",
+    })
     from lifereel_api.modules.jobs import service as job_service
     from lifereel_api.providers.openai_compatible import OpenAICompatibleClient
 

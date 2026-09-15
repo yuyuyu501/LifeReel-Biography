@@ -608,6 +608,7 @@ def compile_memories(
         if session_ids
         else []
     )
+    rounds = [item for item in rounds if item.question_source != "script_request"]
     round_ids = [item.id for item in rounds]
     existing_round_ids = (
         set(

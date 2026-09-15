@@ -9,7 +9,8 @@ import { ErrorNotice, QueryState } from "../components/QueryState";
 import { hasQueryIssue } from "../queryHelpers";
 import { statusLabel } from "../statusLabels";
 import { StudioRecovery } from "./StudioRecovery";
-import { ScriptSections } from "../components/ScriptSections";
+import { EditableScript } from "../components/EditableScript";
+import { ProductionDetails } from "../components/ProductionDetails";
 
 function matchesChapter(run: ProductionRun, project: ScriptProject, scene: ScriptScene) {
   if (run.project_id !== project.id) return false;
@@ -32,6 +33,7 @@ export function StudioPage() {
   const [sceneId, setSceneId] = useState("");
   const [runId, setRunId] = useState("");
   const [view, setView] = useState<"video" | "script">("video");
+  const [scriptEditing, setScriptEditing] = useState(false);
   const [media, setMedia] = useState<{ id: string; duration: number; width: number; height: number } | null>(null);
   const [mediaError, setMediaError] = useState("");
   const [partial, setPartial] = useState<{ runId: string; index: number } | null>(null);
@@ -69,7 +71,6 @@ export function StudioPage() {
   const blocksCurrentScript = blocked && (activeRun?.output_manifest?.script_version ?? selected?.project.version_number) === selected?.project.version_number;
   const publication = publications.data?.find((item) => item.production_run_id === activeRun?.id && item.status === "published");
   const isGenerating = chapterRuns.some((run) => ["queued", "running"].includes(run.status));
-  const displayedScene = activeRun?.output_manifest?.script_snapshot?.[0] ?? selected?.scene;
   const actualMedia = media?.id === activeAsset?.id ? media : null;
   const parameters = activeAsset?.generation_parameters;
   const segmented = settings.data?.mode === "segmented";
@@ -109,7 +110,7 @@ export function StudioPage() {
       <ErrorNotice error={produce.error || publish.error || withdraw.error || retry.error} />
       <div className="studio-workspace">
         <aside className="studio-catalog" aria-label="制作章节">
-          <label>制作对象<select value={effectiveSubjectId} onChange={(event) => { setSubjectId(event.target.value); setSceneId(""); setRunId(""); }}>
+          <label>制作对象<select disabled={scriptEditing} value={effectiveSubjectId} onChange={(event) => { setSubjectId(event.target.value); setSceneId(""); setRunId(""); }}>
             {!people.data?.some((person) => person.is_subject) && <option value="">暂无家人</option>}
             {people.data?.filter((person) => person.is_subject).map((person) => <option key={person.id} value={person.id}>{person.preferred_name || person.display_name}</option>)}
           </select></label>
@@ -117,7 +118,7 @@ export function StudioPage() {
           <nav className="studio-chapters" aria-label="章节列表">
             {entries.map(({ project, scene }, index) => {
               const run = productionRuns.data?.find((item) => matchesChapter(item, project, scene));
-              return <button key={scene.id} aria-current={selected?.scene.id === scene.id ? "true" : undefined} onClick={() => { setSceneId(scene.id); setRunId(""); }}>
+              return <button key={scene.id} disabled={scriptEditing} aria-current={selected?.scene.id === scene.id ? "true" : undefined} onClick={() => { setSceneId(scene.id); setRunId(""); }}>
                 <span className="studio-chapter-number">{String(index + 1).padStart(2, "0")}</span>
                 <span><strong>{scene.heading}</strong><small>剧本约 {scene.duration_seconds} 秒</small><small className="studio-chapter-status">{run ? statusLabel(run.status) : "尚未生成"}</small></span>
                 {run?.status === "completed" && <Check size={16} aria-hidden="true" />}
@@ -136,7 +137,7 @@ export function StudioPage() {
                 <div><dt>目标时长</dt><dd>{seconds(segmented ? selected.scene.duration_seconds : settings.data?.duration_seconds)}</dd></div>
                 <div><dt>声音</dt><dd>{settings.data?.generate_audio === true ? "原生音频" : settings.data?.generate_audio === false ? "无声片段" : "由服务决定"}</dd></div>
               </dl>
-              <div className="studio-generate-row"><span className="studio-muted">剧本预估 {seconds(selected.scene.duration_seconds)}</span><button className="button primary" disabled={produce.isPending || isGenerating || quote === undefined || !hasBalance || blocksCurrentScript} title={blocksCurrentScript ? "请先处理下方的审核问题" : !hasBalance ? "余额不足，请先充值" : undefined} onClick={() => produce.mutate(selected)}><Play size={16} aria-hidden="true" /> {isGenerating ? "正在生成" : "生成影像"}</button></div>
+              <div className="studio-generate-row"><span className="studio-muted">剧本预估 {seconds(selected.scene.duration_seconds)}</span><button className="button primary" disabled={scriptEditing || produce.isPending || isGenerating || quote === undefined || !hasBalance || blocksCurrentScript} title={scriptEditing ? "请先保存或取消剧本修改" : blocksCurrentScript ? "请先处理下方的审核问题" : !hasBalance ? "余额不足，请先充值" : undefined} onClick={() => produce.mutate(selected)}><Play size={16} aria-hidden="true" /> {isGenerating ? "正在生成" : "生成影像"}</button></div>
             </div>
             <div className="studio-preview-toolbar">
               <div role="tablist" aria-label="预览内容" className="studio-tabs" onKeyDown={(event) => {
@@ -174,14 +175,10 @@ export function StudioPage() {
             </div>
             <div id="studio-panel-script" role="tabpanel" aria-labelledby="studio-tab-script" hidden={view !== "script"}>
               <article className="studio-script">
-                <div className="studio-script-caption"><span>{activeRun?.output_manifest?.script_snapshot ? "生成时剧本" : "当前剧本"}</span><span>预估 {seconds(displayedScene?.duration_seconds)}</span></div>
-                {activeRun && !activeRun.output_manifest?.script_snapshot && <p className="notice">此历史视频未保存剧本快照，以下为当前章节内容。</p>}
-                {activeRun?.output_manifest?.script_version != null && activeRun.output_manifest.script_version !== selected.project.version_number && <p className="notice">剧本已更新，以下保留本次视频生成时的内容。</p>}
-                <h3>{displayedScene?.heading}</h3>
-                {displayedScene && <ScriptSections scene={displayedScene}
-                  shots={activeRun?.output_manifest?.script_snapshot ? [] : selected.project.shots}
-                  production={activeRun?.output_manifest} />}
+                <div className="studio-script-caption"><span>当前剧本</span><span>预估 {seconds(selected.scene.duration_seconds)}</span></div>
+                <EditableScript key={selected.scene.id} scene={selected.scene} project={selected.project} disabled={isGenerating} onEditingChange={setScriptEditing} />
               </article>
+              {activeRun && <ProductionDetails run={activeRun} />}
             </div>
           </> : <EmptyState icon={BookOpen} title="还没有可制作的章节" description="" />}
         </section>

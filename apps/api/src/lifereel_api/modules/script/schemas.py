@@ -23,6 +23,24 @@ class ScriptGenerateRequest(BaseModel):
     idempotency_key: UUID | None = None
 
 
+class ScriptShotUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+    shot_type: Literal["wide", "medium", "closeup", "detail", "archive"]
+    visual_prompt: str = Field(min_length=1, max_length=4000)
+    duration_seconds: int = Field(ge=1, le=300, strict=True)
+
+
+class ScriptSceneUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+    expected_version: int = Field(ge=1)
+    heading: str = Field(min_length=1, max_length=180)
+    plot: str | None = Field(default=None, max_length=4000)
+    dialogues: list[ScriptDialogue] = Field(min_length=1, max_length=40)
+    visual_prompt: str = Field(min_length=1, max_length=4000)
+    duration_seconds: int = Field(ge=4, le=300, strict=True)
+    shots: list[ScriptShotUpdate] = Field(max_length=40)
+
+
 class ScriptSceneRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

@@ -16,12 +16,12 @@ import {
   Square,
   Trash2,
 } from "lucide-react";
-import { type ChangeEvent, type FormEvent, useMemo, useState } from "react";
+import { type ChangeEvent, type FormEvent, useMemo, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
 import { api } from "../api/client";
 import { ApiError, errorMessage } from "../api/errors";
 import { ErrorNotice, QueryState } from "../components/QueryState";
-import { ScriptSections } from "../components/ScriptSections";
+import { EditableScript } from "../components/EditableScript";
 import {
   EVIDENCE_LIMITS,
   EVIDENCE_LIMIT_SUMMARY,
@@ -74,6 +74,8 @@ export function InterviewRoomPage() {
   const [files, setFiles] = useState<File[]>([]);
   const [fileError, setFileError] = useState<string | null>(null);
   const [mobilePane, setMobilePane] = useState<"conversation" | "script">("conversation");
+  const [scriptEditing, setScriptEditing] = useState(false);
+  const regenerationRequest = useRef<string | null>(null);
   const recorder = useAudioRecorder();
 
   const session = workspace.data?.session;
@@ -135,6 +137,19 @@ export function InterviewRoomPage() {
     },
   });
 
+  const regenerate = useMutation({
+    mutationFn: () => {
+      regenerationRequest.current ??= crypto.randomUUID();
+      return api.createInterviewTurn(id, {
+        action: "regenerate_script", asset_ids: [], idempotency_key: regenerationRequest.current,
+      });
+    },
+    onSuccess: () => {
+      regenerationRequest.current = null;
+      return queryClient.invalidateQueries({ queryKey: ["interview-workspace", id] });
+    },
+  });
+
   function selectFiles(event: ChangeEvent<HTMLInputElement>) {
     const picked = Array.from(event.target.files ?? []);
     setFileError(null);
@@ -158,7 +173,7 @@ export function InterviewRoomPage() {
 
   function onSubmit(event: FormEvent) {
     event.preventDefault();
-    if (recorder.isRecording || submitTurn.isPending || retryWorkflow.isPending || workspace.data?.latest_workflow &&
+    if (scriptEditing || regenerate.isPending || recorder.isRecording || submitTurn.isPending || retryWorkflow.isPending || workspace.data?.latest_workflow &&
       ["queued", "running"].includes(workspace.data.latest_workflow.status)) return;
     if (answer.trim() || recorder.audioBlob || files.length) submitTurn.mutate();
   }
@@ -194,7 +209,7 @@ export function InterviewRoomPage() {
         </button>
       </div>
 
-      <ErrorNotice error={submitTurn.error || retryWorkflow.error || workflowError} />
+      <ErrorNotice error={submitTurn.error || retryWorkflow.error || regenerate.error || workflowError} />
       {workflowError && workflow?.job_id && (
         <div className="interview-retry-action">
           <button
@@ -260,7 +275,7 @@ export function InterviewRoomPage() {
                 <button type="button" className={`composer-tool ${recorder.isRecording ? "recording" : ""}`} disabled={submitTurn.isPending} aria-pressed={recorder.isRecording} onClick={() => recorder.isRecording ? recorder.stop() : recorder.start()}>
                   {recorder.isRecording ? <><Square size={16} /> 停止录音</> : <><Mic2 size={17} /> {recorder.audioUrl ? "重新录制" : "录制原声"}</>}
                 </button>
-                <button className="composer-send" aria-label={submitTurn.isPending || workflowRunning ? "正在整理" : "发送并更新剧本"} title={recorder.isRecording ? "请先停止录音" : submitTurn.isPending || workflowRunning ? "正在整理" : "发送并更新剧本"} disabled={(!answer.trim() && !recorder.audioBlob && !files.length) || recorder.isRecording || submitTurn.isPending || retryWorkflow.isPending || workflowRunning}>
+                <button className="composer-send" aria-label={submitTurn.isPending || workflowRunning ? "正在整理" : "发送并更新剧本"} title={scriptEditing ? "请先保存或取消剧本修改" : recorder.isRecording ? "请先停止录音" : submitTurn.isPending || workflowRunning ? "正在整理" : "发送并更新剧本"} disabled={scriptEditing || regenerate.isPending || (!answer.trim() && !recorder.audioBlob && !files.length) || recorder.isRecording || submitTurn.isPending || retryWorkflow.isPending || workflowRunning}>
                   {submitTurn.isPending || workflowRunning ? <LoaderCircle size={20} className="composer-spinner" /> : <ArrowUp size={21} />}
                   <span>发送</span>
                 </button>
@@ -280,8 +295,11 @@ export function InterviewRoomPage() {
         <section className={`live-script-pane ${mobilePane !== "script" ? "mobile-hidden" : ""}`} aria-label="本章实时剧本">
           <div className="pane-heading script-pane-heading">
             <div><span>LIVE SCRIPT</span><h2>{chapter?.title ?? "本章剧本"}</h2></div>
-            {chapterScript && <small>{scriptStatus}</small>}
+            <div className="script-pane-actions">{chapterScript && <small>{scriptStatus}</small>}
+              <button className="icon-button" title="重新生成本章剧本" aria-label="重新生成本章剧本" disabled={scriptEditing || regenerate.isPending || workflowRunning || submitTurn.isPending || retryWorkflow.isPending} onClick={() => regenerate.mutate()}><RefreshCw size={18} /></button>
+            </div>
           </div>
+          <div className="live-script-scroll" tabIndex={0} aria-label="剧本内容滚动区">
           {workflowRunning && (
             <div className="script-updating"><LoaderCircle size={18} /><div><strong>采访 AI 正在整理</strong><span>识别事实、检查缺口并同步更新本章。</span></div></div>
           )}
@@ -293,12 +311,12 @@ export function InterviewRoomPage() {
           ) : (
             <article className="live-manuscript">
               <section>
-                <header><h3>{chapterScript.heading}</h3></header>
-                <ScriptSections scene={chapterScript} shots={workspace.data?.script?.shots} />
+                <EditableScript key={chapterScript.id} scene={chapterScript} project={workspace.data.script!} disabled={workflowRunning || regenerate.isPending || submitTurn.isPending} onEditingChange={setScriptEditing} />
                 <footer><span>{chapterScript.duration_seconds} 秒</span><span>{chapterScript.source_claim_ids.length} 条来源</span></footer>
               </section>
             </article>
           )}
+          </div>
         </section>
       </main>
     </div>

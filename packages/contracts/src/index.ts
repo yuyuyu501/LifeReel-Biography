@@ -265,6 +265,16 @@ export interface ScriptDialogue {
   text: string;
 }
 
+export interface ScriptSceneUpdate {
+  expected_version: number;
+  heading: string;
+  plot: string | null;
+  dialogues: ScriptDialogue[];
+  visual_prompt: string;
+  duration_seconds: number;
+  shots: Array<{ shot_type: string; visual_prompt: string; duration_seconds: number }>;
+}
+
 export interface ScriptScene {
   id: UUID;
   chapter_id: UUID | null;

@@ -123,6 +123,9 @@ def _llm_follow_up(
         f"你是尊重边界的中文口述史采访者。当前唯一采访章节是“{profile['title']}”。"
         f"本章关键词：{keywords}。本章采访目标：{profile['interview_goal']}。"
         f"越界主题：{excluded}。根据 chapter_assessment 和已知记忆回应用户最新一条消息。"
+        "如果script_action为regenerate_script，应优先回应用户的重写要求，不要重复之前的采访问题。"
+        "script_updated为true才可以告知本章已重新生成，并请用户查看或提出调整；"
+        "为false说明资料仍不足，应具体解释缺少什么，不能谎称生成成功。"
         "有重要缺口时，只问一个本章内最有价值的问题；用户提到越界内容时可以简短承接，"
         "但不得继续展开其他章节。不得臆造事实、重复 answered_questions 中的问题、"
         "暗示所谓正确答案，或施压回答隐私。用户不提供的信息要尊重，不反复追问。"
@@ -378,7 +381,14 @@ def suggest_next_question(
     open_conflict = chapter_conflicts[0] if chapter_conflicts else None
     declined = any(token in last_answer for token in ("不想说", "不记得", "跳过", "不方便"))
     source = "rule_planner"
-    if declined:
+    if assessment and assessment.get("script_action") == "regenerate_script":
+        question = (
+            "本章剧本已重新生成，您可以查看后继续提出调整。"
+            if assessment.get("script_updated")
+            else "现有信息还不足以成稿，请补充一件本章的具体往事。"
+        )
+        intent = "meaning"
+    elif declined:
         question = "没关系，我们换一个轻松些的话题。那段时间里，有没有让您感到温暖的小事？"
         intent = "respect_boundary"
     elif open_conflict:

@@ -1,6 +1,7 @@
-import type { ScriptScene, ScriptShot } from "@lifereel/contracts";
+import type { ProductionRun, ScriptScene, ScriptShot } from "@lifereel/contracts";
 import { fireEvent, render, screen, within } from "@testing-library/react";
 import { ScriptSections } from "./ScriptSections";
+import { ProductionDetails } from "./ProductionDetails";
 
 const scene: ScriptScene = {
   id: "scene-1", chapter_id: "chapter-1", order_index: 1, heading: "回家",
@@ -49,10 +50,11 @@ test("legacy records keep narration without inventing missing plot or dialogue",
 
 test("uses frozen snapshot shots and exposes actual production prompts as plain text", () => {
   const prompt = "<script>alert('not executable')</script>\n本段实际提示词";
-  const { container } = render(<ScriptSections scene={{ ...scene, shots: [shots[2]] }} shots={shots}
-    production={{ plan: { continuity: "旧宅冬日", voice: "温和女声" }, segments: [
+  const { container } = render(<ProductionDetails run={{ output_manifest: {
+    script_snapshot: [{ ...scene, shots: [shots[2]] }],
+    plan: { continuity: "旧宅冬日", voice: "温和女声" }, segments: [
       { status: "failed", duration_seconds: 10, narration: "本段旁白", visual_prompt: "生成时的镜头", prompt },
-    ] }} />);
+    ] } } as ProductionRun} />);
   expect(screen.queryByText(shots[0].visual_prompt)).not.toBeInTheDocument();
   expect(screen.getByText("旧宅冬日")).toBeVisible();
   fireEvent.click(screen.getByText("实际生成提示词"));

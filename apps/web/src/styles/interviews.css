@@ -236,7 +236,8 @@
   font-size: 13px;
 }
 .live-interview-layout {
-  min-height: calc(100vh - 188px);
+  height: calc(100dvh - 150px);
+  min-height: 560px;
   margin-top: 18px;
   display: grid;
   grid-template-columns: minmax(380px, 0.9fr) 42px minmax(440px, 1.1fr);
@@ -247,6 +248,7 @@
 .conversation-pane,
 .live-script-pane {
   min-width: 0;
+  min-height: 0;
 }
 .conversation-pane {
   display: flex;
@@ -254,10 +256,34 @@
   background: #f8faf8;
 }
 .live-script-pane {
-  padding: 0 26px 28px;
+  display: flex;
+  flex-direction: column;
+  padding: 0 26px;
   background: #fff;
 }
+.live-script-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  margin-inline: -26px;
+  padding: 0 26px 28px;
+  scrollbar-gutter: stable;
+}
+.script-pane-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+  color: var(--muted);
+}
+.conversation-pane .answer-composer {
+  flex: 0 0 auto;
+  max-height: 50%;
+  overflow-y: auto;
+}
 .pane-heading {
+  flex-shrink: 0;
   min-height: 78px;
   padding: 15px 20px;
   display: flex;
@@ -287,8 +313,7 @@
   white-space: nowrap;
 }
 .conversation-pane .conversation {
-  min-height: 390px;
-  max-height: 560px;
+  min-height: 0;
   overflow-y: auto;
   align-content: start;
   padding: 24px 20px;
@@ -552,9 +577,6 @@
 .live-manuscript > section:last-child {
   border-bottom: 0;
 }
-.live-manuscript header {
-  display: block;
-}
 .live-manuscript h3 {
   margin: 0;
   font-family: "Songti SC", STSong, serif;
@@ -614,7 +636,8 @@
     background: var(--vermilion);
   }
   .live-interview-layout {
-    min-height: 0;
+    height: calc(100dvh - 210px);
+    min-height: 440px;
     margin-top: 10px;
     grid-template-columns: minmax(0, 1fr);
   }
@@ -626,7 +649,7 @@
     display: none;
   }
   .live-script-pane {
-    min-height: 560px;
+    min-height: 0;
   }
 }
 @media (max-width: 620px) {
@@ -655,8 +678,6 @@
     border-left: 0;
   }
   .conversation-pane .conversation {
-    min-height: 240px;
-    max-height: 340px;
     padding: 21px 14px;
   }
   .composer-actions {
@@ -673,6 +694,10 @@
     margin-left: 0;
   }
   .live-script-pane {
+    padding: 0 16px;
+  }
+  .live-script-scroll {
+    margin-inline: -16px;
     padding: 0 16px 22px;
   }
   .script-pane-heading {

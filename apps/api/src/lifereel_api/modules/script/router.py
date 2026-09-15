@@ -12,6 +12,7 @@ from lifereel_api.modules.script import service
 from lifereel_api.modules.script.schemas import (
     ScriptGenerateRequest,
     ScriptProjectRead,
+    ScriptSceneUpdate,
 )
 
 router = APIRouter(prefix="/scripts", tags=["scripts"])
@@ -40,3 +41,10 @@ def generate_script(payload: ScriptGenerateRequest, db: Db, tenant_id: Tenant) -
 def script(project_id: UUID, db: Db, tenant_id: Tenant) -> ScriptProjectRead:
     project, scenes, shots = service.get_project(db, tenant_id, project_id)
     return to_read(project, scenes, shots)
+
+
+@router.patch("/{project_id}/scenes/{scene_id}", response_model=ScriptProjectRead)
+def update_scene(
+    project_id: UUID, scene_id: UUID, payload: ScriptSceneUpdate, db: Db, tenant_id: Tenant,
+) -> ScriptProjectRead:
+    return to_read(*service.update_scene(db, tenant_id, project_id, scene_id, payload))

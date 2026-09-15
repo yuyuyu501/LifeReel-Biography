@@ -143,7 +143,8 @@ def create_turn(
         if existing.session_id != session_id:
             raise ApiError(status.HTTP_409_CONFLICT, ErrorCode.INTERVIEW_TURN_STATE_INVALID)
         return existing
-    if not (payload.answer_text or "").strip() and not payload.asset_ids:
+    if (not (payload.answer_text or "").strip() and not payload.asset_ids
+            and payload.action == "interview"):
         raise ApiError(
             status.HTTP_422_UNPROCESSABLE_ENTITY,
             ErrorCode.INTERVIEW_TURN_CONTENT_REQUIRED,
@@ -161,7 +162,17 @@ def create_turn(
     )
     if latest and latest.status in {"queued", "running"}:
         raise ApiError(status.HTTP_409_CONFLICT, ErrorCode.INTERVIEW_TURN_STATE_INVALID)
-    if payload.round_id is not None:
+    if payload.action == "regenerate_script":
+        current = session.rounds[-1] if session.rounds else None
+        round_ = InterviewRound(
+            tenant_id=tenant_id, session_id=session.id,
+            round_index=(current.round_index if current else 0) + 1,
+            question_text="", question_source="script_request",
+        )
+        db.add(round_)
+        db.flush()
+        session.round_count = round_.round_index
+    elif payload.round_id is not None:
         round_ = db.scalar(
             select(InterviewRound).where(
                 InterviewRound.id == payload.round_id,
@@ -212,6 +223,8 @@ def create_turn(
             raise ApiError(status.HTTP_404_NOT_FOUND, ErrorCode.EVIDENCE_ASSET_NOT_FOUND)
 
     answer_text = (payload.answer_text or "").strip()
+    if payload.action == "regenerate_script" and not answer_text:
+        answer_text = "请根据已讲述的内容重新生成本章剧本。"
     if answer_text:
         round_.answer_text = answer_text
         round_.source_asset_id = assets[0].id if assets else None
@@ -225,6 +238,7 @@ def create_turn(
         chapter_id=session.chapter_id,
         idempotency_key=payload.idempotency_key,
         status="queued",
+        script_brief={"requested_action": payload.action},
         # Continue unfinished material analysis together with the new message.
         asset_ids=list(dict.fromkeys([
             *(latest.asset_ids if latest and latest.status == "failed" else []),
@@ -340,6 +354,8 @@ def _assess_chapter(
             "支撑一段不虚构事实、包含旁白和画面描述的本章短剧本。只提供姓名、问候、"
             "拒绝回答或离题内容时，ready_for_script 为 false，继续采访，不强行编剧。"
             "已有具体生活细节可成稿时可以为 true，不要求所有主题完整，也不按记忆条数判断。"
+            "用户要求重写剧本时，应依据已有claims判断是否可生成，不要求用户重复讲述。"
+            "评估目标是含剧情、分镜、人物对话（可只有旁白）、场景描述的四部分剧本。"
             "reason 简要说明依据。格式："
             '{"missing_topics":["..."],"ready_for_script":false,"reason":"..."}。',
             json.dumps({**context, "allowed_topics": allowed_topics}, ensure_ascii=False),
@@ -580,6 +596,19 @@ def _execute_turn(
                 source_round.transcript_status = "done"
                 db.commit()
 
+        from lifereel_api.modules.orchestration.intent import classify_turn
+
+        intent = workflow.script_brief.get("turn_intent")
+        if intent is None:
+            intent = ({"action": "regenerate_script", "has_new_facts": False,
+                       "instructions": source_round.answer_text or ""}
+                      if workflow.script_brief.get("requested_action") == "regenerate_script"
+                      else classify_turn(source_round.answer_text or ""))
+            workflow.script_brief = {**workflow.script_brief, "turn_intent": intent}
+            if not intent["has_new_facts"]:
+                source_round.question_source = "script_request"
+            db.commit()
+
         memory_service.compile_memories(
             db,
             tenant_id,
@@ -614,6 +643,7 @@ def _execute_turn(
             }}
             db.commit()
         missing = assessment["missing_topics"]
+        assessment = {**assessment, "script_action": intent["action"]}
         brief = {
             "chapter_id": str(session.chapter_id) if session.chapter_id else None,
             "chapter_title": chapter.title if chapter else "自由采访",
@@ -633,6 +663,7 @@ def _execute_turn(
             "missing_topics": missing,
             "update_mode": "replace_current_chapter",
             "assessment": assessment,
+            "script_instructions": intent["instructions"],
         }
 
         project = None
@@ -648,6 +679,7 @@ def _execute_turn(
             billing.transition(db, tenant_id, billing_key, False)
             db.commit()
 
+        assessment["script_updated"] = project is not None
         # Retain completed AI work even if the following response fails validation.
         workflow = _get_workflow(db, tenant_id, workflow.id)
         workflow.source_claim_ids = [str(item.id) for item in new_claims]

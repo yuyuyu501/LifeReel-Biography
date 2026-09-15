@@ -70,7 +70,7 @@
   padding-top: 12px;
   border-top: 1px dashed var(--line-strong);
 }
-.script-sections h5 {
+.studio-production-info h4 {
   margin: 0 0 10px;
   font-size: 13px;
   color: var(--muted);
@@ -89,4 +89,128 @@
 }
 .script-production-segment details[open] pre {
   padding-top: 10px;
+}
+
+.script-editor-heading,
+.script-editor-subheading,
+.script-editor-item-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+}
+.script-editor-heading h3 {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.script-editor-heading > button {
+  flex-shrink: 0;
+}
+.script-editor fieldset {
+  display: grid;
+  gap: 20px;
+  min-width: 0;
+  padding: 20px 0;
+  margin: 0;
+  border: 0;
+}
+.script-editor label {
+  display: grid;
+  min-width: 0;
+  gap: 8px;
+  color: var(--ink-soft);
+  font-size: 13px;
+}
+.script-editor textarea,
+.script-editor input,
+.script-editor select {
+  width: 100%;
+  min-width: 0;
+  min-height: 44px;
+  padding: 8px 12px;
+  border: 1px solid var(--line-strong);
+  border-radius: 4px;
+  color: var(--ink);
+  background: #fff;
+  font: inherit;
+  font-size: 14px;
+}
+.script-editor textarea:focus,
+.script-editor input:focus,
+.script-editor select:focus {
+  outline: 2px solid var(--green);
+  outline-offset: 2px;
+}
+.script-editor textarea {
+  resize: vertical;
+  min-height: 90px;
+  line-height: 1.7;
+}
+.script-editor-item {
+  display: grid;
+  gap: 12px;
+  padding-block: 16px;
+  border-bottom: 1px solid var(--line);
+}
+.script-editor-subheading h4 {
+  margin: 0;
+  font-size: 15px;
+  color: var(--green-dark);
+}
+.script-editor-item-heading strong {
+  font-size: 13px;
+}
+.script-editor-tools {
+  display: flex;
+  gap: 4px;
+}
+.script-editor-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+.script-editor-actions {
+  position: sticky;
+  bottom: 0;
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  padding: 12px 0;
+  background: var(--paper);
+  border-top: 1px solid var(--line);
+  z-index: 1;
+}
+.studio-production-info {
+  padding: 24px 28px;
+  margin-top: 24px;
+  border-top: 2px solid var(--line-strong);
+  background: var(--paper);
+}
+.studio-production-info > h3 {
+  font-size: 18px;
+  margin: 0 0 18px;
+}
+.studio-production-info p,
+.studio-production-info pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font: inherit;
+  font-size: 14px;
+  line-height: 1.85;
+  color: var(--ink-soft);
+}
+.studio-production-info summary {
+  cursor: pointer;
+  color: var(--green);
+  font-size: 13px;
+}
+@media (max-width: 620px) {
+  .studio-production-info {
+    padding: 20px 16px;
+  }
+  .script-editor-actions {
+    position: static;
+    flex-wrap: wrap;
+  }
 }

@@ -151,7 +151,8 @@ test("generating chapter two selects its new scene and never submits a multi-cha
     return original(input, init);
   });
   renderPage(<ScriptBookPage />, "/scripts/person-1", "/scripts/:subjectId");
-  fireEvent.change(await screen.findByLabelText("采访章节"), { target: { value: "chapter-2" } });
+  fireEvent.click(await screen.findByRole("button", { name: /02.*求学.*尚未生成/ }));
+  expect(screen.queryByRole("combobox", { name: "采访章节" })).not.toBeInTheDocument();
   fireEvent.click(screen.getByRole("button", { name: "生成所选章节" }));
   expect(await screen.findByRole("heading", { name: "更新后的求学往事" })).toBeVisible();
   await waitFor(() => expect(screen.getByRole("button", { name: "生成所选章节" })).toBeEnabled());
@@ -340,8 +341,11 @@ test("compares a video with its saved script and isolates other chapters", async
   renderPage(<StudioPage />, "/studio");
   await screen.findByRole("tab", { name: "本章剧本" });
   fireEvent.click(screen.getByRole("tab", { name: "本章剧本" }));
+  expect(screen.getByText(project.scenes[0].narration)).toBeVisible();
+  expect(screen.getByRole("button", { name: "编辑本章剧本" })).toBeEnabled();
+  expect(screen.getByText("生成当时的旁白")).not.toBeVisible();
+  fireEvent.click(screen.getByText("生成时剧本（只读）"));
   expect(screen.getByText("生成当时的旁白")).toBeVisible();
-  expect(screen.getByText("生成时剧本")).toBeVisible();
   fireEvent.click(screen.getByRole("button", { name: /02.*远行求学/ }));
   expect(screen.queryByText("生成当时的旁白")).not.toBeInTheDocument();
   expect(screen.getByText(project.scenes[1].narration)).toBeVisible();

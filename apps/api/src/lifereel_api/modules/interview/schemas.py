@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -74,6 +75,7 @@ class NextQuestionRead(BaseModel):
 
 
 class InterviewTurnCreate(BaseModel):
+    action: Literal["interview", "regenerate_script"] = "interview"
     round_id: UUID | None = None
     answer_text: str | None = Field(default=None, max_length=50000)
     asset_ids: list[UUID] = Field(default_factory=list, max_length=12)
