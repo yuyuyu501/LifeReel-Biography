@@ -28,6 +28,7 @@ function response(payload: unknown, status = 200) {
 }
 
 beforeEach(() => {
+  localStorage.clear();
   vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
     if (url.endsWith("/v1/persons")) return response([person]);
@@ -42,6 +43,7 @@ beforeEach(() => {
 
 function renderPage() {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  queryClient.setQueryData(["auth-me"], { id: "owner", tenant_id: "family" });
   return render(
     <QueryClientProvider client={queryClient}>
       <MemoryRouter initialEntries={["/interviews"]}>
@@ -65,6 +67,22 @@ test("opens the saved chapter conversation instead of creating another one", asy
     "/v1/interviews",
     expect.objectContaining({ method: "POST" }),
   );
+});
+
+test("restores the selected person's chapter records after reload", async () => {
+  const originalFetch = vi.mocked(fetch).getMockImplementation()!;
+  vi.mocked(fetch).mockImplementation((input, init) => String(input).endsWith("/v1/persons")
+    ? Promise.resolve(response([{ ...person, id: "chen", preferred_name: "老陈" }, person]))
+    : originalFetch(input, init));
+  const first = renderPage();
+  const select = await screen.findByRole("combobox", { name: "采访人物" });
+  expect(select).toHaveValue("chen");
+  fireEvent.change(select, { target: { value: person.id } });
+  await screen.findByRole("button", { name: /继续这一章/ });
+  first.unmount();
+  renderPage();
+  expect(await screen.findByRole("combobox", { name: "采访人物" })).toHaveValue(person.id);
+  expect(await screen.findByRole("button", { name: /继续这一章/ })).toBeInTheDocument();
 });
 
 test("creates a conversation only for a chapter that has not started", async () => {

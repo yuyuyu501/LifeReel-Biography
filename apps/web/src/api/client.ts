@@ -72,7 +72,7 @@ export const api = {
       "/v1/auth/login",
       { method: "POST", body: JSON.stringify({ email, password }) },
     ),
-  me: () => request<{ display_name: string; role: string }>("/v1/auth/me"),
+  me: () => request<{ id: string; tenant_id: string; display_name: string; role: string }>("/v1/auth/me"),
   logout: () => request<void>("/v1/auth/logout", { method: "POST" }),
   health: () => request<{ status: string }>("/health"),
   listPersons: () => request<Person[]>("/v1/persons"),

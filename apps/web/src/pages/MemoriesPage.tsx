@@ -21,6 +21,7 @@ import { MemoryGraph } from "../components/MemoryGraph";
 import { QueryState } from "../components/QueryState";
 import { hasQueryIssue } from "../queryHelpers";
 import { statusLabel } from "../statusLabels";
+import { usePageSubject } from "../usePageSubject";
 
 const FILE_TYPES = [
   { kind: "all", label: "全部", icon: Archive },
@@ -59,11 +60,11 @@ function compactBiography(text: string) {
 }
 
 export function MemoriesPage() {
-  const [subjectId, setSubjectId] = useState("");
   const [selectedNodeId, setSelectedNodeId] = useState("");
   const [fileKind, setFileKind] = useState<FileKind>("all");
   const [selectedAssetId, setSelectedAssetId] = useState("");
   const people = useQuery({ queryKey: ["persons"], queryFn: api.listPersons });
+  const [subjectId, setSubjectId] = usePageSubject("memories", people.data);
   const subjects = people.data?.filter((person) => person.is_subject) ?? [];
   const subject = subjects.find((item) => item.id === subjectId) ?? subjects[0];
   const memories = useQuery({ queryKey: ["memories", subject?.id], queryFn: () => api.listMemories(subject!.id), enabled: Boolean(subject) });

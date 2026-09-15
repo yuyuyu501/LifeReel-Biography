@@ -1,11 +1,11 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowRight, Clock3, MessageCircle, Mic2 } from "lucide-react";
-import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { api } from "../api/client";
 import { EmptyState } from "../components/EmptyState";
 import { ErrorNotice, QueryState } from "../components/QueryState";
 import { hasQueryIssue } from "../queryHelpers";
+import { usePageSubject } from "../usePageSubject";
 
 export function InterviewsPage() {
   const queryClient = useQueryClient();
@@ -13,7 +13,7 @@ export function InterviewsPage() {
   const people = useQuery({ queryKey: ["persons"], queryFn: api.listPersons });
   const chapters = useQuery({ queryKey: ["chapters"], queryFn: api.listChapters });
   const interviews = useQuery({ queryKey: ["interviews"], queryFn: api.listInterviews });
-  const [subjectId, setSubjectId] = useState("");
+  const [subjectId, setSubjectId] = usePageSubject("interviews", people.data);
 
   const start = useMutation({
     mutationFn: api.startInterview,
@@ -23,8 +23,7 @@ export function InterviewsPage() {
     },
   });
 
-  const subject = people.data?.find((person) => person.id === subjectId)
-    ?? people.data?.find((person) => person.is_subject);
+  const subject = people.data?.find((person) => person.id === subjectId);
   const requiredQueries = [people, chapters, interviews];
   const subjectSessions = interviews.data
     ?.filter((session) => session.subject_id === subject?.id)

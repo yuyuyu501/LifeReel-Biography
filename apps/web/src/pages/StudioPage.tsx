@@ -11,6 +11,7 @@ import { statusLabel } from "../statusLabels";
 import { StudioRecovery } from "./StudioRecovery";
 import { EditableScript } from "../components/EditableScript";
 import { ProductionDetails } from "../components/ProductionDetails";
+import { usePageSubject } from "../usePageSubject";
 
 function matchesChapter(run: ProductionRun, project: ScriptProject, scene: ScriptScene) {
   if (run.project_id !== project.id) return false;
@@ -28,8 +29,7 @@ function seconds(value: unknown) {
 
 export function StudioPage() {
   const queryClient = useQueryClient();
-  const [searchParams] = useSearchParams();
-  const [subjectId, setSubjectId] = useState("");
+  const [searchParams, setSearchParams] = useSearchParams();
   const [sceneId, setSceneId] = useState("");
   const [runId, setRunId] = useState("");
   const [view, setView] = useState<"video" | "script">("video");
@@ -55,7 +55,9 @@ export function StudioPage() {
   }, [terminalRuns, queryClient]);
   const publications = useQuery({ queryKey: ["publications"], queryFn: api.listPublications });
   const requestedProject = scripts.data?.find((project) => project.id === searchParams.get("project"));
-  const effectiveSubjectId = subjectId || requestedProject?.subject_id || people.data?.find((person) => person.is_subject)?.id || "";
+  const [effectiveSubjectId, setSubjectId] = usePageSubject(
+    "studio", scripts.isPending ? undefined : people.data, requestedProject?.subject_id,
+  );
   const entries = (scripts.data ?? []).filter((project) => project.subject_id === effectiveSubjectId)
     .flatMap((project) => [...project.scenes].sort((a, b) => a.order_index - b.order_index).map((scene) => ({ project, scene })));
   const selected = entries.find(({ scene }) => scene.id === sceneId) ?? entries[0];
@@ -110,7 +112,10 @@ export function StudioPage() {
       <ErrorNotice error={produce.error || publish.error || withdraw.error || retry.error} />
       <div className="studio-workspace">
         <aside className="studio-catalog" aria-label="制作章节">
-          <label>制作对象<select disabled={scriptEditing} value={effectiveSubjectId} onChange={(event) => { setSubjectId(event.target.value); setSceneId(""); setRunId(""); }}>
+          <label>制作对象<select disabled={scriptEditing} value={effectiveSubjectId} onChange={(event) => {
+            setSubjectId(event.target.value); setSceneId(""); setRunId("");
+            setSearchParams((params) => { params.delete("project"); return params; }, { replace: true });
+          }}>
             {!people.data?.some((person) => person.is_subject) && <option value="">暂无家人</option>}
             {people.data?.filter((person) => person.is_subject).map((person) => <option key={person.id} value={person.id}>{person.preferred_name || person.display_name}</option>)}
           </select></label>
