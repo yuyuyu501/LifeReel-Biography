@@ -53,6 +53,7 @@ def claim_job(db: Session, lane: str):
         raise ApiError(409, ErrorCode.JOB_RETRY_NOT_ALLOWED)
     now = datetime.now(UTC)
     kind = KINDS[lane]
+    kinds = [kind, "production.cleanup"] if lane == "video" else [kind]
     limit = settings.interview_concurrency if lane == "interview" else settings.video_concurrency
     # Serialise only admission to each lane, not its jobs or their AI calls.
     if db.get_bind().dialect.name == "postgresql":
@@ -64,9 +65,10 @@ def claim_job(db: Session, lane: str):
         select(func.count())
         .select_from(Job)
         .where(
-            Job.kind == kind,
+            Job.kind.in_(kinds),
             Job.status.in_(ACTIVE),
             Job.lease_expires_at > now,
+            or_(Job.kind != "production.cleanup", Job.lease_token.is_not(None)),
         )
     )
     if active >= limit:
@@ -75,7 +77,7 @@ def claim_job(db: Session, lane: str):
     job = db.scalar(
         select(Job)
         .where(
-            Job.kind == kind,
+            Job.kind.in_(kinds),
             Job.status.in_(ACTIVE),
             or_(Job.lease_expires_at.is_(None), Job.lease_expires_at <= now),
         )
@@ -168,6 +170,10 @@ def execute_claim(db: Session, job_id: UUID, token: UUID):
                 if run is None:
                     raise ApiError(404, ErrorCode.PRODUCTION_RUN_NOT_FOUND)
                 production.execute_run(db, job.tenant_id, run.id)
+            elif job.kind == "production.cleanup":
+                from lifereel_api.modules.production.retention import execute_cleanup
+
+                execute_cleanup(db, job)
             else:
                 raise ApiError(409, ErrorCode.JOB_RETRY_NOT_ALLOWED)
         except Exception as exc:

@@ -40,7 +40,9 @@ def create_job(
 
 def list_jobs(db: Session, tenant_id: UUID) -> list[Job]:
     return list(
-        db.scalars(select(Job).where(Job.tenant_id == tenant_id).order_by(Job.created_at.desc()))
+        db.scalars(select(Job).where(
+            Job.tenant_id == tenant_id, Job.kind != "production.cleanup",
+        ).order_by(Job.created_at.desc()))
     )
 
 
@@ -98,6 +100,10 @@ def _retry_job(
             )
         )
         if run is not None and run.status != "completed":
+            from lifereel_api.modules.production.retention import is_retired
+
+            if is_retired(run):
+                raise ApiError(409, ErrorCode.JOB_RETRY_NOT_ALLOWED)
             from lifereel_api.modules.production.recovery import (
                 assert_retry_allowed,
                 replace_reference,

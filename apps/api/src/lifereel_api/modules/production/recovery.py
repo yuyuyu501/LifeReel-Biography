@@ -96,6 +96,10 @@ def details(run) -> dict | None:
 
 
 def assert_retry_allowed(run) -> None:
+    from lifereel_api.modules.production.retention import is_retired
+
+    if is_retired(run):
+        raise ApiError(409, ErrorCode.JOB_RETRY_NOT_ALLOWED)
     blocked = blocked_segment(run)
     code = blocked[2] if blocked else run.error_message
     if code in {ErrorCode.VIDEO_REFERENCE_REJECTED, ErrorCode.VIDEO_CONTENT_REJECTED}:

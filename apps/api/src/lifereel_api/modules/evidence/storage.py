@@ -15,6 +15,12 @@ from lifereel_api.core.config import get_settings
 
 
 class LocalPrivateStorage:
+    def delete(self, storage_key: str) -> None:
+        target = (self.root / storage_key).resolve()
+        if self.root not in target.parents:
+            raise ValueError("STORAGE_KEY_INVALID")
+        target.unlink(missing_ok=True)
+
     def signed_url(self, storage_key: str) -> str | None:
         return None
 
@@ -68,6 +74,9 @@ class LocalPrivateStorage:
 
 
 class S3PrivateStorage:
+    def delete(self, storage_key: str) -> None:
+        self.client.delete_object(Bucket=self.bucket, Key=storage_key)
+
     def signed_url(
         self, storage_key: str, *, expires_in: int = 3600,
     ) -> str:

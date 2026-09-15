@@ -31,7 +31,6 @@ export function StudioPage() {
   const queryClient = useQueryClient();
   const [searchParams, setSearchParams] = useSearchParams();
   const [sceneId, setSceneId] = useState("");
-  const [runId, setRunId] = useState("");
   const [view, setView] = useState<"video" | "script">("video");
   const [scriptEditing, setScriptEditing] = useState(false);
   const [media, setMedia] = useState<{ id: string; duration: number; width: number; height: number } | null>(null);
@@ -54,6 +53,8 @@ export function StudioPage() {
     }
   }, [terminalRuns, queryClient]);
   const publications = useQuery({ queryKey: ["publications"], queryFn: api.listPublications });
+  const orderedRuns = [...(productionRuns.data ?? [])].sort((left, right) =>
+    new Date(right.created_at).getTime() - new Date(left.created_at).getTime());
   const requestedProject = scripts.data?.find((project) => project.id === searchParams.get("project"));
   const [effectiveSubjectId, setSubjectId] = usePageSubject(
     "studio", scripts.isPending ? undefined : people.data, requestedProject?.subject_id,
@@ -61,8 +62,8 @@ export function StudioPage() {
   const entries = (scripts.data ?? []).filter((project) => project.subject_id === effectiveSubjectId)
     .flatMap((project) => [...project.scenes].sort((a, b) => a.order_index - b.order_index).map((scene) => ({ project, scene })));
   const selected = entries.find(({ scene }) => scene.id === sceneId) ?? entries[0];
-  const chapterRuns = selected ? (productionRuns.data ?? []).filter((run) => matchesChapter(run, selected.project, selected.scene)) : [];
-  const activeRun = chapterRuns.find((run) => run.id === runId) ?? chapterRuns[0];
+  const chapterRuns = selected ? orderedRuns.filter((run) => matchesChapter(run, selected.project, selected.scene)) : [];
+  const activeRun = chapterRuns[0];
   const planningIssue = ["VIDEO_PLAN_INVALID", "VIDEO_PLAN_FAILED"].includes(activeRun?.error_message ?? "")
     ? activeRun?.output_manifest?.planning_diagnostics?.at(-1)?.issues[0]?.code : undefined;
   const productionError = statusLabel(planningIssue, statusLabel(activeRun?.error_message, "视频生成失败，请稍后重试。"));
@@ -89,7 +90,13 @@ export function StudioPage() {
   const refresh = () => queryClient.invalidateQueries({ queryKey: ["production-runs"] });
   const produce = useMutation({
     mutationFn: ({ project, scene }: { project: ScriptProject; scene: ScriptScene }) => api.startProduction({ project_id: project.id, scene_id: scene.id, audience: "family", quoted_amount_cents: quote }),
-    onSuccess: async (run) => { setRunId(run.id); setView("video"); await queryClient.invalidateQueries({ queryKey: ["wallet"] }); await refresh(); },
+    onSuccess: async (run) => {
+      queryClient.setQueryData<ProductionRun[]>(["production-runs"], (runs) =>
+        [run, ...(runs ?? []).filter((item) => item.id !== run.id)]);
+      setView("video");
+      await queryClient.invalidateQueries({ queryKey: ["wallet"] });
+      await refresh();
+    },
   });
   const publish = useMutation({ mutationFn: (id: string) => api.publish(id, "family"), onSuccess: () => queryClient.invalidateQueries({ queryKey: ["publications"] }) });
   const withdraw = useMutation({ mutationFn: api.withdrawPublication, onSuccess: () => queryClient.invalidateQueries({ queryKey: ["publications"] }) });
@@ -113,7 +120,7 @@ export function StudioPage() {
       <div className="studio-workspace">
         <aside className="studio-catalog" aria-label="制作章节">
           <label>制作对象<select disabled={scriptEditing} value={effectiveSubjectId} onChange={(event) => {
-            setSubjectId(event.target.value); setSceneId(""); setRunId("");
+            setSubjectId(event.target.value); setSceneId("");
             setSearchParams((params) => { params.delete("project"); return params; }, { replace: true });
           }}>
             {!people.data?.some((person) => person.is_subject) && <option value="">暂无家人</option>}
@@ -122,8 +129,8 @@ export function StudioPage() {
           <div className="studio-catalog-heading"><h2>章节剧本</h2><span>{entries.length} 章</span></div>
           <nav className="studio-chapters" aria-label="章节列表">
             {entries.map(({ project, scene }, index) => {
-              const run = productionRuns.data?.find((item) => matchesChapter(item, project, scene));
-              return <button key={scene.id} disabled={scriptEditing} aria-current={selected?.scene.id === scene.id ? "true" : undefined} onClick={() => { setSceneId(scene.id); setRunId(""); }}>
+              const run = orderedRuns.find((item) => matchesChapter(item, project, scene));
+              return <button key={scene.id} disabled={scriptEditing} aria-current={selected?.scene.id === scene.id ? "true" : undefined} onClick={() => setSceneId(scene.id)}>
                 <span className="studio-chapter-number">{String(index + 1).padStart(2, "0")}</span>
                 <span><strong>{scene.heading}</strong><small>剧本约 {scene.duration_seconds} 秒</small><small className="studio-chapter-status">{run ? statusLabel(run.status) : "尚未生成"}</small></span>
                 {run?.status === "completed" && <Check size={16} aria-hidden="true" />}
@@ -157,7 +164,6 @@ export function StudioPage() {
               </div>
               {activeRun && <span className={`run-status ${activeRun.status}`} role="status">{statusLabel(activeRun.status)}</span>}
             </div>
-            {chapterRuns.length > 1 && <label className="studio-version">生成版本<select value={activeRun?.id} onChange={(event) => setRunId(event.target.value)}>{chapterRuns.map((run, index) => <option key={run.id} value={run.id}>{index === 0 ? "最新 · " : ""}{new Date(run.created_at).toLocaleString("zh-CN")} · {statusLabel(run.status)}</option>)}</select></label>}
             {progressText && <p className="studio-muted" role="status">{progressText}</p>}
             <div id="studio-panel-video" role="tabpanel" aria-labelledby="studio-tab-video" hidden={view !== "video"}>
               {activeRun?.error_message && <div className="notice error" role="alert">{productionError}{activeRun.job_id && !blocked && <button className="button secondary small" disabled={retry.isPending || (!hasBalance && activeRun.output_manifest?.billing?.status !== "pending")} onClick={() => retry.mutate(activeRun.job_id!)}><RefreshCw size={15} aria-hidden="true" /> 重新尝试</button>}</div>}

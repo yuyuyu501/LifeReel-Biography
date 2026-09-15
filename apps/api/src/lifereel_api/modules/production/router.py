@@ -14,7 +14,7 @@ from lifereel_api.core.tenant import get_tenant_id
 from lifereel_api.modules.evidence.storage import media_redirect, private_storage
 from lifereel_api.modules.jobs.dispatch import require_execution_access
 from lifereel_api.modules.production import service
-from lifereel_api.modules.production.models import GeneratedAsset
+from lifereel_api.modules.production.models import GeneratedAsset, ProductionRun
 from lifereel_api.modules.production.recovery import details
 from lifereel_api.modules.production.schemas import (
     GeneratedAssetRead,
@@ -88,6 +88,9 @@ def asset_content(asset_id: UUID, db: Db, tenant_id: Tenant) -> Response:
     asset = db.get(GeneratedAsset, asset_id)
     if asset is None or asset.tenant_id != tenant_id:
         raise ApiError(status.HTTP_404_NOT_FOUND, ErrorCode.PRODUCTION_ASSET_NOT_FOUND)
+    run = db.get(ProductionRun, asset.production_run_id)
+    if run and (run.output_manifest or {}).get("media_retention"):
+        raise ApiError(404, ErrorCode.PRODUCTION_ASSET_NOT_FOUND)
     redirect = media_redirect(asset.storage_key, asset.mime_type)
     if redirect is not None:
         return redirect
@@ -115,6 +118,8 @@ def retry_reference(
 @router.get("/runs/{run_id}/segments/{index}/content")
 def segment_content(run_id: UUID, index: int, db: Db, tenant_id: Tenant) -> Response:
     run, _ = service.get_run_payload(db, tenant_id, run_id)
+    if (run.output_manifest or {}).get("media_retention"):
+        raise ApiError(404, ErrorCode.PRODUCTION_ASSET_NOT_FOUND)
     segments = (run.output_manifest or {}).get("segments", [])
     if not 0 <= index < len(segments):
         raise ApiError(404, ErrorCode.PRODUCTION_ASSET_NOT_FOUND)

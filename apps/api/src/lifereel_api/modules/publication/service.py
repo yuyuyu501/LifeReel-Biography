@@ -22,8 +22,10 @@ def publish(db: Session, tenant_id: UUID, payload: PublicationCreate) -> Publica
             ProductionRun.id == payload.production_run_id,
             ProductionRun.tenant_id == tenant_id,
         )
+        .with_for_update()
     )
-    if run is None or run.status != "completed":
+    if (run is None or run.status != "completed"
+            or (run.output_manifest or {}).get("media_retention")):
         raise ApiError(status.HTTP_409_CONFLICT, ErrorCode.PRODUCTION_NOT_COMPLETED)
     if payload.audience != run.audience:
         raise ApiError(status.HTTP_409_CONFLICT, ErrorCode.PUBLICATION_AUDIENCE_MISMATCH)

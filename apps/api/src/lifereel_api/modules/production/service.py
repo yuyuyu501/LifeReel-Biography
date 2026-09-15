@@ -326,6 +326,9 @@ def _execute_run(db: Session, tenant_id: UUID, run_id: UUID) -> ProductionRun:
         job.result = {"production_run_id": str(run.id), **run.output_manifest}
         billing.video_finish(db, run, True)
         job.result = {"production_run_id": str(run.id), **run.output_manifest}
+        from lifereel_api.modules.production.retention import schedule
+
+        schedule(db, run)
     except Exception as exc:
         logger.exception("Video production failed for run %s", run_id, exc_info=exc)
         # Keep committed segment checkpoints, but never publish partially saved results.

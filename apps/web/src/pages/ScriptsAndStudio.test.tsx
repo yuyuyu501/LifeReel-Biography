@@ -360,6 +360,34 @@ const rejectedRun = {
     segments: [{ status: "completed", duration_seconds: 15 }, { status: "pending", duration_seconds: 15 }],
     billing: { status: "settled", charged_cents: 1121 } },
 };
+
+test("shows only the newest chapter run, regardless of response order", async () => {
+  const original = vi.mocked(fetch).getMockImplementation()!;
+  const older = { ...rejectedRun, id: "old", created_at: "2026-09-14T00:00:00Z" };
+  const latest = { ...rejectedRun, id: "new", created_at: "2026-09-15T00:00:00Z",
+    status: "completed", error_message: null, recovery: null,
+    assets: [{ id: "latest-video", mime_type: "video/mp4" }] };
+  vi.mocked(fetch).mockImplementation(async (input, init) => String(input).endsWith("/v1/production/runs")
+    ? response([older, latest]) : original(input, init));
+  renderPage(<StudioPage />, "/studio");
+  const video = await screen.findByLabelText("泉州旧巷视频");
+  expect(video).toHaveAttribute("src", expect.stringContaining("latest-video"));
+  expect(screen.queryByText("生成版本")).not.toBeInTheDocument();
+  expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  expect(screen.getByRole("button", { name: /01.*泉州旧巷/ })).toHaveTextContent("已完成");
+});
+
+test("does not show an old successful video as a failed new generation", async () => {
+  const original = vi.mocked(fetch).getMockImplementation()!;
+  vi.mocked(fetch).mockImplementation(async (input, init) => String(input).endsWith("/v1/production/runs")
+    ? response([{ ...rejectedRun, created_at: "2026-09-13T00:00:00Z", status: "completed",
+      assets: [{ id: "old-video", mime_type: "video/mp4" }], error_message: null, recovery: null },
+    { ...rejectedRun, output_manifest: { scene_id: "scene-1" } }]) : original(input, init));
+  renderPage(<StudioPage />, "/studio");
+  await screen.findByRole("alert");
+  expect(screen.queryByLabelText("泉州旧巷视频")).not.toBeInTheDocument();
+  expect(screen.queryByText("生成版本")).not.toBeInTheDocument();
+});
 const replacementImage = { id: "replacement-image", subject_id: person.id, kind: "photo", status: "ready",
   mime_type: "image/png", byte_size: 1000, original_filename: "老宅.png" };
 
