@@ -123,6 +123,20 @@
 .login-status {
   color: var(--ink);
 }
+.auth-links {
+  display: flex;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+.auth-links a {
+  padding: 8px 0;
+  color: var(--green);
+}
+.login-card .sms-controls .button {
+  width: auto;
+  margin: 0;
+}
 @media (max-width: 900px) {
   .login-page {
     padding: 24px;

@@ -7,6 +7,7 @@ import json
 import os
 from datetime import UTC, datetime, timedelta
 from typing import Any
+from uuid import UUID
 
 from fastapi import status
 
@@ -77,8 +78,10 @@ def decode_token(token: str) -> dict[str, Any]:
         if not hmac.compare_digest(signature, expected):
             raise ValueError("AUTH_SESSION_SIGNATURE_INVALID")
         payload = json.loads(_decode(body))
+        UUID(payload["sub"])
+        UUID(payload["tenant_id"])
         if int(payload["exp"]) <= int(datetime.now(UTC).timestamp()):
             raise ValueError("AUTH_SESSION_EXPIRED")
         return payload
-    except (KeyError, ValueError, json.JSONDecodeError) as exc:
+    except (KeyError, ValueError, TypeError, AttributeError, json.JSONDecodeError) as exc:
         raise ApiError(status.HTTP_401_UNAUTHORIZED, ErrorCode.AUTH_SESSION_INVALID) from exc

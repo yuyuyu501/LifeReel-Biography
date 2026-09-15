@@ -11,6 +11,8 @@ import { ScriptLibraryPage } from "./pages/ScriptLibraryPage";
 import { StudioPage } from "./pages/StudioPage";
 import { WalletPage } from "./pages/WalletPage";
 import { LoginPage } from "./pages/LoginPage";
+import { AccountPage } from "./pages/AccountPage";
+import { AccountsAdminPage } from "./pages/AccountsAdminPage";
 import { PublicReelPage } from "./pages/PublicReelPage";
 import { api } from "./api/client";
 import { isAuthenticationError } from "./api/errors";
@@ -22,7 +24,7 @@ function ProtectedApp() {
   if (session.isError && isAuthenticationError(session.error)) return <Navigate to="/login" replace />;
   if (session.isError) return <div className="login-page"><div className="login-card"><QueryState queries={[session]} /></div></div>;
   return (
-    <AppShell>
+    <AppShell isAdmin={session.data?.is_admin}>
       <Routes>
         <Route path="/" element={<HomePage />} />
         <Route path="/people" element={<PeoplePage />} />
@@ -34,6 +36,8 @@ function ProtectedApp() {
         <Route path="/scripts/:subjectId" element={<ScriptBookPage />} />
         <Route path="/studio" element={<StudioPage />} />
         <Route path="/wallet" element={<WalletPage />} />
+        <Route path="/account" element={<AccountPage />} />
+        <Route path="/admin/accounts" element={session.data?.is_admin ? <AccountsAdminPage /> : <Navigate to="/account" replace />} />
       </Routes>
     </AppShell>
   );
@@ -42,7 +46,9 @@ function ProtectedApp() {
 export default function App() {
   return (
     <Routes>
-      <Route path="/login" element={<LoginPage />} />
+      <Route path="/login" element={<LoginPage key="login" />} />
+      <Route path="/register" element={<LoginPage key="register" />} />
+      <Route path="/forgot-password" element={<LoginPage key="reset" />} />
       <Route path="/watch/:token" element={<PublicReelPage />} />
       <Route path="/*" element={<ProtectedApp />} />
     </Routes>

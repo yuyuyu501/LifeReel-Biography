@@ -2,6 +2,11 @@ server {
   listen 80;
   server_name _;
   root /usr/share/nginx/html;
+  # Host nginx appends the true client address. Ignore any earlier untrusted entries.
+  set_real_ip_from 127.0.0.1;
+  set_real_ip_from 172.16.0.0/12;
+  real_ip_header X-Forwarded-For;
+  real_ip_recursive off;
 
   location / {
     try_files $uri $uri/ /index.html;
@@ -27,6 +32,8 @@ server {
     proxy_set_header X-API-Key "${API_ACCESS_KEY}";
     proxy_set_header X-Tenant-ID "";
     proxy_set_header X-Worker-Key "";
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For "";
   }
 
   location ^~ /v1/internal/worker {

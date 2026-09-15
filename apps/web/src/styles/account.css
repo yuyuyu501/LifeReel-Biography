@@ -1,0 +1,218 @@
+/* Account settings and platform account administration. */
+.account-page,
+.accounts-page {
+  min-width: 0;
+}
+.account-page > .page-header,
+.accounts-page > .page-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 16px;
+  margin-bottom: 24px;
+}
+.account-section {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) minmax(0, 480px);
+  gap: 32px;
+  padding: 28px 0;
+  border-bottom: 1px solid var(--line);
+  max-width: 1000px;
+  align-items: start;
+}
+.account-section h2 {
+  font-size: 18px;
+  margin-bottom: 12px;
+}
+.account-section p {
+  color: var(--muted);
+  max-width: 390px;
+}
+.account-form {
+  display: grid;
+  gap: 18px;
+  min-width: 0;
+}
+.account-form label,
+.accounts-toolbar label {
+  display: grid;
+  gap: 8px;
+  color: var(--ink-soft);
+  font-size: 14px;
+  font-weight: 600;
+}
+.account-form input,
+.accounts-toolbar input,
+.accounts-toolbar select,
+.sms-controls input {
+  width: 100%;
+  min-width: 0;
+  padding: 10px 12px;
+  min-height: 44px;
+  border: 1px solid var(--line-strong);
+  border-radius: 4px;
+  background: var(--paper, #fff);
+  color: var(--ink);
+  font-size: 16px;
+}
+.account-form input[readonly] {
+  background: var(--green-soft);
+}
+.account-form .button,
+.account-danger > .button {
+  justify-self: start;
+}
+.sms-field > label {
+  display: block;
+  margin-bottom: 8px;
+}
+.sms-controls {
+  display: grid;
+  grid-template-columns: minmax(80px, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+}
+.sms-controls .button {
+  min-width: 116px;
+  min-height: 44px;
+  white-space: nowrap;
+}
+.field-error {
+  color: var(--color-destructive, #ad3f35);
+  font-size: 14px;
+  margin: 8px 0 0;
+}
+.field-success {
+  color: var(--green);
+  font-size: 14px;
+  margin: 8px 0 0;
+}
+.account-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.account-dialog {
+  width: min(520px, calc(100% - 32px));
+  max-height: calc(100dvh - 48px);
+  overflow-y: auto;
+  margin: auto;
+  padding: 24px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--ink);
+}
+.account-dialog::backdrop {
+  background: rgba(24, 32, 30, 0.5);
+}
+.account-dialog > header {
+  display: flex;
+  gap: 16px;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 24px;
+}
+.account-dialog h2 {
+  font-size: 20px;
+}
+.account-dialog > .account-actions {
+  margin-top: 24px;
+}
+.accounts-toolbar {
+  display: flex;
+  gap: 12px;
+  align-items: end;
+  flex-wrap: wrap;
+  margin-bottom: 24px;
+}
+.accounts-toolbar label:first-child {
+  flex: 1 1 240px;
+}
+.accounts-toolbar .icon-button,
+.account-actions .icon-button {
+  width: 44px;
+  height: 44px;
+}
+.account-actions .icon-button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.account-table-wrap {
+  overflow-x: auto;
+}
+.account-table {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: left;
+  font-size: 14px;
+}
+.account-table th,
+.account-table td {
+  padding: 14px 12px;
+  border-bottom: 1px solid var(--line);
+  overflow-wrap: anywhere;
+}
+.account-table th {
+  color: var(--muted);
+  white-space: nowrap;
+  font-weight: 600;
+}
+.account-table td:nth-child(2) {
+  max-width: 270px;
+}
+.account-status {
+  display: inline-block;
+  padding: 3px 8px;
+  border-radius: 4px;
+  white-space: nowrap;
+  background: var(--green-soft);
+  color: var(--green);
+}
+.account-status.inactive {
+  background: #faeeeb;
+  color: #ad3f35;
+}
+.account-pagination {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  margin-top: 20px;
+  color: var(--muted);
+  font-size: 14px;
+}
+.account-empty {
+  text-align: center;
+  padding: 32px;
+  color: var(--muted);
+}
+.account-form .account-checkbox {
+  display: flex;
+  align-items: center;
+  min-height: 44px;
+}
+.account-checkbox input {
+  width: 18px;
+  height: 18px;
+  min-height: 0;
+}
+@media (max-width: 700px) {
+  .account-section {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 20px;
+  }
+  .account-table {
+    min-width: 660px;
+  }
+}
+@media (max-width: 400px) {
+  .account-dialog {
+    padding: 18px;
+  }
+  .sms-controls {
+    gap: 6px;
+  }
+}

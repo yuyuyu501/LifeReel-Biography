@@ -26,7 +26,7 @@ describe("stylesheet organization", () => {
       "./styles/components.css",
       "./styles/asset-preview.css",
     ]);
-    expect(modules).toHaveLength(14);
+    expect(modules).toHaveLength(15);
     expect(new Set(modules).size).toBe(modules.length);
     expect(
       parse(entry).every((rule) => rule.type === CSSRule.IMPORT_RULE),

@@ -28,6 +28,12 @@ import type {
 } from "@lifereel/contracts";
 import { ApiError, apiErrorFromResponse } from "./errors";
 
+export type AuthUser = { id: string; tenant_id: string; email: string | null; phone: string | null; display_name: string; role: string; is_admin: boolean };
+export type SmsPurpose = "register" | "reset_password" | "bind_phone" | "delete_account";
+export type SmsVerification = { phone: string; challenge_id: string; code: string };
+export type Account = { id: string; email: string | null; phone: string | null; display_name: string; is_active: boolean; is_admin: boolean; created_at: string; deleted_at: string | null };
+export type AccountChanges = { display_name?: string; email?: string; password?: string; is_active?: boolean };
+
 export const API_BASE_URL =
   import.meta.env.VITE_API_BASE_URL ?? "";
 
@@ -63,16 +69,27 @@ export const api = {
   wallet: () => request<WalletSummary>("/v1/wallet"),
   walletLedger: (page = 1, event = "") => request<WalletPage<WalletEntry>>(`/v1/wallet/ledger?page=${page}${event ? `&event=${event}` : ""}`),
   providerUsage: (page = 1) => request<WalletPage<ProviderUsage>>(`/v1/wallet/usage?page=${page}`),
-  registration: () => request<{ enabled: boolean }>("/v1/auth/registration"),
-  register: (email: string, password: string, display_name: string) => request("/v1/auth/register", {
-    method: "POST", body: JSON.stringify({ email, password, display_name }),
+  registration: () => request<{ enabled: boolean; sms_enabled: boolean; password_reset_enabled?: boolean; phone_verification_enabled?: boolean }>("/v1/auth/registration"),
+  sendSms: (phone: string, purpose: SmsPurpose) => request<{ challenge_id: string; expires_in: number; retry_after: number }>("/v1/auth/sms", { method: "POST", body: JSON.stringify({ phone, purpose }) }),
+  register: (payload: SmsVerification & { password: string; display_name: string }) => request<AuthUser>("/v1/auth/register", {
+    method: "POST", body: JSON.stringify(payload),
   }),
+  resetPassword: (payload: SmsVerification & { password: string }) => request<void>("/v1/auth/password/reset", { method: "POST", body: JSON.stringify(payload) }),
+  updateProfile: (display_name: string) => request<AuthUser>("/v1/auth/me", { method: "PATCH", body: JSON.stringify({ display_name }) }),
+  changePassword: (current_password: string, password: string) => request<void>("/v1/auth/password", { method: "POST", body: JSON.stringify({ current_password, password }) }),
+  changePhone: (payload: SmsVerification & { current_password: string }) => request<void>("/v1/auth/phone", { method: "PUT", body: JSON.stringify(payload) }),
+  deleteAccount: (payload: { current_password: string; challenge_id?: string; code?: string }) => request<void>("/v1/auth/me", { method: "DELETE", body: JSON.stringify(payload) }),
+  accounts: (q = "", state = "all", page = 1) => request<{ items: Account[]; total: number; page: number; page_size: number }>(`/v1/auth/accounts?${new URLSearchParams({ q, state, page: String(page) })}`),
+  account: (id: string) => request<Account>(`/v1/auth/accounts/${id}`),
+  createAccount: (payload: { display_name: string; email: string; password: string }) => request<Account>("/v1/auth/accounts", { method: "POST", body: JSON.stringify(payload) }),
+  updateAccount: (id: string, payload: AccountChanges) => request<Account>(`/v1/auth/accounts/${id}`, { method: "PATCH", body: JSON.stringify(payload) }),
+  removeAccount: (id: string) => request<void>(`/v1/auth/accounts/${id}`, { method: "DELETE" }),
   login: (email: string, password: string) =>
-    request<{ expires_in: number; user: { display_name: string; role: string } }>(
+    request<{ expires_in: number; user: AuthUser }>(
       "/v1/auth/login",
       { method: "POST", body: JSON.stringify({ email, password }) },
     ),
-  me: () => request<{ id: string; tenant_id: string; display_name: string; role: string }>("/v1/auth/me"),
+  me: () => request<AuthUser>("/v1/auth/me"),
   logout: () => request<void>("/v1/auth/logout", { method: "POST" }),
   health: () => request<{ status: string }>("/health"),
   listPersons: () => request<Person[]>("/v1/persons"),

@@ -11,6 +11,8 @@ from fastapi.testclient import TestClient
 _TEST_DIRECTORY = tempfile.TemporaryDirectory(prefix="lifereel-tests-")
 TEST_DB = Path(_TEST_DIRECTORY.name) / "test.db"
 os.environ["APP_ENV"] = "test"
+os.environ["REGISTRATION_ENABLED"] = "false"
+os.environ["SMS_ENABLED"] = "false"
 os.environ["DATABASE_URL"] = f"sqlite:///{TEST_DB.as_posix()}"
 os.environ["AUTO_CREATE_SCHEMA"] = "true"
 os.environ["LLM_PROVIDER"] = "mock"

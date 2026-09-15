@@ -204,8 +204,30 @@ def test_multi_chapter_update_charges_each_chapter_each_time(client):
 
 
 def test_registration_disabled_by_default_and_bonus_in_same_transaction(client, monkeypatch):
+    from datetime import timedelta
+    from uuid import uuid4
+
+    from lifereel_api.core.models import utcnow
+    from lifereel_api.modules.auth import sms
+    from lifereel_api.modules.auth.models import SmsChallenge
+
+    monkeypatch.setattr(get_settings(), "auth_token_secret", "billing-registration-secret")
+    challenge_id = uuid4()
+    with SessionLocal() as db:
+        db.add(
+            SmsChallenge(
+                id=challenge_id,
+                phone="13800138000",
+                purpose="register",
+                code_hash=sms.digest(challenge_id, "13800138000", "register", "123456"),
+                expires_at=utcnow() + timedelta(minutes=5),
+            )
+        )
+        db.commit()
     payload = {
-        "email": "wallet@example.com",
+        "phone": "13800138000",
+        "challenge_id": str(challenge_id),
+        "code": "123456",
         "password": "TestPass123!",
         "display_name": "New family",
     }
@@ -213,7 +235,7 @@ def test_registration_disabled_by_default_and_bonus_in_same_transaction(client, 
     monkeypatch.setattr(get_settings(), "registration_enabled", True)
     result = client.post("/v1/auth/register", json=payload)
     assert result.status_code == 201
-    assert client.post("/v1/auth/register", json=payload).status_code == 409
+    assert client.post("/v1/auth/register", json=payload).status_code == 400
     tenant = UUID(result.json()["tenant_id"])
     with SessionLocal() as db:
         assert billing.available(billing.lock_wallet(db, tenant)) == 2000

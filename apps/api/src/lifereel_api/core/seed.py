@@ -57,6 +57,7 @@ def seed_foundation(db: Session) -> None:
                 email=owner_email.lower(),
                 display_name=settings.bootstrap_owner_name,
                 password_hash=hash_password(owner_password),
+                is_admin=True,
             )
             db.add(owner)
             db.flush()

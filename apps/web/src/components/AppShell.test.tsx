@@ -30,7 +30,7 @@ test("separates numbered workflow steps from personal information", () => {
     within(profile)
       .getAllByRole("link")
       .map((link) => link.textContent),
-  ).toEqual(["记忆", "钱包"]);
+  ).toEqual(["记忆", "钱包", "账号"]);
   expect(
     screen.queryByRole("link", { name: "首页" }),
   ).not.toBeInTheDocument();

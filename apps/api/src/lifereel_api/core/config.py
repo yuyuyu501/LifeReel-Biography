@@ -46,6 +46,16 @@ class Settings(BaseSettings):
     bootstrap_owner_password: str | None = None
     bootstrap_owner_name: str = "家庭管理员"
     registration_enabled: bool = False
+    sms_enabled: bool = False
+    sms_access_key_id: str | None = None
+    sms_access_key_secret: str | None = None
+    sms_sign_name: str | None = None
+    sms_template_code: str | None = None
+    sms_reset_template_code: str | None = None
+    sms_security_template_code: str | None = None
+    sms_code_parameter: str = "code"
+    sms_code_ttl_seconds: int = Field(default=300, ge=60, le=600)
+    sms_daily_limit: int = Field(default=500, ge=1, le=100000)
     billing_price_version: str = "standard-2026-09-luna20"
     billing_welcome_bonus_cents: int = Field(default=2000, ge=0, le=100000)
     billing_video_cents_per_second: int = Field(default=80, ge=0, le=10000)

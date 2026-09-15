@@ -7,6 +7,8 @@ import {
   Mic2,
   UsersRound,
   Wallet,
+  UserRound,
+  ShieldCheck,
 } from "lucide-react";
 import type { PropsWithChildren } from "react";
 import { Link, NavLink, useLocation, useNavigate } from "react-router-dom";
@@ -22,6 +24,7 @@ const workflowItems = [
 const profileItems = [
   { to: "/memories", label: "记忆", icon: BookHeart },
   { to: "/wallet", label: "钱包", icon: Wallet },
+  { to: "/account", label: "账号", icon: UserRound },
 ];
 const navigationGroups = [
   {
@@ -38,11 +41,13 @@ const navigationGroups = [
   },
 ];
 
-export function AppShell({ children }: PropsWithChildren) {
+export function AppShell({ children, isAdmin = false }: PropsWithChildren<{ isAdmin?: boolean }>) {
   const navigate = useNavigate();
   const location = useLocation();
   const queryClient = useQueryClient();
-  const currentSection = [...workflowItems, ...profileItems].find(
+  const adminItems = isAdmin ? [{ to: "/admin/accounts", label: "账号管理", icon: ShieldCheck }] : [];
+  const groups = isAdmin ? [...navigationGroups, { id: "admin-navigation", label: "平台管理", items: adminItems, workflow: false }] : navigationGroups;
+  const currentSection = [...workflowItems, ...profileItems, ...adminItems].find(
     (item) =>
       location.pathname === item.to ||
       location.pathname.startsWith(`${item.to}/`),
@@ -68,7 +73,7 @@ export function AppShell({ children }: PropsWithChildren) {
             <small>LifeReel Biography</small>
           </span>
         </NavLink>
-        {navigationGroups.map((group) => (
+        {groups.map((group) => (
           <div
             key={group.id}
             className={`sidebar-group${group.workflow ? "" : " sidebar-profile"}`}

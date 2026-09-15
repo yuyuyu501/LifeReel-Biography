@@ -14,6 +14,15 @@ from lifereel_api.core.errors import ApiError, ErrorCode
 from lifereel_api.modules.auth.models import TenantMembership, UserAccount
 from lifereel_api.modules.auth.security import decode_token
 
+PUBLIC_AUTH_PATHS = {
+    "/v1/auth/login",
+    "/v1/auth/logout",
+    "/v1/auth/register",
+    "/v1/auth/registration",
+    "/v1/auth/sms",
+    "/v1/auth/password/reset",
+}
+
 
 @dataclass(frozen=True)
 class AuthContext:
@@ -30,12 +39,7 @@ def auth_context(
     lifereel_session: Annotated[str | None, Cookie()] = None,
 ) -> AuthContext:
     settings = get_settings()
-    if request.url.path.startswith("/v1/public/") or request.url.path in {
-        "/v1/auth/login",
-        "/v1/auth/logout",
-        "/v1/auth/register",
-        "/v1/auth/registration",
-    }:
+    if request.url.path.startswith("/v1/public/") or request.url.path in PUBLIC_AUTH_PATHS:
         return AuthContext(None, settings.default_tenant_id, "public")
     bearer_token = None
     if (
@@ -56,7 +60,13 @@ def auth_context(
                 TenantMembership.tenant_id == tenant_id,
             )
         )
-        if user is None or not user.is_active or membership is None:
+        if (
+            user is None
+            or not user.is_active
+            or user.deleted_at
+            or membership is None
+            or payload.get("version", 0) != user.session_version
+        ):
             raise ApiError(status.HTTP_401_UNAUTHORIZED, ErrorCode.AUTH_SESSION_INACTIVE)
         return AuthContext(
             user_id=user_id,
@@ -78,11 +88,9 @@ def enforce_write_role(
 ) -> None:
     if request.method in {"GET", "HEAD", "OPTIONS"}:
         return
-    if request.url.path in {
-        "/v1/auth/login",
-        "/v1/auth/logout",
-        "/v1/auth/register",
-    } or request.url.path.startswith("/v1/public/"):
+    if request.url.path in PUBLIC_AUTH_PATHS or request.url.path.startswith("/v1/public/"):
+        return
+    if request.url.path.startswith("/v1/auth/") and context.user_id:
         return
     if context.role not in {"owner", "editor", "worker"}:
         raise ApiError(status.HTTP_403_FORBIDDEN, ErrorCode.AUTH_READ_ONLY)

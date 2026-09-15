@@ -8,7 +8,7 @@ describe("API 错误码本地化", () => {
     });
 
     expect(error.code).toBe("AUTH_INVALID_CREDENTIALS");
-    expect(error.message).toBe("邮箱或密码不正确。");
+    expect(error.message).toBe("账号或密码不正确，或账号已停用。");
     expect(isApiError(error, "AUTH_INVALID_CREDENTIALS")).toBe(true);
   });
 

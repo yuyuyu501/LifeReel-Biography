@@ -7,6 +7,7 @@ from fastapi import Header, Request, status
 
 from lifereel_api.core.config import get_settings
 from lifereel_api.core.errors import ApiError, ErrorCode
+from lifereel_api.modules.auth.dependencies import PUBLIC_AUTH_PATHS
 
 
 def require_api_access(
@@ -17,12 +18,12 @@ def require_api_access(
     request.state.internal_access = False
     if settings.is_development or request.url.path.startswith("/v1/public/"):
         return
-    if request.url.path in {
-        "/v1/auth/login",
-        "/v1/auth/logout",
-        "/v1/auth/register",
-        "/v1/auth/registration",
-    }:
+    if request.url.path in PUBLIC_AUTH_PATHS:
+        request.state.internal_access = bool(
+            settings.api_access_key
+            and x_api_key
+            and secrets.compare_digest(x_api_key, settings.api_access_key)
+        )
         return
     if not settings.api_access_key:
         raise ApiError(
