@@ -134,6 +134,8 @@ def test_cancel_reject_mismatch_and_report_replay(payments, monkeypatch):
 
 def test_qr_requires_auth_in_production(payments, monkeypatch):
     monkeypatch.setattr(get_settings(), "app_env", "production")
+    monkeypatch.setattr(get_settings(), "api_access_key", "test-api-key")
+    monkeypatch.setattr(get_settings(), "auth_token_secret", "test-auth-secret")
     assert payments.get("/v1/wallet/recharge/qr").status_code == 401
 
 

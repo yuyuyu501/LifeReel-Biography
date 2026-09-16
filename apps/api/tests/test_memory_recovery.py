@@ -187,6 +187,7 @@ def test_completed_claim_and_graph_survive_biography_failure(client, monkeypatch
     monkeypatch.setenv("LLM_PROVIDER", "openai-compatible")
     monkeypatch.setenv("OPENAI_COMPATIBLE_BASE_URL", "https://test/v1")
     monkeypatch.setenv("OPENAI_COMPATIBLE_API_KEY", "test")
+    monkeypatch.setenv("MEMORY_LLM_MODEL", "test-memory-model")
     get_settings.cache_clear()
     counts = {"claim": 0, "graph": 0, "biography": 0}
     fix = False
