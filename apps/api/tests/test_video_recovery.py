@@ -96,7 +96,7 @@ def blocked_run(client, monkeypatch):
     return failed, submissions
 
 
-def add_reference(run, **overrides):
+def add_reference(run, *, content=b"replacement", **overrides):
     with SessionLocal() as db:
         project = db.get(ScriptProject, UUID(run["project_id"]))
         values = {
@@ -105,16 +105,17 @@ def add_reference(run, **overrides):
             "kind": "photo",
             "mime_type": "image/png",
             "original_filename": "replacement.png",
-            "byte_size": 11,
-            "sha256": hashlib.sha256(b"replacement").hexdigest(),
+            "byte_size": len(content),
+            "sha256": hashlib.sha256(content).hexdigest(),
             "storage_key": f"test/{uuid4()}.png",
             "status": "ready",
+            "consent_status": "granted",
         }
         values.update(overrides)
         asset = SourceAsset(**values)
         db.add(asset)
         db.commit()
-        private_storage().put(asset.storage_key, b"replacement")
+        private_storage().put(asset.storage_key, content)
         return str(asset.id)
 
 
@@ -176,6 +177,8 @@ def test_replace_reference_resumes_remaining_segment_and_bills_each_success_once
         {"mime_type": "image/svg+xml"},
         {"byte_size": 11 * 1024 * 1024},
         {"status": "processing"},
+        {"consent_status": "revoked"},
+        {"consent_status": "unknown"},
         {"sha256": hashlib.sha256(b"reference").hexdigest()},
     ],
 )

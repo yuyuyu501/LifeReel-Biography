@@ -9,6 +9,20 @@ from sqlalchemy.orm import Session
 
 from lifereel_api.modules.evidence.models import SourceAsset
 from lifereel_api.modules.interview.models import Chapter
+from lifereel_api.modules.production.models import ProductionRun
+from lifereel_api.modules.production.recovery import reference_asset
+
+
+def initial_photo_reference(db: Session, run: ProductionRun) -> SourceAsset | None:
+    package = (run.output_manifest or {}).get("reference_package") or {}
+    asset_id = package.get("character_reference")
+    if not asset_id:
+        return None
+    asset = db.get(SourceAsset, UUID(asset_id))
+    # Video references in older packages are not first-frame images.
+    if asset is not None and asset.kind == "video":
+        return None
+    return reference_asset(db, run, UUID(asset_id))
 
 
 def _age_match(asset: SourceAsset, chapter: Chapter | None) -> bool:
@@ -57,6 +71,7 @@ def build_reference_package(
     return {
         "chapter_id": str(chapter_id) if chapter_id else None,
         "character_reference": str(photo.id) if photo else None,
+        "character_reference_kind": photo.kind if photo else None,
         "voice_reference": str(voice.id) if voice else None,
         "scene_references": [str(video.id)] if video else [],
         "source_assets": [str(a.id) for a in unique.values()],

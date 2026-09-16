@@ -123,13 +123,29 @@ def start_production(db: Session, tenant_id: UUID, payload: ProductionStart) -> 
         raise ApiError(
             status.HTTP_422_UNPROCESSABLE_ENTITY, ErrorCode.VIDEO_PROVIDER_INVALID
         ) from exc
+    reference_package = build_reference_package(
+        db, tenant_id, project.subject_id, scenes[0].chapter_id if len(scenes) == 1 else None,
+    )
     idempotency_key = (
         f"production:{project.id}:v{project.version_number}:{payload.audience}:{provider_name}"
     )
     if payload.scene_id:
         idempotency_key += f":scene:{payload.scene_id}"
     if config:
-        fingerprint = hashlib.sha256(json.dumps(config, sort_keys=True).encode()).hexdigest()[:16]
+        fingerprint_config = config
+        if (
+            config["mode"] == "segmented"
+            and reference_package.get("character_reference_kind") == "photo"
+        ):
+            fingerprint_config = {
+                **config,
+                "photo_reference": {
+                    "version": 1, "asset_id": reference_package["character_reference"],
+                },
+            }
+        fingerprint = hashlib.sha256(
+            json.dumps(fingerprint_config, sort_keys=True).encode()
+        ).hexdigest()[:16]
         idempotency_key += f":{fingerprint}"
     job, created = job_service.create_job(
         db,
@@ -195,12 +211,7 @@ def start_production(db: Session, tenant_id: UUID, payload: ProductionStart) -> 
             "script_version": project.version_number,
             "script_snapshot": snapshot,
             "generation_config": config,
-            "reference_package": build_reference_package(
-                db,
-                tenant_id,
-                project.subject_id,
-                scenes[0].chapter_id if len(scenes) == 1 else None,
-            ),
+            "reference_package": reference_package,
             "subject": {
                 "display_name": subject.display_name,
                 "preferred_name": subject.preferred_name,

@@ -199,7 +199,7 @@ def validate_plan(raw: dict, scenes: list[dict]) -> dict:
 
 def plan_video(
     scenes: list[dict], subject: dict,
-    *, on_failure: Callable[[dict, object], None] | None = None,
+    *, on_failure: Callable[[dict, object], None] | None = None, has_portrait: bool = False,
 ) -> dict:
     settings = get_settings()
     allocations = [
@@ -228,6 +228,9 @@ def plan_video(
         "生成镜头须参考这些内容，dialogue台词按对应人物呈现，旁白不要求人物口型同步。"
         "统一人物性别、年龄、衣着、环境和声线；依据人物称谓与资料，不能把爷爷拍成奶奶。"
         "没有真实肖像时采用纪实情景重现，不声称还原本人真实容貌。"
+        "has_portrait为true时，视频首段会收到已授权的人物照片，后续片段接续前段尾帧；"
+        "人物容貌以参考图为准，不凭空指定与照片冲突的五官、发型或衣着，"
+        "不要把未提供给你的照片细节当作已知事实。"
         "生成 continuity 作为全部片段统一的视觉人物描述，voice 为统一的普通话旁白声线"
         "描述，不克隆真人声音。不配背景音乐，采用持续的低音量环境声，旁白清楚。"
         "每段 visual_prompt 先声明镜头结构，再写动作、运镜与环境；相邻片段自然衔接。"
@@ -241,6 +244,7 @@ def plan_video(
     )
     request = {
         "subject": subject, "scenes": scenes, "allocations": allocations,
+        "has_portrait": has_portrait,
         "expected_segment_count": sum(len(item["durations"]) for item in allocations),
         "narration_boundaries": [
             {"scene_id": scene["id"], "narration_length": len(scene["narration"]),

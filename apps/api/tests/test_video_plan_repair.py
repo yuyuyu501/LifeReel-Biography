@@ -133,7 +133,7 @@ def test_failure_checkpoint_survives_rollback_and_raw_stays_private(client, monk
 
     monkeypatch.setattr(segmented, "private_storage", lambda: Storage())
 
-    def invalid_plan(snapshot, subject, *, on_failure):
+    def invalid_plan(snapshot, subject, *, on_failure, has_portrait=False):
         for attempt in range(1, 4):
             on_failure({"attempt": attempt, "issues": [
                 {"code": "PLAN_NARRATION_MISMATCH", "field": "segments.0.narration"},
@@ -166,7 +166,7 @@ def test_diagnostic_storage_failure_stops_before_more_ai_calls(client, monkeypat
 
     monkeypatch.setattr(segmented, "private_storage", lambda: Storage())
 
-    def invalid_plan(snapshot, subject, *, on_failure):
+    def invalid_plan(snapshot, subject, *, on_failure, has_portrait=False):
         on_failure({"attempt": 1, "issues": []}, {})
         pytest.fail("Must not continue without diagnostic persistence")
 

@@ -28,6 +28,7 @@ from lifereel_api.modules.production.recovery import (
     moderation_code,
     reference_asset,
 )
+from lifereel_api.modules.production.references import initial_photo_reference
 
 
 def checkpoint(db: Session, run: ProductionRun, manifest: dict) -> None:
@@ -42,6 +43,7 @@ def advance(db: Session, run: ProductionRun) -> ProviderOutput | None:
     manifest = copy.deepcopy(run.output_manifest or {})
     config = manifest["generation_config"]
     if not manifest.get("plan"):
+        photo = initial_photo_reference(db, run)
         manifest["stage"] = "planning"
         manifest["planning_diagnostics"] = []
         checkpoint(db, run, manifest)
@@ -69,10 +71,13 @@ def advance(db: Session, run: ProductionRun) -> ProviderOutput | None:
 
         manifest["plan"] = plan_video(
             manifest["script_snapshot"], manifest.get("subject", {}), on_failure=record_failure,
+            has_portrait=photo is not None,
         )
         manifest["segments"] = [
             {**segment, "status": "pending"} for segment in manifest["plan"]["segments"]
         ]
+        if photo is not None:
+            manifest["segments"][0]["reference_asset_id"] = str(photo.id)
         manifest["target_duration_seconds"] = sum(
             segment["duration_seconds"] for segment in manifest["segments"]
         )
@@ -97,9 +102,16 @@ def advance(db: Session, run: ProductionRun) -> ProviderOutput | None:
                 if not segment.get("task_id"):
                     frame = None
                     reference_options = {}
+                    # Also cover queued runs whose plan predates automatic photo binding.
+                    if index == 0 and not segment.get("reference_asset_id"):
+                        photo = initial_photo_reference(db, run)
+                        if photo is not None:
+                            segment["reference_asset_id"] = str(photo.id)
                     if segment.get("reference_asset_id"):
                         asset = reference_asset(db, run, UUID(segment["reference_asset_id"]))
                         frame = storage.get(asset.storage_key)
+                        if not frame or hashlib.sha256(frame).hexdigest() != asset.sha256:
+                            raise VideoProviderError("VIDEO_REFERENCE_INVALID")
                         reference_options["reference_mime"] = asset.mime_type
                         segment["reference_kind"] = "uploaded_image"
                     elif index:

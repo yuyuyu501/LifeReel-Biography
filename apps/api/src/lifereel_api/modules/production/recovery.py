@@ -113,6 +113,7 @@ def reference_asset(db, run, asset_id: UUID) -> SourceAsset:
         not asset or not project or asset.tenant_id != run.tenant_id
         or asset.subject_id != project.subject_id or asset.kind != "photo"
         or asset.status != "ready" or asset.mime_type not in REFERENCE_MIMES
+        or asset.consent_status != "granted"
         or not 0 < asset.byte_size <= MAX_REFERENCE_BYTES
     ):
         raise ApiError(422, ErrorCode.VIDEO_REFERENCE_INVALID)
