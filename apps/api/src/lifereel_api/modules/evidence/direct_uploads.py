@@ -112,6 +112,15 @@ def prepare(db: Session, tenant_id: UUID, payload: DirectUploadCreate) -> Direct
         tenant_id=tenant_id,
         subject_id=payload.subject_id,
         interview_session_id=payload.interview_session_id,
+        chapter_id=(
+            db.scalar(
+                select(InterviewSession.chapter_id).where(
+                    InterviewSession.id == payload.interview_session_id
+                )
+            )
+            if payload.interview_session_id
+            else None
+        ),
         original_filename=Path(payload.original_filename).name,
         mime_type=mime,
         kind=payload.kind,
@@ -234,9 +243,10 @@ def verify_and_commit(
     if asset is None:
         suffix = Path(upload.original_filename).suffix.lower()[:12]
         suffix = suffix if re.fullmatch(r"\.[a-z0-9]{1,10}", suffix) else ""
+        scope = f"chapters/{upload.chapter_id}" if upload.chapter_id else "profile"
         final_key = (
-            f"{PROJECT_PREFIX}evidence/{tenant_id}/{upload.subject_id}/"
-            f"{sha256[:2]}/{sha256}{suffix}"
+            f"{PROJECT_PREFIX}tenants/{tenant_id}/persons/{upload.subject_id}/"
+            f"{scope}/assets/{sha256}/original{suffix}"
         )
         # Server-side copy keeps committed assets unreachable by upload credentials.
         client.copy_object(
@@ -253,6 +263,7 @@ def verify_and_commit(
                     tenant_id=tenant_id,
                     subject_id=upload.subject_id,
                     interview_session_id=upload.interview_session_id,
+                    chapter_id=upload.chapter_id,
                     kind=upload.kind,
                     original_filename=upload.original_filename,
                     mime_type=upload.mime_type,
@@ -260,6 +271,7 @@ def verify_and_commit(
                     sha256=sha256,
                     storage_key=final_key,
                     consent_scope=upload.consent_scope,
+                    consent_status="granted",
                     status="ready",
                 )
                 db.add(asset)

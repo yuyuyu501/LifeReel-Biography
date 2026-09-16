@@ -23,6 +23,8 @@ from lifereel_api.modules.production.locking import execution_lock
 from lifereel_api.modules.production.models import GeneratedAsset, ProductionRun
 from lifereel_api.modules.production.planning import segment_durations
 from lifereel_api.modules.production.providers import VideoProviderError, get_video_provider
+from lifereel_api.modules.production.reference_models import ChapterReferencePackage
+from lifereel_api.modules.production.references import build_reference_package
 from lifereel_api.modules.production.schemas import ProductionStart
 from lifereel_api.modules.script.models import ScriptProject, ScriptScene, ScriptShot
 
@@ -73,10 +75,13 @@ def start_production(db: Session, tenant_id: UUID, payload: ProductionStart) -> 
                     raise VideoProviderError("VIDEO_DURATION_UNSUPPORTED")
             except VideoProviderError as exc:
                 raise ApiError(422, ErrorCode.VIDEO_DURATION_UNSUPPORTED) from exc
-    shot_rows = list(db.scalars(
-        select(ScriptShot).where(ScriptShot.scene_id.in_([scene.id for scene in scenes]))
-        .order_by(ScriptShot.order_index)
-    ))
+    shot_rows = list(
+        db.scalars(
+            select(ScriptShot)
+            .where(ScriptShot.scene_id.in_([scene.id for scene in scenes]))
+            .order_by(ScriptShot.order_index)
+        )
+    )
     snapshot = [
         {
             "id": str(scene.id),
@@ -90,11 +95,17 @@ def start_production(db: Session, tenant_id: UUID, payload: ProductionStart) -> 
             "duration_seconds": scene.duration_seconds,
             "source_claim_ids": scene.source_claim_ids,
             "shots": [
-                {"id": str(shot.id), "scene_id": str(shot.scene_id),
-                 "order_index": shot.order_index, "shot_type": shot.shot_type,
-                 "visual_prompt": shot.visual_prompt, "duration_seconds": shot.duration_seconds,
-                 "source_claim_ids": shot.source_claim_ids}
-                for shot in shot_rows if shot.scene_id == scene.id
+                {
+                    "id": str(shot.id),
+                    "scene_id": str(shot.scene_id),
+                    "order_index": shot.order_index,
+                    "shot_type": shot.shot_type,
+                    "visual_prompt": shot.visual_prompt,
+                    "duration_seconds": shot.duration_seconds,
+                    "source_claim_ids": shot.source_claim_ids,
+                }
+                for shot in shot_rows
+                if shot.scene_id == scene.id
             ],
         }
         for scene in scenes
@@ -158,7 +169,8 @@ def start_production(db: Session, tenant_id: UUID, payload: ProductionStart) -> 
         "target_seconds": target_seconds,
         "video_billing_mode": "tokens" if token_video else "per_second",
         "amount_cents": (
-            settings.billing_video_reserve_cents if token_video
+            settings.billing_video_reserve_cents
+            if token_video
             else target_seconds * settings.billing_video_cents_per_second
         ),
         "title": f"{subject.preferred_name or subject.display_name} · "
@@ -183,6 +195,12 @@ def start_production(db: Session, tenant_id: UUID, payload: ProductionStart) -> 
             "script_version": project.version_number,
             "script_snapshot": snapshot,
             "generation_config": config,
+            "reference_package": build_reference_package(
+                db,
+                tenant_id,
+                project.subject_id,
+                scenes[0].chapter_id if len(scenes) == 1 else None,
+            ),
             "subject": {
                 "display_name": subject.display_name,
                 "preferred_name": subject.preferred_name,
@@ -195,6 +213,15 @@ def start_production(db: Session, tenant_id: UUID, payload: ProductionStart) -> 
     )
     db.add(run)
     db.flush()
+    db.add(
+        ChapterReferencePackage(
+            tenant_id=tenant_id,
+            production_run_id=run.id,
+            subject_id=project.subject_id,
+            chapter_id=scenes[0].chapter_id if len(scenes) == 1 else None,
+            payload=(run.output_manifest or {}).get("reference_package", {}),
+        )
+    )
     billing.video_reserve(db, run)
     if provider_name != "mock" or not get_settings().execute_mock_jobs_inline:
         db.commit()
@@ -287,8 +314,7 @@ def _execute_run(db: Session, tenant_id: UUID, run_id: UUID) -> ProductionRun:
             )
         digest = hashlib.sha256(output.content).hexdigest()
         storage_key = (
-            f"LifeReel-Biography/generated/{tenant_id}/{run.id}/"
-            f"{digest}.{output.extension}"
+            f"LifeReel-Biography/generated/{tenant_id}/{run.id}/{digest}.{output.extension}"
         )
         private_storage().put(storage_key, output.content)
         asset = GeneratedAsset(

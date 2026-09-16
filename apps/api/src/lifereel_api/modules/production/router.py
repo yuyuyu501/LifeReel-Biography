@@ -16,6 +16,7 @@ from lifereel_api.modules.jobs.dispatch import require_execution_access
 from lifereel_api.modules.production import service
 from lifereel_api.modules.production.models import GeneratedAsset, ProductionRun
 from lifereel_api.modules.production.recovery import details
+from lifereel_api.modules.production.references import build_reference_package
 from lifereel_api.modules.production.schemas import (
     GeneratedAssetRead,
     ProductionRecovery,
@@ -67,6 +68,17 @@ def start(payload: ProductionStart, db: Db, tenant_id: Tenant) -> ProductionRunR
     return to_read(run, assets)
 
 
+@router.get("/reference-package")
+def reference_package(
+    db: Db,
+    tenant_id: Tenant,
+    subject_id: UUID,
+    chapter_id: UUID | None = None,
+) -> dict:
+    """Preview the chapter-scoped reference selection before starting production."""
+    return build_reference_package(db, tenant_id, subject_id, chapter_id)
+
+
 @router.get("/runs", response_model=list[ProductionRunRead])
 def runs(db: Db, tenant_id: Tenant) -> list[ProductionRunRead]:
     return [
@@ -75,8 +87,11 @@ def runs(db: Db, tenant_id: Tenant) -> list[ProductionRunRead]:
     ]
 
 
-@router.post("/runs/{run_id}/execute", response_model=ProductionRunRead,
-             dependencies=[Depends(require_execution_access)])
+@router.post(
+    "/runs/{run_id}/execute",
+    response_model=ProductionRunRead,
+    dependencies=[Depends(require_execution_access)],
+)
 def execute(run_id: UUID, db: Db, tenant_id: Tenant) -> ProductionRunRead:
     run = service.execute_run(db, tenant_id, run_id)
     _, assets = service.get_run_payload(db, tenant_id, run.id)
@@ -99,7 +114,10 @@ def asset_content(asset_id: UUID, db: Db, tenant_id: Tenant) -> Response:
 
 @router.post("/runs/{run_id}/reference", response_model=ProductionRunRead)
 def retry_reference(
-    run_id: UUID, payload: ReferenceRetry, db: Db, tenant_id: Tenant,
+    run_id: UUID,
+    payload: ReferenceRetry,
+    db: Db,
+    tenant_id: Tenant,
 ) -> ProductionRunRead:
     from lifereel_api.modules.jobs import service as jobs
 
@@ -131,7 +149,8 @@ def segment_content(run_id: UUID, index: int, db: Db, tenant_id: Tenant) -> Resp
     if redirect is not None:
         return redirect
     return Response(
-        content=private_storage().get(expected), media_type="video/mp4",
+        content=private_storage().get(expected),
+        media_type="video/mp4",
         headers={"Cache-Control": "private, no-store"},
     )
 

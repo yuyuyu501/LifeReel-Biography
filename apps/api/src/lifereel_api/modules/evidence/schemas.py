@@ -12,6 +12,7 @@ class SourceAssetRead(BaseModel):
     id: UUID
     subject_id: UUID
     interview_session_id: UUID | None
+    chapter_id: UUID | None = None
     kind: str
     original_filename: str
     mime_type: str
@@ -19,6 +20,14 @@ class SourceAssetRead(BaseModel):
     sha256: str
     status: str
     consent_scope: str
+    consent_status: str = "unknown"
+    age_start: int | None = None
+    age_end: int | None = None
+    quality_score: float | None = None
+    identity_score: float | None = None
+    voice_score: float | None = None
+    analysis_status: str = "pending"
+    derived_from_asset_id: UUID | None = None
     captured_at: datetime
     created_at: datetime
 

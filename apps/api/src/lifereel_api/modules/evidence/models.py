@@ -38,6 +38,9 @@ class SourceAsset(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     interview_session_id: Mapped[UUID | None] = mapped_column(
         Uuid, ForeignKey("interview_sessions.id", ondelete="SET NULL"), nullable=True
     )
+    chapter_id: Mapped[UUID | None] = mapped_column(
+        Uuid, ForeignKey("chapters.id", ondelete="SET NULL"), nullable=True, index=True
+    )
     kind: Mapped[str] = mapped_column(String(32))
     original_filename: Mapped[str] = mapped_column(String(255))
     mime_type: Mapped[str] = mapped_column(String(120))
@@ -46,6 +49,17 @@ class SourceAsset(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     storage_key: Mapped[str] = mapped_column(String(512), unique=True)
     status: Mapped[str] = mapped_column(String(32), default="ready")
     consent_scope: Mapped[str] = mapped_column(String(32), default="private")
+    consent_status: Mapped[str] = mapped_column(String(24), default="unknown")
+    age_start: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    age_end: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    quality_score: Mapped[float | None] = mapped_column(Float, nullable=True)
+    identity_score: Mapped[float | None] = mapped_column(Float, nullable=True)
+    voice_score: Mapped[float | None] = mapped_column(Float, nullable=True)
+    analysis_status: Mapped[str] = mapped_column(String(24), default="pending")
+    metadata_json: Mapped[dict] = mapped_column("metadata", JSON, default=dict)
+    derived_from_asset_id: Mapped[UUID | None] = mapped_column(
+        Uuid, ForeignKey("source_assets.id", ondelete="SET NULL"), nullable=True
+    )
     captured_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
@@ -55,11 +69,12 @@ class EvidenceUpload(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     tenant_id: Mapped[UUID] = mapped_column(
         Uuid, ForeignKey("tenants.id", ondelete="CASCADE"), index=True
     )
-    subject_id: Mapped[UUID] = mapped_column(
-        Uuid, ForeignKey("persons.id", ondelete="CASCADE")
-    )
+    subject_id: Mapped[UUID] = mapped_column(Uuid, ForeignKey("persons.id", ondelete="CASCADE"))
     interview_session_id: Mapped[UUID | None] = mapped_column(
         Uuid, ForeignKey("interview_sessions.id", ondelete="SET NULL"), nullable=True
+    )
+    chapter_id: Mapped[UUID | None] = mapped_column(
+        Uuid, ForeignKey("chapters.id", ondelete="SET NULL"), nullable=True, index=True
     )
     original_filename: Mapped[str] = mapped_column(String(255))
     mime_type: Mapped[str] = mapped_column(String(120))

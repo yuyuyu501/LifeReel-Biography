@@ -130,6 +130,9 @@ async def create_asset(
         )
         if session is None:
             raise ApiError(status.HTTP_404_NOT_FOUND, ErrorCode.INTERVIEW_NOT_FOUND)
+        chapter_id = session.chapter_id
+    else:
+        chapter_id = None
 
     mime_type = upload.content_type or "application/octet-stream"
     if mime_type == "application/octet-stream":
@@ -158,14 +161,17 @@ async def create_asset(
         return existing
 
     safe_suffix = Path(upload.filename or "evidence.bin").suffix.lower()[:12]
+    scope = f"chapters/{chapter_id}" if chapter_id else "profile"
     storage_key = (
-        f"LifeReel-Biography/evidence/{tenant_id}/{subject_id}/{digest[:2]}/{digest}{safe_suffix}"
+        f"LifeReel-Biography/tenants/{tenant_id}/persons/{subject_id}/"
+        f"{scope}/assets/{digest}/original{safe_suffix}"
     )
     private_storage().put_file(storage_key, upload.file)
     asset = SourceAsset(
         tenant_id=tenant_id,
         subject_id=subject_id,
         interview_session_id=interview_session_id,
+        chapter_id=chapter_id,
         kind=kind,
         original_filename=Path(upload.filename or "evidence.bin").name,
         mime_type=mime_type,
@@ -173,6 +179,7 @@ async def create_asset(
         sha256=digest,
         storage_key=storage_key,
         consent_scope=consent_scope,
+        consent_status="granted",
         status="ready",
     )
     db.add(asset)
@@ -244,12 +251,15 @@ def transcribe_asset(db: Session, tenant_id: UUID, asset_id: UUID) -> Transcript
         raise ApiError(status.HTTP_503_SERVICE_UNAVAILABLE, ErrorCode.ASR_CONFIGURATION_INCOMPLETE)
     try:
         if settings.asr_provider == "faster-whisper":
-            with private_file(asset.storage_key, asset.byte_size,
-                              Path(asset.original_filename).suffix.lower()) as source:
+            with private_file(
+                asset.storage_key, asset.byte_size, Path(asset.original_filename).suffix.lower()
+            ) as source:
                 text = client.transcribe(asset.original_filename, source, asset.mime_type).strip()
         else:
             text = client.transcribe(
-                asset.original_filename, private_storage().get(asset.storage_key), asset.mime_type,
+                asset.original_filename,
+                private_storage().get(asset.storage_key),
+                asset.mime_type,
             ).strip()
     except ApiError:
         raise
@@ -311,7 +321,10 @@ def _video_frames(content: bytes | Path, suffix: str) -> list[tuple[str, bytes]]
             [
                 ffmpeg,
                 "-y",
-                "-threads", "2", "-filter_threads", "1",
+                "-threads",
+                "2",
+                "-filter_threads",
+                "1",
                 "-i",
                 str(source),
                 "-vf",
@@ -498,6 +511,17 @@ def analyze_asset(db: Session, tenant_id: UUID, asset_id: UUID) -> EvidenceObser
         model_name=model_name,
     )
     db.add(observation)
+    asset.analysis_status = "analyzed"
+    asset.quality_score = max(0.0, min(1.0, confidence))
+    if asset.kind in {"audio", "video"}:
+        asset.voice_score = asset.quality_score
+    if asset.kind in {"photo", "video"}:
+        asset.identity_score = asset.quality_score
+    asset.metadata_json = {
+        **(asset.metadata_json or {}),
+        "analysis_kind": analysis_kind,
+        "last_observation_id": str(observation.id),
+    }
     db.commit()
     db.refresh(observation)
     return observation

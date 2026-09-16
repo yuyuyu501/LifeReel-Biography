@@ -17,6 +17,7 @@ from lifereel_api.modules.jobs import models as job_models  # noqa: F401
 from lifereel_api.modules.memory import models as memory_models  # noqa: F401
 from lifereel_api.modules.orchestration import service as orchestration_service  # noqa: F401
 from lifereel_api.modules.production import models as production_models  # noqa: F401
+from lifereel_api.modules.production import reference_models as production_reference_models  # noqa: F401
 from lifereel_api.modules.publication import models as publication_models  # noqa: F401
 from lifereel_api.modules.script import models as script_models  # noqa: F401
 

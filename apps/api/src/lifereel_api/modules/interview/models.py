@@ -7,6 +7,7 @@ from sqlalchemy import (
     JSON,
     Boolean,
     DateTime,
+    Float,
     ForeignKey,
     Integer,
     String,
@@ -30,6 +31,10 @@ class Chapter(UUIDPrimaryKeyMixin, Base):
     order_index: Mapped[int] = mapped_column(Integer)
     title: Mapped[str] = mapped_column(String(120))
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    age_start: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    age_end: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    age_confidence: Mapped[float | None] = mapped_column(Float, nullable=True)
+    age_source: Mapped[str | None] = mapped_column(String(32), nullable=True)
     opening_questions: Mapped[list[str]] = mapped_column(JSON, default=list)
     is_system: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
