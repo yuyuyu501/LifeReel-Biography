@@ -60,7 +60,9 @@ def upgrade() -> None:
     op.add_column("memory_claims", sa.Column("source_observation_id", sa.Uuid(), nullable=True))
     op.add_column(
         "memory_claims",
-        sa.Column("extraction_provider", sa.String(length=80), nullable=False, server_default="rule"),
+        sa.Column(
+            "extraction_provider", sa.String(length=80), nullable=False, server_default="rule"
+        ),
     )
     op.add_column(
         "memory_claims", sa.Column("extraction_model", sa.String(length=180), nullable=True)
@@ -80,7 +82,9 @@ def upgrade() -> None:
     )
     op.add_column(
         "script_projects",
-        sa.Column("generation_provider", sa.String(length=80), nullable=False, server_default="rule"),
+        sa.Column(
+            "generation_provider", sa.String(length=80), nullable=False, server_default="rule"
+        ),
     )
     op.add_column(
         "script_projects", sa.Column("generation_model", sa.String(length=180), nullable=True)
@@ -90,9 +94,7 @@ def upgrade() -> None:
 def downgrade() -> None:
     op.drop_column("script_projects", "generation_model")
     op.drop_column("script_projects", "generation_provider")
-    op.drop_constraint(
-        "uq_claim_tenant_source_observation", "memory_claims", type_="unique"
-    )
+    op.drop_constraint("uq_claim_tenant_source_observation", "memory_claims", type_="unique")
     op.drop_constraint(
         "fk_memory_claims_source_observation_id_evidence_observations",
         "memory_claims",
@@ -102,5 +104,7 @@ def downgrade() -> None:
     op.drop_column("memory_claims", "extraction_model")
     op.drop_column("memory_claims", "extraction_provider")
     op.alter_column("memory_claims", "source_round_id", existing_type=sa.Uuid(), nullable=False)
-    op.alter_column("memory_claims", "interview_session_id", existing_type=sa.Uuid(), nullable=False)
+    op.alter_column(
+        "memory_claims", "interview_session_id", existing_type=sa.Uuid(), nullable=False
+    )
     op.drop_table("evidence_observations")

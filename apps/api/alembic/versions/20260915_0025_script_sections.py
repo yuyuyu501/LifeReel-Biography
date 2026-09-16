@@ -1,6 +1,7 @@
 """Persist plot and spoken lines separately from camera directions."""
 
 import sqlalchemy as sa
+
 from alembic import op
 
 revision = "20260915_0025"

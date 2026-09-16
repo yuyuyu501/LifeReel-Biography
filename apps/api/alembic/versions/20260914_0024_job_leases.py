@@ -1,6 +1,7 @@
 """Durable, bounded worker leases."""
 
 import sqlalchemy as sa
+
 from alembic import op
 
 revision = "20260914_0024"
@@ -12,7 +13,9 @@ depends_on = None
 def upgrade():
     op.add_column("jobs", sa.Column("lease_token", sa.Uuid(), nullable=True))
     op.add_column("jobs", sa.Column("lease_expires_at", sa.DateTime(timezone=True), nullable=True))
-    op.create_index("ix_jobs_dispatch", "jobs", ["kind", "status", "lease_expires_at", "created_at"])
+    op.create_index(
+        "ix_jobs_dispatch", "jobs", ["kind", "status", "lease_expires_at", "created_at"]
+    )
 
 
 def downgrade():

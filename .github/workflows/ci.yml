@@ -8,6 +8,20 @@ on:
 jobs:
   api:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: lifereel
+          POSTGRES_PASSWORD: ci-migration-password
+          POSTGRES_DB: lifereel_migration_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U lifereel -d lifereel_migration_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
     defaults:
       run:
         working-directory: apps/api
@@ -21,8 +35,11 @@ jobs:
       - run: pip install -e ".[dev]"
       - run: ruff check .
       - run: pytest
-      - name: Verify migrations from empty database
-        run: DATABASE_URL=sqlite:///./ci-migration.db alembic upgrade head
+      - name: Verify migrations from empty PostgreSQL database
+        env:
+          APP_ENV: test
+          DATABASE_URL: postgresql+psycopg://lifereel:ci-migration-password@localhost:5432/lifereel_migration_test
+        run: alembic upgrade head
 
   web:
     runs-on: ubuntu-latest
