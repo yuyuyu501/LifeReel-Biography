@@ -29,7 +29,7 @@
   overflow-wrap: anywhere;
 }
 .script-sections section .script-section-empty {
-  color: var(--muted);
+  color: var(--muted-foreground);
   font-size: 13px;
 }
 .script-shot-list,
@@ -53,7 +53,7 @@
   align-items: baseline;
   margin-bottom: 5px;
   font-size: 12px;
-  color: var(--muted);
+  color: var(--muted-foreground);
   overflow-wrap: anywhere;
 }
 .script-shot-meta strong,
@@ -73,7 +73,7 @@
 .studio-production-info h4 {
   margin: 0 0 10px;
   font-size: 13px;
-  color: var(--muted);
+  color: var(--muted-foreground);
 }
 .script-production-segment + .script-production-segment {
   margin-top: 18px;

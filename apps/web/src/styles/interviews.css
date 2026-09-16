@@ -31,14 +31,14 @@
   color: var(--vermilion);
   font-size: 10px;
   font-weight: 700;
-  letter-spacing: 0.08em;
+  letter-spacing: 0;
 }
 .chapter-card h2 {
   margin: 22px 0 8px;
   font-size: 19px;
 }
 .chapter-card p {
-  color: var(--muted);
+  color: var(--muted-foreground);
   font-size: 13px;
 }
 .chapter-card .text-button {
@@ -53,7 +53,7 @@
   display: flex;
   align-items: center;
   gap: 7px;
-  color: var(--muted);
+  color: var(--muted-foreground);
   font-size: 11px;
 }
 .chapter-saved-progress svg {
@@ -102,7 +102,7 @@
   display: flex;
   align-items: center;
   gap: 5px;
-  color: var(--muted);
+  color: var(--muted-foreground);
   font-size: 11px;
 }
 @media (max-width: 1080px) {
@@ -184,7 +184,7 @@
   margin: 0 16px 16px;
   padding: 14px;
   border: 1px solid var(--line-strong);
-  border-radius: 24px;
+  border-radius: 8px;
   background: #fff;
   box-shadow: 0 3px 12px rgba(19, 32, 28, 0.04);
 }
@@ -232,7 +232,7 @@
   gap: 10px;
 }
 .interview-retry-action > span {
-  color: var(--muted);
+  color: var(--muted-foreground);
   font-size: 13px;
 }
 .live-interview-layout {
@@ -242,7 +242,9 @@
   display: grid;
   grid-template-columns: minmax(380px, 0.9fr) 42px minmax(440px, 1.1fr);
   align-items: stretch;
-  border: 1px solid var(--line-strong);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  overflow: hidden;
   background: #fff;
 }
 .conversation-pane,
@@ -253,7 +255,7 @@
 .conversation-pane {
   display: flex;
   flex-direction: column;
-  background: #f8faf8;
+  background: var(--canvas);
 }
 .live-script-pane {
   display: flex;
@@ -275,7 +277,7 @@
   align-items: center;
   gap: 10px;
   flex-shrink: 0;
-  color: var(--muted);
+  color: var(--muted-foreground);
 }
 .conversation-pane .answer-composer {
   flex: 0 0 auto;
@@ -297,18 +299,18 @@
   display: block;
   margin-bottom: 4px;
   color: var(--green);
-  font-size: 9px;
+  font-size: 12px;
   font-weight: 700;
-  letter-spacing: 0.08em;
+  letter-spacing: 0;
 }
 .pane-heading h1,
 .pane-heading h2 {
   margin: 0;
   font-family: "Songti SC", STSong, serif;
-  font-size: 23px;
+  font-size: 20px;
 }
 .pane-heading > small {
-  color: var(--muted);
+  color: var(--muted-foreground);
   font-size: 10px;
   white-space: nowrap;
 }
@@ -335,14 +337,14 @@
   gap: 8px;
 }
 .composer-tool {
-  min-height: 36px;
+  min-height: 44px;
   padding: 0 11px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 5px;
   border: 1px solid var(--line);
-  border-radius: 999px;
+  border-radius: 6px;
   color: var(--ink-soft);
   background: #fff;
   font-size: 12px;
@@ -429,7 +431,7 @@
   display: grid;
   place-items: center;
   border: 0;
-  color: var(--muted);
+  color: var(--muted-foreground);
   background: transparent;
 }
 .pending-attachments button:hover {
@@ -444,7 +446,7 @@
 }
 .chat-assets-history > strong {
   margin-bottom: 2px;
-  color: var(--muted);
+  color: var(--muted-foreground);
   font-size: 10px;
 }
 .chat-asset {
@@ -468,7 +470,7 @@
   white-space: nowrap;
 }
 .chat-asset small {
-  color: var(--muted);
+  color: var(--muted-foreground);
   font-size: 9px;
   white-space: nowrap;
 }
@@ -488,7 +490,7 @@
   place-items: center;
   border: 1px solid var(--line-strong);
   border-radius: 50%;
-  color: var(--muted);
+  color: var(--muted-foreground);
   background: #fff;
 }
 .workflow-status-rail > span.done {
@@ -512,7 +514,7 @@
 }
 .workflow-status-rail > small {
   margin-top: 12px;
-  color: var(--muted);
+  color: var(--muted-foreground);
   font-size: 9px;
   line-height: 1;
   white-space: nowrap;
@@ -544,7 +546,7 @@
 }
 .script-updating span {
   margin-top: 3px;
-  color: var(--muted);
+  color: var(--muted-foreground);
   font-size: 9px;
 }
 .live-script-empty {
@@ -564,7 +566,7 @@
 .live-script-empty p {
   max-width: 380px;
   margin: 0;
-  color: var(--muted);
+  color: var(--muted-foreground);
   font-size: 12px;
 }
 .live-manuscript {
@@ -587,7 +589,7 @@
   display: flex;
   flex-wrap: wrap;
   gap: 13px;
-  color: var(--muted);
+  color: var(--muted-foreground);
   font-size: 9px;
 }
 @media (max-width: 1080px) {
@@ -617,7 +619,7 @@
     position: relative;
     border: 0;
     border-radius: 3px;
-    color: var(--muted);
+    color: var(--muted-foreground);
     background: transparent;
     font-size: 12px;
     font-weight: 700;

@@ -1,3 +1,6 @@
+import { Button } from "../components/ui/button";
+import { Badge } from "../components/ui/badge";
+import { Input } from "../components/ui/input";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ChevronLeft,
@@ -36,10 +39,14 @@ export function AccountsAdminPage() {
           <span className="eyebrow">平台管理</span>
           <h1>账号管理</h1>
         </div>
-        <button className="button primary" onClick={() => setEditing("new")}>
+        <Button
+          variant="default"
+          className="button primary"
+          onClick={() => setEditing("new")}
+        >
           <Plus size={18} />
           新增账号
-        </button>
+        </Button>
       </header>
       <form
         className="accounts-toolbar"
@@ -51,7 +58,7 @@ export function AccountsAdminPage() {
       >
         <label>
           搜索账号
-          <input
+          <Input
             value={search}
             onChange={(event) => setSearch(event.target.value)}
             placeholder="称呼、手机号或邮箱"
@@ -72,14 +79,16 @@ export function AccountsAdminPage() {
             <option value="inactive">已停用</option>
           </select>
         </label>
-        <button
+        <Button
+          variant="outline"
+          size="icon"
           type="submit"
           className="icon-button"
           title="搜索"
           aria-label="搜索"
         >
           <Search size={20} />
-        </button>
+        </Button>
       </form>
       <QueryState queries={[query]} />
       {query.data && (
@@ -106,18 +115,20 @@ export function AccountsAdminPage() {
                     </td>
                     <td>{user.is_admin ? "平台管理员" : "家庭账号"}</td>
                     <td>
-                      <span
-                        className={`account-status ${user.is_active ? "active" : "inactive"}`}
+                      <Badge
+                        variant={user.is_active ? "secondary" : "destructive"}
                       >
                         {user.is_active ? "正常" : "已停用"}
-                      </span>
+                      </Badge>
                     </td>
                     <td>
                       {new Date(user.created_at).toLocaleDateString("zh-CN")}
                     </td>
                     <td>
                       <div className="account-actions">
-                        <button
+                        <Button
+                          variant="outline"
+                          size="icon"
                           className="icon-button"
                           title="编辑账号"
                           aria-label={`编辑 ${user.display_name}`}
@@ -125,8 +136,10 @@ export function AccountsAdminPage() {
                           onClick={() => setEditing(user)}
                         >
                           <Pencil size={18} />
-                        </button>
-                        <button
+                        </Button>
+                        <Button
+                          variant="destructive"
+                          size="icon"
                           className="icon-button danger"
                           title="删除账号"
                           aria-label={`删除 ${user.display_name}`}
@@ -137,7 +150,7 @@ export function AccountsAdminPage() {
                           }}
                         >
                           <Trash2 size={18} />
-                        </button>
+                        </Button>
                       </div>
                     </td>
                   </tr>
@@ -153,7 +166,9 @@ export function AccountsAdminPage() {
               共 {query.data.total} 个账号 · 第 {page} 页
             </span>
             <div className="account-actions">
-              <button
+              <Button
+                variant="outline"
+                size="icon"
                 className="icon-button"
                 title="上一页"
                 aria-label="上一页"
@@ -161,8 +176,10 @@ export function AccountsAdminPage() {
                 onClick={() => setPage((value) => value - 1)}
               >
                 <ChevronLeft size={20} />
-              </button>
-              <button
+              </Button>
+              <Button
+                variant="outline"
+                size="icon"
                 className="icon-button"
                 title="下一页"
                 aria-label="下一页"
@@ -173,7 +190,7 @@ export function AccountsAdminPage() {
                 onClick={() => setPage((value) => value + 1)}
               >
                 <ChevronRight size={20} />
-              </button>
+              </Button>
             </div>
           </div>
         </>
@@ -202,14 +219,16 @@ export function AccountsAdminPage() {
             </p>
           )}
           <div className="account-actions">
-            <button
+            <Button
+              variant="outline"
               className="button secondary"
               disabled={busy}
               onClick={() => setRemoving(null)}
             >
               取消
-            </button>
-            <button
+            </Button>
+            <Button
+              variant="destructive"
               className="button danger"
               disabled={busy}
               onClick={async () => {
@@ -233,7 +252,7 @@ export function AccountsAdminPage() {
               }}
             >
               {busy ? "正在删除…" : "确认删除"}
-            </button>
+            </Button>
           </div>
         </AccountDialog>
       )}
@@ -290,7 +309,7 @@ function AccountEditor({
       <form className="account-form" onSubmit={submit}>
         <label>
           称呼
-          <input
+          <Input
             value={name}
             onChange={(event) => setName(event.target.value)}
             required
@@ -299,7 +318,7 @@ function AccountEditor({
         </label>
         <label>
           邮箱
-          <input
+          <Input
             type="email"
             value={email}
             onChange={(event) => setEmail(event.target.value.trim())}
@@ -310,12 +329,12 @@ function AccountEditor({
         {existing?.phone && (
           <label>
             已验证手机号
-            <input readOnly value={existing.phone} />
+            <Input readOnly value={existing.phone} />
           </label>
         )}
         <label>
           {existing ? "重置密码（留空不修改）" : "初始密码"}
-          <input
+          <Input
             type="password"
             autoComplete="new-password"
             value={password}
@@ -341,17 +360,18 @@ function AccountEditor({
           </p>
         )}
         <div className="account-actions">
-          <button
+          <Button
+            variant="outline"
             type="button"
             className="button secondary"
             disabled={busy}
             onClick={onClose}
           >
             取消
-          </button>
-          <button className="button primary" disabled={busy}>
+          </Button>
+          <Button variant="default" className="button primary" disabled={busy}>
             {busy ? "正在保存…" : "保存账号"}
-          </button>
+          </Button>
         </div>
       </form>
     </AccountDialog>

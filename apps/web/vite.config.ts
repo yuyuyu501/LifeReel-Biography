@@ -2,6 +2,7 @@ import { fileURLToPath } from "node:url";
 import { defineConfig } from "vitest/config";
 import { loadEnv } from "vite";
 import react from "@vitejs/plugin-react";
+import tailwindcss from "@tailwindcss/vite";
 
 export default defineConfig(({ mode }) => {
   const repositoryRoot = fileURLToPath(new URL("../..", import.meta.url));
@@ -10,7 +11,15 @@ export default defineConfig(({ mode }) => {
 
   return {
     envDir: repositoryRoot,
-    plugins: [react()],
+    plugins: [react(), tailwindcss()],
+    resolve: {
+      alias: { "@": fileURLToPath(new URL("./src", import.meta.url)) },
+    },
+    build: {
+      rollupOptions: {
+        output: { manualChunks: { "ui-vendor": ["radix-ui"] } },
+      },
+    },
     server: {
       port: 5173,
       proxy: {

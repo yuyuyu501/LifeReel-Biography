@@ -1,32 +1,44 @@
 /* global: base styles, then responsive overrides. */
-@import url("https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;600;700&display=swap");
 
 :root {
   font-family: "Noto Sans SC", "Microsoft YaHei", "PingFang SC", sans-serif;
-  color: #18201e;
-  background: #f5f7f4;
+  color: #202124;
+  background: #fafafa;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
-  --ink: #18201e;
-  --ink-soft: #33413d;
+  --background: #ffffff;
+  --foreground: #202124;
+  --card: #ffffff;
+  --popover: #ffffff;
+  --primary: #126b5d;
+  --primary-foreground: #ffffff;
+  --secondary: #f1f2f3;
+  --muted: #f4f4f5;
+  --muted-foreground: #62666d;
+  --accent: #f1f4f3;
+  --destructive: #b83e36;
+  --border: #e4e5e7;
+  --input: #cdd0d4;
+  --ring: #126b5d;
+  --ink: var(--foreground);
+  --ink-soft: #43474e;
   --green: #126b5d;
   --green-dark: #0b4f45;
-  --green-soft: #e2efeb;
+  --green-soft: #eaf3ef;
   --vermilion: #c84c38;
   --vermilion-soft: #f8e8e4;
   --paper: #ffffff;
-  --canvas: #f5f7f4;
-  --fog: #edf1ee;
-  --muted: #5f6b67;
-  --line: #d8deda;
-  --line-strong: #bac5c0;
+  --canvas: #fafafa;
+  --fog: var(--muted);
+  --line: var(--border);
+  --line-strong: var(--input);
   --warning: #9a5b18;
   --warning-soft: #fff3d9;
   --danger: #ad3f35;
   --danger-soft: #fae7e4;
   --shadow-sm: 0 1px 2px rgba(19, 32, 28, 0.06);
   --shadow-md: 0 12px 30px rgba(19, 32, 28, 0.1);
-  --radius: 6px;
+  --radius: 8px;
 }
 
 * {
@@ -40,6 +52,10 @@ body {
   min-width: 320px;
   min-height: 100vh;
   background: var(--canvas);
+  font-size: 14px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  letter-spacing: 0;
 }
 button,
 input,
@@ -75,15 +91,15 @@ h3 {
   letter-spacing: 0;
 }
 h1 {
-  font-size: 34px;
+  font-size: 28px;
   line-height: 1.25;
 }
 h2 {
-  font-size: 22px;
+  font-size: 20px;
   line-height: 1.35;
 }
 h3 {
-  font-size: 17px;
+  font-size: 16px;
   line-height: 1.45;
 }
 p {
@@ -99,6 +115,15 @@ svg {
 ::selection {
   color: #fff;
   background: var(--green);
+}
+select {
+  min-height: 44px;
+  max-width: 100%;
+  padding: 8px 12px;
+  border: 1px solid var(--input);
+  border-radius: 6px;
+  color: var(--foreground);
+  background: var(--background);
 }
 .sr-only {
   position: absolute;

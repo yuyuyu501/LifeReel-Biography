@@ -23,7 +23,7 @@
 }
 .public-reel .lead {
   max-width: 720px;
-  color: var(--muted);
+  color: var(--muted-foreground);
   font-size: 15px;
 }
 .public-reel video {

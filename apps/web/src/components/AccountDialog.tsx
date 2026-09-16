@@ -1,5 +1,7 @@
 import { X } from "lucide-react";
-import { type ReactNode, useEffect, useId, useRef } from "react";
+import { type ReactNode, useState } from "react";
+import { Button } from "./ui/button";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "./ui/dialog";
 
 export function AccountDialog({
   title,
@@ -12,44 +14,42 @@ export function AccountDialog({
   onClose: () => void;
   busy?: boolean;
 }) {
-  const ref = useRef<HTMLDialogElement>(null);
-  const titleId = useId();
-  useEffect(() => {
-    const dialog = ref.current!;
-    const focus = document.activeElement;
-    const overflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    dialog.showModal();
-    return () => {
-      dialog.close();
-      document.body.style.overflow = overflow;
-      if (focus instanceof HTMLElement) focus.focus();
-    };
-  }, []);
+  const [previousFocus] = useState(() => document.activeElement);
   return (
-    <dialog
-      ref={ref}
-      className="account-dialog"
-      aria-labelledby={titleId}
-      onCancel={(event) => {
-        event.preventDefault();
-        if (!busy) onClose();
+    <Dialog
+      open
+      onOpenChange={(open) => {
+        if (!open && !busy) onClose();
       }}
     >
-      <header>
-        <h2 id={titleId}>{title}</h2>
-        <button
-          type="button"
-          className="icon-button"
-          aria-label="关闭窗口"
-          title="关闭窗口"
-          disabled={busy}
-          onClick={onClose}
-        >
-          <X size={20} />
-        </button>
-      </header>
-      {children}
-    </dialog>
+      <DialogContent
+        aria-describedby={undefined}
+        showCloseButton={false}
+        onEscapeKeyDown={(event) => {
+          if (busy) event.preventDefault();
+        }}
+        onInteractOutside={(event) => event.preventDefault()}
+        onCloseAutoFocus={(event) => {
+          event.preventDefault();
+          if (previousFocus instanceof HTMLElement) previousFocus.focus();
+        }}
+      >
+        <DialogHeader className="flex-row items-center justify-between text-left">
+          <DialogTitle>{title}</DialogTitle>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            aria-label="关闭窗口"
+            title="关闭窗口"
+            disabled={busy}
+            onClick={onClose}
+          >
+            <X size={18} />
+          </Button>
+        </DialogHeader>
+        {children}
+      </DialogContent>
+    </Dialog>
   );
 }

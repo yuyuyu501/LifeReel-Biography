@@ -1,7 +1,22 @@
 # 样式组织
 
 `../styles.css` 只作为统一入口，按全局、公共组件、页面的顺序加载。
-保留全局类名，不引入 CSS Modules 或级联层，避免改变现有组件和选择器优先级。
+保留页面级全局类名，使用 `components` 级联层承载模块样式。
+`../shadcn.css` 先加载 Tailwind 的 theme/base/utilities 和语义 token 映射；
+随后 `../styles.css` 按原顺序加载页面模块，工具类可覆盖组件默认值。
+
+## shadcn/ui 组件规范（2026-09-16）
+
+- 官方 New York / Radix 源码位于 `../components/ui/`，来源与 MIT 许可随源码保留。
+- `apps/web/components.json` 支持后续通过 shadcn CLI 增补组件；不要覆盖项目内的中文文案和触控尺寸适配。
+- Button、Input、Textarea、Badge、Dialog、DropdownMenu、Tooltip、Separator、Skeleton 已接入实际页面。
+- 普通操作用 Button；导航操作用 Button 的 asChild 包装 Link，不嵌套按钮和链接。
+- 使用变体表示按钮语义。`.button` / `.icon-button` 等旧类名只保留页面布局钩子，不再定义一套平行控件外观。
+- 普通按钮、输入框、图标按钮默认 44px。原生文件选择、复选框、下拉框和业务章节列表保留原生行为。
+- 全局颜色定义在 global.css；`--muted` 是背景，次要文字必须使用 `--muted-foreground`。
+- 弹窗由 Radix 负责焦点约束、背景隔离和滚动锁定。异步保存时禁止关闭，结束后恢复打开前的焦点。
+- 本轮仍为浅色主题，未新增未经逐页验证的深色模式。中文字体优先使用本地系统字体，不依赖 Google Fonts 网络请求。
+- 删除了旧公共按钮样式、原生账号/支付弹窗样式和旧双栏登录装饰样式。页面布局继续按现有模块维护。
 
 | 文件                | 职责                                                 |
 | ------------------- | ---------------------------------------------------- |

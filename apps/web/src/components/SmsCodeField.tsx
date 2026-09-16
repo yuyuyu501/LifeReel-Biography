@@ -1,3 +1,5 @@
+import { Input } from "./ui/input";
+import { Button } from "./ui/button";
 import { useEffect, useId, useRef, useState } from "react";
 import { api, type SmsPurpose, type SmsVerification } from "../api/client";
 
@@ -58,7 +60,7 @@ export function SmsCodeField({
     <div className="sms-field">
       <label htmlFor={id}>短信验证码</label>
       <div className="sms-controls">
-        <input
+        <Input
           id={id}
           inputMode="numeric"
           autoComplete="one-time-code"
@@ -74,7 +76,8 @@ export function SmsCodeField({
             onChange({ phone, challenge_id: challenge, code: value });
           }}
         />
-        <button
+        <Button
+          variant="outline"
           type="button"
           className="button secondary"
           onClick={send}
@@ -87,7 +90,7 @@ export function SmsCodeField({
             : remaining
               ? `${remaining}秒后重发`
               : "获取验证码"}
-        </button>
+        </Button>
       </div>
       <div id={`${id}-feedback`}>
         {error && (

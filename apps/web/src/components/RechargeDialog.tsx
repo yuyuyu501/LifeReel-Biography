@@ -1,5 +1,7 @@
 import { X } from "lucide-react";
-import { useEffect, useRef, type ReactNode } from "react";
+import { useState, type ReactNode } from "react";
+import { Button } from "./ui/button";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "./ui/dialog";
 
 export function RechargeDialog({
   children,
@@ -8,43 +10,37 @@ export function RechargeDialog({
   children: ReactNode;
   onClose: () => void;
 }) {
-  const ref = useRef<HTMLDialogElement>(null);
-  useEffect(() => {
-    const dialog = ref.current!;
-    const previousOverflow = document.body.style.overflow;
-    const previousFocus = document.activeElement;
-    document.body.style.overflow = "hidden";
-    dialog.showModal();
-    return () => {
-      dialog.close();
-      document.body.style.overflow = previousOverflow;
-      if (previousFocus instanceof HTMLElement) previousFocus.focus();
-    };
-  }, []);
-
+  const [previousFocus] = useState(() => document.activeElement);
   return (
-    <dialog
-      ref={ref}
-      className="recharge-dialog"
-      aria-labelledby="payment-dialog-title"
-      onCancel={(event) => {
-        event.preventDefault();
-        onClose();
+    <Dialog
+      open
+      onOpenChange={(open) => {
+        if (!open) onClose();
       }}
     >
-      <header className="recharge-dialog-header">
-        <h2 id="payment-dialog-title">微信扫码支付</h2>
-        <button
-          type="button"
-          className="icon-button"
-          title="关闭支付窗口"
-          aria-label="关闭支付窗口"
-          onClick={onClose}
-        >
-          <X size={20} />
-        </button>
-      </header>
-      {children}
-    </dialog>
+      <DialogContent
+        aria-describedby={undefined}
+        showCloseButton={false}
+        onCloseAutoFocus={(event) => {
+          event.preventDefault();
+          if (previousFocus instanceof HTMLElement) previousFocus.focus();
+        }}
+      >
+        <DialogHeader className="flex-row items-center justify-between text-left">
+          <DialogTitle>微信扫码支付</DialogTitle>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            title="关闭支付窗口"
+            aria-label="关闭支付窗口"
+            onClick={onClose}
+          >
+            <X size={20} />
+          </Button>
+        </DialogHeader>
+        {children}
+      </DialogContent>
+    </Dialog>
   );
 }

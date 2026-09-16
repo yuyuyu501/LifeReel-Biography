@@ -241,13 +241,13 @@ test("closing or escaping preserves the order, restores focus and allows reopeni
   await waitFor(() => expect(trigger).toBeEnabled());
   fireEvent.click(screen.getByRole("button", { name: "关闭支付窗口" }));
   expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
-  expect(trigger).toHaveFocus();
+  await waitFor(() => expect(trigger).toHaveFocus());
   expect(document.body.style.overflow).not.toBe("hidden");
   expect(api.cancelRecharge).not.toHaveBeenCalled();
   fireEvent.click(trigger);
   const dialog = await screen.findByRole("dialog");
   expect(api.createRecharge).toHaveBeenCalledTimes(1);
-  fireEvent(dialog, new Event("cancel", { cancelable: true }));
+  fireEvent.keyDown(dialog, { key: "Escape", code: "Escape" });
   expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
 });
 
@@ -270,7 +270,9 @@ test("QR and status network failures offer retries without declaring payment fai
   fireEvent.click(screen.getByRole("button", { name: "确认支付" }));
   const qr = await screen.findByRole("img", { name: /微信收款码/ });
   await waitFor(() =>
-    expect(screen.getByRole("button", { name: "确认支付" })).toBeEnabled(),
+    expect(
+      screen.getByRole("button", { name: "确认支付", hidden: true }),
+    ).toBeEnabled(),
   );
   fireEvent.error(qr);
   expect(screen.getByRole("alert")).toHaveTextContent("收款码加载失败");

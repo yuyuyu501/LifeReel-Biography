@@ -52,7 +52,7 @@
 }
 .asset-preview-audio > div span {
   margin-top: 5px;
-  color: var(--muted);
+  color: var(--muted-foreground);
   font-size: 11px;
 }
 .asset-preview-audio audio {

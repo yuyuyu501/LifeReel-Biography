@@ -1,3 +1,5 @@
+import { Input } from "../components/ui/input";
+import { Button } from "../components/ui/button";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { type FormEvent, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
@@ -86,9 +88,9 @@ function AccountSettings({ user }: { user: AuthUser }) {
           <h1>账号设置</h1>
         </div>
         {user.is_admin && (
-          <Link className="button secondary" to="/admin/accounts">
-            账号管理
-          </Link>
+          <Button asChild variant="outline" className="button secondary">
+            <Link to="/admin/accounts">账号管理</Link>
+          </Button>
         )}
       </header>
       <section className="account-section">
@@ -112,7 +114,7 @@ function AccountSettings({ user }: { user: AuthUser }) {
         >
           <label>
             称呼
-            <input
+            <Input
               value={name}
               onChange={(event) => setName(event.target.value)}
               required
@@ -122,17 +124,21 @@ function AccountSettings({ user }: { user: AuthUser }) {
           {user.email && (
             <label>
               邮箱
-              <input value={user.email} readOnly />
+              <Input value={user.email} readOnly />
             </label>
           )}
           <label>
             手机号
-            <input value={user.phone || "尚未绑定"} readOnly />
+            <Input value={user.phone || "尚未绑定"} readOnly />
           </label>
           {notice("profile")}
-          <button className="button primary" disabled={!!busy}>
+          <Button
+            variant="default"
+            className="button primary"
+            disabled={!!busy}
+          >
             {busy === "profile" ? "正在保存…" : "保存资料"}
-          </button>
+          </Button>
         </form>
       </section>
       <section className="account-section">
@@ -153,7 +159,7 @@ function AccountSettings({ user }: { user: AuthUser }) {
         >
           <label>
             当前密码
-            <input
+            <Input
               type="password"
               autoComplete="current-password"
               value={currentPassword}
@@ -165,7 +171,7 @@ function AccountSettings({ user }: { user: AuthUser }) {
           </label>
           <label>
             新密码
-            <input
+            <Input
               type="password"
               autoComplete="new-password"
               value={password}
@@ -177,7 +183,7 @@ function AccountSettings({ user }: { user: AuthUser }) {
           </label>
           <label>
             确认新密码
-            <input
+            <Input
               type="password"
               autoComplete="new-password"
               value={confirm}
@@ -188,9 +194,13 @@ function AccountSettings({ user }: { user: AuthUser }) {
             />
           </label>
           {notice("password")}
-          <button className="button secondary" disabled={!!busy}>
+          <Button
+            variant="outline"
+            className="button secondary"
+            disabled={!!busy}
+          >
             {busy === "password" ? "正在修改…" : "更新密码"}
-          </button>
+          </Button>
         </form>
       </section>
       <section className="account-section">
@@ -214,7 +224,7 @@ function AccountSettings({ user }: { user: AuthUser }) {
         >
           <label>
             新手机号
-            <input
+            <Input
               type="tel"
               autoComplete="tel-national"
               value={phone}
@@ -233,7 +243,7 @@ function AccountSettings({ user }: { user: AuthUser }) {
           />
           <label>
             当前密码
-            <input
+            <Input
               type="password"
               autoComplete="current-password"
               value={phonePassword}
@@ -244,9 +254,13 @@ function AccountSettings({ user }: { user: AuthUser }) {
             />
           </label>
           {notice("phone")}
-          <button className="button secondary" disabled={!!busy}>
+          <Button
+            variant="outline"
+            className="button secondary"
+            disabled={!!busy}
+          >
             {busy === "phone" ? "正在更新…" : "确认绑定"}
-          </button>
+          </Button>
         </form>
       </section>
       {!user.is_admin && (
@@ -257,7 +271,8 @@ function AccountSettings({ user }: { user: AuthUser }) {
               注销后无法登录，手机号不能重复注册。账单及档案记录保留；有充值余额、欠款或未完成任务时需先处理。
             </p>
           </div>
-          <button
+          <Button
+            variant="destructive"
             className="button danger"
             onClick={() => {
               setDeleting(true);
@@ -268,7 +283,7 @@ function AccountSettings({ user }: { user: AuthUser }) {
             disabled={!!busy}
           >
             注销账号
-          </button>
+          </Button>
         </section>
       )}
       <section className="account-section">
@@ -276,7 +291,8 @@ function AccountSettings({ user }: { user: AuthUser }) {
           <h2>登录状态</h2>
           {notice("logout")}
         </div>
-        <button
+        <Button
+          variant="outline"
           type="button"
           className="button secondary"
           disabled={!!busy}
@@ -301,7 +317,7 @@ function AccountSettings({ user }: { user: AuthUser }) {
         >
           <LogOut size={18} />
           退出登录
-        </button>
+        </Button>
       </section>
       {deleting && (
         <AccountDialog
@@ -331,7 +347,7 @@ function AccountSettings({ user }: { user: AuthUser }) {
             <p>注销后无法恢复登录，请确认是否继续。</p>
             <label>
               当前密码
-              <input
+              <Input
                 type="password"
                 autoComplete="current-password"
                 value={deletePassword}
@@ -354,17 +370,22 @@ function AccountSettings({ user }: { user: AuthUser }) {
             )}
             {notice("delete")}
             <div className="account-actions">
-              <button
+              <Button
+                variant="outline"
                 type="button"
                 className="button secondary"
                 disabled={!!busy}
                 onClick={() => setDeleting(false)}
               >
                 取消
-              </button>
-              <button className="button danger" disabled={!!busy}>
+              </Button>
+              <Button
+                variant="destructive"
+                className="button danger"
+                disabled={!!busy}
+              >
                 {busy ? "正在注销…" : "确认注销"}
-              </button>
+              </Button>
             </div>
           </form>
         </AccountDialog>

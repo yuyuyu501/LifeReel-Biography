@@ -1,3 +1,4 @@
+import { Button } from "../components/ui/button";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { ArrowLeft, ArrowRight } from "lucide-react";
@@ -42,31 +43,67 @@ export function WalletPage() {
             <div className="wallet-available">
               <span>可用余额</span>
               <strong>{money(w.available_cents)}</strong>
-              {(w.debt_cents ?? 0) > 0 && <small role="status">当前欠款 {money(w.debt_cents!)}，充值后抵扣</small>}
-              {w.prices.script_billing_mode === "tokens" && <small>
-                预冻结 {money(w.frozen_cents)} · 待累计结算 ¥{((w.token_remainder_nano ?? 0) / 1e9).toFixed(6)}
-              </small>}
+              {(w.debt_cents ?? 0) > 0 && (
+                <small role="status">
+                  当前欠款 {money(w.debt_cents!)}，充值后抵扣
+                </small>
+              )}
+              {w.prices.script_billing_mode === "tokens" && (
+                <small>
+                  预冻结 {money(w.frozen_cents)} · 待累计结算 ¥
+                  {((w.token_remainder_nano ?? 0) / 1e9).toFixed(6)}
+                </small>
+              )}
             </div>
           </section>
           <WalletRecharge wallet={w} />
           <div className="wallet-rates">
             <span>当前价格</span>
-            {w.prices.video_billing_mode === "tokens" ? <>
-              <span>影像按实际 token 用量计费（官方标准价 × {w.prices.video_markup ?? "1.5"}）</span>
-              <span>720p 每百万计费 token：无视频参考 ¥{w.prices.video_cny_per_million ?? "34.5"}，有视频参考 ¥{w.prices.video_reference_cny_per_million ?? "21"}。分镜规划按文本 AI 单价计费。</span>
-              <span>每次预冻结 {money(w.prices.video_reserve_cents ?? 2400)}，按实际用量多退少补；欠款结清后可再次生成。</span>
-            </> : <span>
-              影像 {money(w.prices.video_cents_per_second)} / 秒（
-              {money(w.prices.video_cents_per_second * 30)} / 30 秒）
-            </span>}
-            {w.prices.script_billing_mode === "tokens" ? <>
-              <span>文本 AI 按实际 token 用量计费（官方标准价 × 1.5）</span>
-              <span>每百万 token：输入 ≤32K 时输入 ¥1.20 / 输出 ¥3.00；32K–128K 时输入 ¥1.80 / 输出 ¥9.00；缓存命中输入 ¥0.24。</span>
-              <span>含采访追问、记忆整理和剧本生成，不再按章收费。每次调用预冻结 ¥0.40，按实际用量结算；不足一分钱累计，有消耗但未成稿仍计费，未知用量待核对。</span>
-            </> : <><span>剧本 {money(w.prices.script_chapter_cents)} / 章 / 次</span>
-            <span>
-              每次成功生成或更新均计费，含采访自动更新、追问、记忆与知识图谱整理及素材理解
-            </span></>}
+            {w.prices.video_billing_mode === "tokens" ? (
+              <>
+                <span>
+                  影像按实际 token 用量计费（官方标准价 ×{" "}
+                  {w.prices.video_markup ?? "1.5"}）
+                </span>
+                <span>
+                  720p 每百万计费 token：无视频参考 ¥
+                  {w.prices.video_cny_per_million ?? "34.5"}，有视频参考 ¥
+                  {w.prices.video_reference_cny_per_million ?? "21"}
+                  。分镜规划按文本 AI 单价计费。
+                </span>
+                <span>
+                  每次预冻结 {money(w.prices.video_reserve_cents ?? 2400)}
+                  ，按实际用量多退少补；欠款结清后可再次生成。
+                </span>
+              </>
+            ) : (
+              <span>
+                影像 {money(w.prices.video_cents_per_second)} / 秒（
+                {money(w.prices.video_cents_per_second * 30)} / 30 秒）
+              </span>
+            )}
+            {w.prices.script_billing_mode === "tokens" ? (
+              <>
+                <span>文本 AI 按实际 token 用量计费（官方标准价 × 1.5）</span>
+                <span>
+                  每百万 token：输入 ≤32K 时输入 ¥1.20 / 输出 ¥3.00；32K–128K
+                  时输入 ¥1.80 / 输出 ¥9.00；缓存命中输入 ¥0.24。
+                </span>
+                <span>
+                  含采访追问、记忆整理和剧本生成，不再按章收费。每次调用预冻结
+                  ¥0.40，按实际用量结算；不足一分钱累计，有消耗但未成稿仍计费，未知用量待核对。
+                </span>
+              </>
+            ) : (
+              <>
+                <span>
+                  剧本 {money(w.prices.script_chapter_cents)} / 章 / 次
+                </span>
+                <span>
+                  每次成功生成或更新均计费，含采访自动更新、追问、记忆与知识图谱整理及素材理解
+                </span>
+              </>
+            )}
           </div>
         </>
       )}
@@ -140,7 +177,9 @@ export function WalletPage() {
           <span>
             共 {ledger.data?.total ?? 0} 条 · 第 {page} 页
           </span>
-          <button
+          <Button
+            variant="outline"
+            size="sm"
             className="button secondary small"
             aria-label="上一页"
             title="上一页"
@@ -148,8 +187,10 @@ export function WalletPage() {
             onClick={() => setPage(page - 1)}
           >
             <ArrowLeft size={17} />
-          </button>
-          <button
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
             className="button secondary small"
             aria-label="下一页"
             title="下一页"
@@ -159,7 +200,7 @@ export function WalletPage() {
             onClick={() => setPage(page + 1)}
           >
             <ArrowRight size={17} />
-          </button>
+          </Button>
         </nav>
       </section>
     </div>

@@ -6,7 +6,9 @@ import { describe, expect, test } from "vitest";
 const sourceDir = dirname(fileURLToPath(import.meta.url));
 const entry = readFileSync(resolve(sourceDir, "styles.css"), "utf8");
 const modules = [
-  ...entry.matchAll(/@import "(\.\/styles\/[^";]+\.css)";/g),
+  ...entry.matchAll(
+    /@import "(\.\/styles\/[^";]+\.css)" layer\(components\);/g,
+  ),
 ].map((match) => match[1]);
 
 function parse(css: string) {
@@ -29,7 +31,9 @@ describe("stylesheet organization", () => {
     expect(modules).toHaveLength(15);
     expect(new Set(modules).size).toBe(modules.length);
     expect(
-      parse(entry).every((rule) => rule.type === CSSRule.IMPORT_RULE),
+      parse(entry.replaceAll(" layer(components)", "")).every(
+        (rule) => rule.type === CSSRule.IMPORT_RULE,
+      ),
     ).toBe(true);
   });
 

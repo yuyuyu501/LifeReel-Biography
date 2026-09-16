@@ -19,8 +19,19 @@ export default tseslint.config(
     },
     rules: {
       ...reactHooks.configs.recommended.rules,
-      "react-refresh/only-export-components": ["warn", { allowConstantExport: true }],
+      "react-refresh/only-export-components": [
+        "warn",
+        { allowConstantExport: true },
+      ],
+    },
+  },
+  {
+    files: ["src/components/ui/button.tsx", "src/components/ui/badge.tsx"],
+    rules: {
+      "react-refresh/only-export-components": [
+        "warn",
+        { allowExportNames: ["buttonVariants", "badgeVariants"] },
+      ],
     },
   },
 );
-

@@ -19,12 +19,32 @@ import { isAuthenticationError } from "./api/errors";
 import { QueryState } from "./components/QueryState";
 
 function ProtectedApp() {
-  const session = useQuery({ queryKey: ["auth-me"], queryFn: api.me, retry: false });
-  if (session.isPending) return <div className="login-page"><p className="login-status">正在验证家庭空间……</p></div>;
-  if (session.isError && isAuthenticationError(session.error)) return <Navigate to="/login" replace />;
-  if (session.isError) return <div className="login-page"><div className="login-card"><QueryState queries={[session]} /></div></div>;
+  const session = useQuery({
+    queryKey: ["auth-me"],
+    queryFn: api.me,
+    retry: false,
+  });
+  if (session.isPending)
+    return (
+      <div className="login-page">
+        <p className="login-status">正在验证家庭空间……</p>
+      </div>
+    );
+  if (session.isError && isAuthenticationError(session.error))
+    return <Navigate to="/login" replace />;
+  if (session.isError)
+    return (
+      <div className="login-page">
+        <div className="login-card">
+          <QueryState queries={[session]} />
+        </div>
+      </div>
+    );
   return (
-    <AppShell isAdmin={session.data?.is_admin}>
+    <AppShell
+      isAdmin={session.data?.is_admin}
+      displayName={session.data?.display_name}
+    >
       <Routes>
         <Route path="/" element={<HomePage />} />
         <Route path="/people" element={<PeoplePage />} />
@@ -37,7 +57,16 @@ function ProtectedApp() {
         <Route path="/studio" element={<StudioPage />} />
         <Route path="/wallet" element={<WalletPage />} />
         <Route path="/account" element={<AccountPage />} />
-        <Route path="/admin/accounts" element={session.data?.is_admin ? <AccountsAdminPage /> : <Navigate to="/account" replace />} />
+        <Route
+          path="/admin/accounts"
+          element={
+            session.data?.is_admin ? (
+              <AccountsAdminPage />
+            ) : (
+              <Navigate to="/account" replace />
+            )
+          }
+        />
       </Routes>
     </AppShell>
   );

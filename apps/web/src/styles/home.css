@@ -33,7 +33,7 @@
   color: rgba(255, 255, 255, 0.07);
   font-size: 42px;
   font-weight: 700;
-  letter-spacing: 0.08em;
+  letter-spacing: 0;
 }
 .task-kicker {
   display: flex;
@@ -42,7 +42,7 @@
   color: rgba(255, 255, 255, 0.65);
   font-size: 11px;
   font-weight: 700;
-  letter-spacing: 0.08em;
+  letter-spacing: 0;
 }
 .live-mark {
   width: 7px;
@@ -103,7 +103,7 @@
   border-top: 1px solid var(--line);
 }
 .metric-list dt {
-  color: var(--muted);
+  color: var(--muted-foreground);
   font-size: 13px;
 }
 .metric-list dd {
@@ -114,7 +114,7 @@
 }
 .metric-list dd small {
   margin-left: 4px;
-  color: var(--muted);
+  color: var(--muted-foreground);
   font-size: 11px;
   font-weight: 500;
 }
@@ -148,7 +148,7 @@
   place-items: center;
   border: 1px solid var(--line-strong);
   border-radius: 50%;
-  color: var(--muted);
+  color: var(--muted-foreground);
   background: #fff;
 }
 .workflow-track svg {
@@ -159,7 +159,7 @@
 }
 .workflow-track small {
   margin-top: 5px;
-  color: var(--muted);
+  color: var(--muted-foreground);
   font-size: 11px;
 }
 .workflow-track .done span {
@@ -216,13 +216,13 @@
 }
 .activity-row small {
   margin-top: 3px;
-  color: var(--muted);
+  color: var(--muted-foreground);
   font-size: 11px;
 }
 .activity-empty {
   padding: 18px 0;
   border-top: 1px solid var(--line);
-  color: var(--muted);
+  color: var(--muted-foreground);
   font-size: 13px;
 }
 @media (max-width: 900px) {

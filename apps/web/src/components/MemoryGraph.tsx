@@ -1,4 +1,7 @@
-import type { MemoryGraph as MemoryGraphData, MemoryGraphNode } from "@lifereel/contracts";
+import type {
+  MemoryGraph as MemoryGraphData,
+  MemoryGraphNode,
+} from "@lifereel/contracts";
 import {
   forceCenter,
   forceCollide,
@@ -46,18 +49,32 @@ function nodeRadius(node: MemoryGraphNode) {
 }
 
 function graphNodeLabel(node: MemoryGraphNode) {
-  if (node.kind === "event") return node.time_text || `${node.label.slice(0, 7)}${node.label.length > 7 ? "…" : ""}`;
+  if (node.kind === "event")
+    return (
+      node.time_text ||
+      `${node.label.slice(0, 7)}${node.label.length > 7 ? "…" : ""}`
+    );
   return `${node.label.slice(0, 8)}${node.label.length > 8 ? "…" : ""}`;
 }
 
 function nodeShape(node: PositionedNode, selected: boolean) {
   const common = {
-    fill: NODE_COLORS[node.kind] ?? "var(--muted)",
+    fill: NODE_COLORS[node.kind] ?? "var(--muted-foreground)",
     stroke: selected ? "var(--ink)" : "var(--paper)",
     strokeWidth: selected ? 4 : 2,
   };
   if (node.kind === "event") {
-    return <rect x={-17} y={-17} width={34} height={34} rx={3} transform="rotate(45)" {...common} />;
+    return (
+      <rect
+        x={-17}
+        y={-17}
+        width={34}
+        height={34}
+        rx={3}
+        transform="rotate(45)"
+        {...common}
+      />
+    );
   }
   if (node.kind === "organization") {
     return <rect x={-23} y={-19} width={46} height={38} rx={4} {...common} />;
@@ -83,7 +100,8 @@ export function MemoryGraph({
   useLayoutEffect(() => {
     const container = containerRef.current;
     if (!container) return;
-    const update = () => setWidth(Math.max(300, Math.round(container.clientWidth)));
+    const update = () =>
+      setWidth(Math.max(300, Math.round(container.clientWidth)));
     update();
     if (typeof ResizeObserver === "undefined") return;
     const observer = new ResizeObserver(update);
@@ -111,16 +129,28 @@ export function MemoryGraph({
     }
     const simulation = forceSimulation(nodes)
       .randomSource(seededRandom())
-      .force("link", forceLink<PositionedNode, PositionedLink>(links).id((node) => node.id).distance((link) => link.target.kind === "event" ? 135 : 115).strength(0.65))
+      .force(
+        "link",
+        forceLink<PositionedNode, PositionedLink>(links)
+          .id((node) => node.id)
+          .distance((link) => (link.target.kind === "event" ? 135 : 115))
+          .strength(0.65),
+      )
       .force("charge", forceManyBody().strength(-430))
-      .force("collision", forceCollide<PositionedNode>().radius((node) => nodeRadius(node) + 40))
+      .force(
+        "collision",
+        forceCollide<PositionedNode>().radius((node) => nodeRadius(node) + 40),
+      )
       .force("center", forceCenter(width / 2, height / 2))
       .stop();
     for (let index = 0; index < 220; index += 1) simulation.tick();
     const margin = 54;
     nodes.forEach((node) => {
       node.x = Math.max(margin, Math.min(width - margin, node.x ?? width / 2));
-      node.y = Math.max(margin, Math.min(height - margin, node.y ?? height / 2));
+      node.y = Math.max(
+        margin,
+        Math.min(height - margin, node.y ?? height / 2),
+      );
     });
     return { nodes, links };
   }, [graph, height, width]);
@@ -128,19 +158,38 @@ export function MemoryGraph({
 
   return (
     <div className="memory-graph-canvas" ref={containerRef}>
-      <svg viewBox={`0 0 ${width} ${height}`} role="img" aria-labelledby="memory-graph-title memory-graph-description">
-        <title id="memory-graph-title">{graph.nodes[0]?.label ?? "人物"}的记忆关系图</title>
-        <desc id="memory-graph-description">以主人公为中心，展示采访中提到的人物、地点、组织与事件。可选择节点查看来源。</desc>
+      <svg
+        viewBox={`0 0 ${width} ${height}`}
+        role="img"
+        aria-labelledby="memory-graph-title memory-graph-description"
+      >
+        <title id="memory-graph-title">
+          {graph.nodes[0]?.label ?? "人物"}的记忆关系图
+        </title>
+        <desc id="memory-graph-description">
+          以主人公为中心，展示采访中提到的人物、地点、组织与事件。可选择节点查看来源。
+        </desc>
         <g className="memory-graph-edges">
           {layout.links.map((link) => {
             const middleX = (link.source.x + link.target.x) / 2;
             const middleY = (link.source.y + link.target.y) / 2;
-            return <g key={link.id}>
-              <line x1={link.source.x} y1={link.source.y} x2={link.target.x} y2={link.target.y} />
-              {(!dense || link.target.kind !== "event" || selectedNodeId === link.target.id) && (
-                <text x={middleX} y={middleY - 5} textAnchor="middle">{link.relationship}</text>
-              )}
-            </g>;
+            return (
+              <g key={link.id}>
+                <line
+                  x1={link.source.x}
+                  y1={link.source.y}
+                  x2={link.target.x}
+                  y2={link.target.y}
+                />
+                {(!dense ||
+                  link.target.kind !== "event" ||
+                  selectedNodeId === link.target.id) && (
+                  <text x={middleX} y={middleY - 5} textAnchor="middle">
+                    {link.relationship}
+                  </text>
+                )}
+              </g>
+            );
           })}
         </g>
         <g className="memory-graph-nodes">
@@ -162,7 +211,9 @@ export function MemoryGraph({
               }}
             >
               {nodeShape(node, selectedNodeId === node.id)}
-              <text y={nodeRadius(node) + 19} textAnchor="middle">{graphNodeLabel(node)}</text>
+              <text y={nodeRadius(node) + 19} textAnchor="middle">
+                {graphNodeLabel(node)}
+              </text>
             </g>
           ))}
         </g>

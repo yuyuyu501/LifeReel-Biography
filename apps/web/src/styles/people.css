@@ -24,13 +24,13 @@
 }
 .avatar {
   width: 56px;
-  height: 64px;
+  height: 56px;
   display: grid;
   place-items: center;
   flex: 0 0 auto;
-  border-radius: 3px;
-  color: #fff;
-  background: var(--green);
+  border-radius: 8px;
+  color: var(--green-dark);
+  background: var(--green-soft);
   font-size: 23px;
   font-weight: 700;
 }
@@ -47,7 +47,7 @@
   display: block;
   margin-bottom: 2px;
   overflow: hidden;
-  color: var(--muted);
+  color: var(--muted-foreground);
   font-size: 12px;
   text-overflow: ellipsis;
   white-space: nowrap;

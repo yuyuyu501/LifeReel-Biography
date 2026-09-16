@@ -1,3 +1,5 @@
+import { Input } from "./ui/input";
+import { Button } from "./ui/button";
 import type { RechargeOrder, WalletSummary } from "@lifereel/contracts";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, ArrowRight, CreditCard, RefreshCw } from "lucide-react";
@@ -135,7 +137,7 @@ export function WalletRecharge({ wallet }: { wallet: WalletSummary }) {
           </div>
           {amount === -1 && (
             <>
-              <input
+              <Input
                 className="wallet-custom-amount"
                 inputMode="decimal"
                 value={customAmount}
@@ -158,14 +160,15 @@ export function WalletRecharge({ wallet }: { wallet: WalletSummary }) {
           </div>
         </fieldset>
         <div className="wallet-actions">
-          <button
+          <Button
+            variant="default"
             className="button primary"
             disabled={!enabled || cents === null || create.isPending}
             onClick={openPayment}
           >
             <CreditCard size={17} />
             {create.isPending ? "正在准备支付" : "确认支付"}
-          </button>
+          </Button>
         </div>
         {success && (
           <p className="recharge-success" role="status">
@@ -184,13 +187,14 @@ export function WalletRecharge({ wallet }: { wallet: WalletSummary }) {
           {create.isError && !order && (
             <div className="recharge-dialog-error">
               <ErrorNotice error={create.error} />
-              <button
+              <Button
+                variant="default"
                 className="button primary"
                 onClick={openPayment}
                 disabled={create.isPending}
               >
                 重新加载
-              </button>
+              </Button>
             </div>
           )}
           {order && (
@@ -235,7 +239,9 @@ export function WalletRecharge({ wallet }: { wallet: WalletSummary }) {
               {imageFailed && (
                 <div className="recharge-dialog-error" role="alert">
                   收款码加载失败，请重试。
-                  <button
+                  <Button
+                    variant="outline"
+                    size="sm"
                     className="button secondary small"
                     onClick={() => {
                       setImageFailed(false);
@@ -243,19 +249,21 @@ export function WalletRecharge({ wallet }: { wallet: WalletSummary }) {
                     }}
                   >
                     重新加载二维码
-                  </button>
+                  </Button>
                 </div>
               )}
               {detail.isError && (
                 <div className="recharge-dialog-error" role="alert">
                   暂时无法获取支付状态，不代表付款失败，请勿重复付款。
-                  <button
+                  <Button
+                    variant="outline"
+                    size="sm"
                     className="button secondary small"
                     disabled={detail.isFetching}
                     onClick={() => void detail.refetch()}
                   >
                     重试查询
-                  </button>
+                  </Button>
                 </div>
               )}
             </div>
@@ -266,7 +274,9 @@ export function WalletRecharge({ wallet }: { wallet: WalletSummary }) {
       <section className="recharge-history" aria-label="充值记录">
         <div className="wallet-history-bar">
           <h2>充值记录</h2>
-          <button
+          <Button
+            variant="outline"
+            size="icon"
             className="icon-button"
             title="刷新充值记录"
             aria-label="刷新充值记录"
@@ -274,7 +284,7 @@ export function WalletRecharge({ wallet }: { wallet: WalletSummary }) {
             onClick={() => void refresh()}
           >
             <RefreshCw size={17} />
-          </button>
+          </Button>
         </div>
         <QueryState queries={[orders]} />
         <div className="recharge-order-list">
@@ -298,7 +308,9 @@ export function WalletRecharge({ wallet }: { wallet: WalletSummary }) {
         {!!orders.data?.total && (
           <nav className="wallet-pagination" aria-label="充值记录翻页">
             <span>第 {page} 页</span>
-            <button
+            <Button
+              variant="outline"
+              size="icon"
               className="icon-button"
               title="上一页充值记录"
               aria-label="上一页充值记录"
@@ -306,8 +318,10 @@ export function WalletRecharge({ wallet }: { wallet: WalletSummary }) {
               onClick={() => setPage(page - 1)}
             >
               <ArrowLeft size={17} />
-            </button>
-            <button
+            </Button>
+            <Button
+              variant="outline"
+              size="icon"
               className="icon-button"
               title="下一页充值记录"
               aria-label="下一页充值记录"
@@ -315,7 +329,7 @@ export function WalletRecharge({ wallet }: { wallet: WalletSummary }) {
               onClick={() => setPage(page + 1)}
             >
               <ArrowRight size={17} />
-            </button>
+            </Button>
           </nav>
         )}
       </section>

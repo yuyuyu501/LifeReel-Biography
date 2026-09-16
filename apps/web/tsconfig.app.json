@@ -2,6 +2,8 @@
   "compilerOptions": {
     "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.app.tsbuildinfo",
     "target": "ES2022",
+    "baseUrl": ".",
+    "paths": { "@/*": ["./src/*"] },
     "useDefineForClassFields": true,
     "lib": ["ES2022", "DOM", "DOM.Iterable"],
     "allowJs": false,
@@ -21,4 +23,3 @@
   },
   "include": ["src"]
 }
-

@@ -29,7 +29,7 @@
 .studio-catalog label {
   display: grid;
   gap: 10px;
-  color: var(--muted);
+  color: var(--muted-foreground);
   font-size: 13px;
 }
 .studio-catalog select,
@@ -58,7 +58,7 @@
 }
 .studio-catalog-heading > span {
   font-size: 12px;
-  color: var(--muted);
+  color: var(--muted-foreground);
 }
 .studio-chapters {
   display: grid;
@@ -95,13 +95,13 @@
   display: block;
   margin-top: 5px;
   font-size: 12px;
-  color: var(--muted);
+  color: var(--muted-foreground);
 }
 .studio-chapter-number {
   font-size: 12px;
   line-height: 24px;
   font-variant-numeric: tabular-nums;
-  color: var(--muted);
+  color: var(--muted-foreground);
 }
 .studio-chapters svg {
   margin-top: 4px;
@@ -137,7 +137,7 @@
   margin: 20px 0;
 }
 .studio-specs dt {
-  color: var(--muted);
+  color: var(--muted-foreground);
   font-size: 12px;
   margin-bottom: 7px;
 }
@@ -155,7 +155,7 @@
   padding-bottom: 20px;
 }
 .studio-muted {
-  color: var(--muted);
+  color: var(--muted-foreground);
   font-size: 13px;
 }
 .studio-preview-toolbar {
@@ -178,7 +178,7 @@
   padding: 12px 16px;
   border: 0;
   border-bottom: 2px solid transparent;
-  color: var(--muted);
+  color: var(--muted-foreground);
   background: transparent;
   font-size: 14px;
 }
@@ -196,7 +196,7 @@
   flex-wrap: wrap;
   gap: 12px;
   font-size: 12px;
-  color: var(--muted);
+  color: var(--muted-foreground);
   margin-bottom: 16px;
 }
 .studio-version select {
@@ -232,7 +232,7 @@
   gap: 8px 20px;
   padding: 14px 0;
   font-size: 12px;
-  color: var(--muted);
+  color: var(--muted-foreground);
   font-variant-numeric: tabular-nums;
 }
 .studio-publish-row {
@@ -253,7 +253,7 @@
   justify-content: space-between;
   gap: 8px;
   font-size: 12px;
-  color: var(--muted);
+  color: var(--muted-foreground);
   border-bottom: 1px solid var(--line);
   padding-bottom: 16px;
   margin-bottom: 24px;

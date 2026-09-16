@@ -1,4 +1,6 @@
-import { BookOpenText, LockKeyhole } from "lucide-react";
+import { Input } from "../components/ui/input";
+import { Button } from "../components/ui/button";
+import { LockKeyhole } from "lucide-react";
 import { type FormEvent, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -61,29 +63,15 @@ export function LoginPage() {
 
   return (
     <div className="login-page">
-      <div className="login-context" aria-hidden="true">
-        <div className="login-context-mark">
-          <BookOpenText size={28} />
-        </div>
-        <span>私人生命档案</span>
-        <h2>
-          让讲述有来处，
-          <br />
-          让记忆有归档。
-        </h2>
-        <p>采访原声、事实核对与发布授权，在同一条清晰的制作轨道上完成。</p>
-        <div className="archive-lines">
-          <i />
-          <i />
-          <i />
-          <i />
-        </div>
-      </div>
+      <Link className="auth-brand" to="/login">
+        <span className="brand-mark">岁</span>
+        <strong>岁忆影传</strong>
+      </Link>
       <form className="login-card" onSubmit={submit}>
-        <div className="login-mark">
-          <LockKeyhole size={24} />
-        </div>
-        <span className="eyebrow">家庭私密空间</span>
+        <span className="auth-kicker">
+          <LockKeyhole size={15} aria-hidden="true" />
+          家庭私密空间
+        </span>
         <h1>
           {registering
             ? "创建家庭账户"
@@ -95,7 +83,7 @@ export function LoginPage() {
         {registering && (
           <label>
             称呼
-            <input
+            <Input
               value={name}
               onChange={(event) => setName(event.target.value)}
               required
@@ -110,7 +98,7 @@ export function LoginPage() {
         )}
         <label>
           {registering || resetting ? "手机号" : "手机号或邮箱"}
-          <input
+          <Input
             type={registering || resetting ? "tel" : "text"}
             autoComplete="username"
             value={email}
@@ -131,7 +119,7 @@ export function LoginPage() {
         )}
         <label>
           {resetting ? "新密码" : "密码"}
-          <input
+          <Input
             type="password"
             autoComplete={
               registering || resetting ? "new-password" : "current-password"
@@ -148,7 +136,7 @@ export function LoginPage() {
             <small>密码至少 8 位。</small>
             <label>
               确认密码
-              <input
+              <Input
                 type="password"
                 autoComplete="new-password"
                 value={confirmPassword}
@@ -175,7 +163,8 @@ export function LoginPage() {
             短信验证暂未开通，请稍后再试。
           </p>
         )}
-        <button
+        <Button
+          variant="default"
           className="button primary"
           disabled={
             pending ||
@@ -190,7 +179,7 @@ export function LoginPage() {
               : resetting
                 ? "重置密码"
                 : "进入档案工作台"}
-        </button>
+        </Button>
         <div className="auth-links">
           {registering || resetting ? (
             <Link to="/login">返回登录</Link>
