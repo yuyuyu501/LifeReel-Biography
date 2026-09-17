@@ -209,7 +209,7 @@ def test_recovery_failure_does_not_change_wallet_or_run(client, monkeypatch, blo
     assert client.get("/v1/production/runs").json()[0] == run
 
 
-def test_rejected_original_cannot_be_restored_again(client, monkeypatch, blocked_run):
+def test_rejected_original_requires_explicit_retry_after_restore(client, monkeypatch, blocked_run):
     run, _ = legacy_run(client, blocked_run)
     source = {"kind": "original_video", "sha256": "hash", "source_task_id": "task-1"}
     monkeypatch.setattr(continuation, "prepare_original", lambda *args: (None, {}, source))
@@ -230,8 +230,13 @@ def test_rejected_original_cannot_be_restored_again(client, monkeypatch, blocked
     assert failed["recovery"]["can_restore_original"] is False
     balance = client.get("/v1/wallet").json()
     assert client.post(url + "/continuation").status_code == 409
-    assert client.post(f"/v1/jobs/{run['job_id']}/retry").status_code == 409
     assert client.get("/v1/wallet").json() == balance
+    assert client.post(f"/v1/jobs/{run['job_id']}/retry").status_code == 200
+    failed = client.post(url + "/execute").json()
+    assert failed["error_message"] == "VIDEO_REFERENCE_REJECTED"
+    wallet = client.get("/v1/wallet").json()
+    assert wallet["available_cents"] == balance["available_cents"]
+    assert wallet["frozen_cents"] == 0
 
 
 @pytest.mark.parametrize("has_video,rate", [(False, 23), (True, 14)])

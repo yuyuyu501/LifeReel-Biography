@@ -169,6 +169,12 @@ export function StudioPage() {
     blocked &&
     (activeRun?.output_manifest?.script_version ??
       selected?.project.version_number) === selected?.project.version_number;
+  const retryReference = Boolean(
+    blocksCurrentScript &&
+    activeRun?.job_id &&
+    (activeRun?.recovery?.code === "VIDEO_REFERENCE_REJECTED" ||
+      activeRun?.error_message === "VIDEO_REFERENCE_REJECTED"),
+  );
   const publication = publications.data?.find(
     (item) =>
       item.production_run_id === activeRun?.id && item.status === "published",
@@ -403,24 +409,33 @@ export function StudioPage() {
                         disabled={
                           scriptEditing ||
                           produce.isPending ||
+                          retry.isPending ||
                           isGenerating ||
                           quote === undefined ||
                           !hasBalance ||
-                          blocksCurrentScript
+                          (blocksCurrentScript && !retryReference)
                         }
                         title={
                           scriptEditing
                             ? "请先保存或取消剧本修改"
-                            : blocksCurrentScript
+                            : blocksCurrentScript && !retryReference
                               ? "请先处理下方的审核问题"
                               : !hasBalance
                                 ? "余额不足，请先充值"
                                 : undefined
                         }
-                        onClick={() => produce.mutate(selected)}
+                        onClick={() => {
+                          if (retryReference && activeRun?.job_id)
+                            retry.mutate(activeRun.job_id);
+                          else produce.mutate(selected);
+                        }}
                       >
                         <Play size={16} aria-hidden="true" />{" "}
-                        {isGenerating ? "正在生成" : "生成影像"}
+                        {isGenerating || retry.isPending
+                          ? "正在生成"
+                          : retryReference
+                            ? "重新生成"
+                            : "生成影像"}
                       </Button>
                     </div>
                   </div>
@@ -493,7 +508,7 @@ export function StudioPage() {
                     {activeRun?.error_message && (
                       <div className="notice error" role="alert">
                         {productionError}
-                        {activeRun.job_id && !blocked && (
+                        {activeRun.job_id && (!blocked || retryReference) && (
                           <Button
                             variant="outline"
                             size="sm"

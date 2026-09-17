@@ -10,12 +10,15 @@ the platform rejected the previous clip's last frame as the next reference.
   moderation to `VIDEO_CONTENT_REJECTED`. Keep Chinese copy in the frontend.
 - Project legacy failures from their saved provider code without rewriting
   historical jobs, usage receipts, balances or finished segments.
-- Block unchanged moderation retries in both the job retry and execute paths,
-  before taking a new wallet hold. Never automatically remove the reference,
+- A reference rejection does not permanently disable a file. An explicit job
+  retry can resubmit the same reference after validating its current consent and
+  ownership. Keep direct execution blocked until that retry clears the saved
+  rejection under the production lock. Never automatically remove the reference,
   switch providers or repeatedly submit rejected content.
 - Offer an inline, explicit replacement from the same person's image assets.
   Only ready JPEG/PNG/WebP files up to 10 MiB are eligible. Validate tenant,
-  person, type, size, prior rejection IDs and file hashes on the server.
+  person, type, size and content hashes on the server. Prior rejection IDs and
+  hashes are audit history, not an eligibility filter.
   Replacement images still undergo the provider's normal moderation.
 - Keep replacement history and failed-reference hashes in the manifest. Use the
   production execution lock for validation, reference update and retry transition.
@@ -32,11 +35,11 @@ the platform rejected the previous clip's last frame as the next reference.
 ## Verification
 
 Provider tests cover submission and terminal moderation mapping. Pipeline tests
-cover legacy projection, no-reserve rejection, tenant/person isolation, invalid
-or repeated reference files, atomic insufficient-balance handling, partial
+cover legacy projection, explicit same-file retries, tenant/person isolation, invalid
+reference files, atomic insufficient-balance handling, partial
 preview, checkpoint preservation, continued generation and exactly-once billing.
-UI tests cover inline replacement, image preview, no blind retry or confirmation
-dialog, empty asset lists and immediate terminal-state wallet refresh.
+UI tests cover previously rejected images staying selectable, job reuse, disabled
+duplicate clicks, image preview, empty lists and terminal-state wallet refresh.
 
 No schema migration is required. Deploy the same Git revision for API and web;
 do not reset the existing failed production run or its already-settled charge.

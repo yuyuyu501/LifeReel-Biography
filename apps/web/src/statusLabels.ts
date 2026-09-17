@@ -45,7 +45,7 @@ const labels = {
   VIDEO_PROVIDER_TIMEOUT: "视频生成等待超时",
   VIDEO_PROVIDER_OUTPUT_INVALID: "视频生成结果无效",
   VIDEO_PROVIDER_FAILED: "视频生成失败",
-  VIDEO_REFERENCE_REJECTED: "续接素材未通过视频平台的内容审核，请先处理下方的续接问题。",
+  VIDEO_REFERENCE_REJECTED: "参考素材未通过视频平台审核。可以手动重试或重新选择素材，平台会再次审核。",
   VIDEO_CONTINUATION_UNAVAILABLE: "原始续接素材暂不可用，请稍后重试或联系支持。",
   VIDEO_CONTENT_REJECTED: "视频内容未通过平台审核，请先修改相关剧本内容。",
   VIDEO_REFERENCE_INVALID: "参考图不可用，请重新选择该家人的图片素材。",

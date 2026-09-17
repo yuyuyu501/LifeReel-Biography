@@ -111,9 +111,9 @@ def _retry_job(
             if is_retired(run):
                 raise ApiError(409, ErrorCode.JOB_RETRY_NOT_ALLOWED)
             from lifereel_api.modules.production.recovery import (
-                assert_retry_allowed,
                 replace_reference,
                 restore_original,
+                retry_reference,
             )
 
             if resume_original:
@@ -121,7 +121,7 @@ def _retry_job(
             elif reference_asset_id:
                 replace_reference(db, run, reference_asset_id)
             else:
-                assert_retry_allowed(run)
+                retry_reference(db, run)
             billing.video_reserve(db, run)
             run.status = "queued"
             run.error_message = None

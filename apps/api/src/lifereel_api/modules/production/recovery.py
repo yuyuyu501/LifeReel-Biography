@@ -121,6 +121,30 @@ def reference_asset(db, run, asset_id: UUID) -> SourceAsset:
     return asset
 
 
+def retry_reference(db, run) -> None:
+    """Clear one rejected submission only after an explicit, locked user retry."""
+    blocked = blocked_segment(run)
+    if not blocked or blocked[2] != ErrorCode.VIDEO_REFERENCE_REJECTED:
+        assert_retry_allowed(run)
+        return
+    index, previous, _ = blocked
+    if previous.get("task_id") or previous.get("status") in {"submitting", "submission_unknown"}:
+        raise ApiError(409, ErrorCode.JOB_RETRY_NOT_ALLOWED)
+    asset_id = previous.get("reference_asset_id")
+    if asset_id:
+        reference_asset(db, run, UUID(asset_id))
+    manifest = copy.deepcopy(run.output_manifest)
+    segment = manifest["segments"][index]
+    segment.setdefault("reference_history", []).append({
+        "retried_at": utcnow().isoformat(), "source_asset_id": asset_id,
+        "previous_provider_error_code": segment.get("provider_error_code"),
+        "action": "retry_same_reference",
+    })
+    segment.update({"provider_error_code": None, "status": "pending"})
+    run.output_manifest = manifest
+    run.error_message = None
+
+
 def replace_reference(db, run, asset_id: UUID) -> None:
     blocked = blocked_segment(run)
     if (
@@ -131,13 +155,7 @@ def replace_reference(db, run, asset_id: UUID) -> None:
         raise ApiError(409, ErrorCode.JOB_RETRY_NOT_ALLOWED)
     index, previous, _ = blocked
     asset = reference_asset(db, run, asset_id)
-    rejected_hashes = previous.get("rejected_reference_hashes", [])
     rejected_ids = details(run)["rejected_asset_ids"]
-    if (
-        str(asset.id) in rejected_ids or asset.sha256 in rejected_hashes
-        or asset.sha256 == previous.get("reference_sha256")
-    ):
-        raise ApiError(422, ErrorCode.VIDEO_REFERENCE_INVALID)
     manifest = copy.deepcopy(run.output_manifest)
     segment = manifest["segments"][index]
     segment.setdefault("reference_history", []).append({

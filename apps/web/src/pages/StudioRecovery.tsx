@@ -32,9 +32,9 @@ export function StudioRecovery({
         asset.kind === "photo" &&
         !asset.is_redraw &&
         asset.status === "ready" &&
+        (!asset.consent_status || asset.consent_status === "granted") &&
         ["image/jpeg", "image/png", "image/webp"].includes(asset.mime_type) &&
-        asset.byte_size <= 10 * 1024 * 1024 &&
-        !run.recovery?.rejected_asset_ids.includes(asset.id),
+        asset.byte_size <= 10 * 1024 * 1024,
     ) ?? [];
   const selected = candidates.find((asset) => asset.id === assetId);
   const replace = useMutation({
@@ -71,7 +71,7 @@ export function StudioRecovery({
       <h3>更换第 {(run.recovery?.segment_index ?? 0) + 1} 段参考图</h3>
       <ErrorNotice error={files.error || replace.error} />
       <p className="studio-muted">
-        已完成片段保留，仅继续剩余片段。新参考图仍需通过平台审核。
+        可重试当前素材或重新选择图片。已完成片段保留，每次提交仍需通过平台审核。
       </p>
       {files.isPending ? (
         <p role="status">正在加载图片素材……</p>
@@ -84,7 +84,7 @@ export function StudioRecovery({
               onChange={(event) => setAssetId(event.target.value)}
               disabled={replace.isPending}
             >
-              <option value="">选择另一张图片</option>
+              <option value="">选择参考图片</option>
               {candidates.map((asset) => (
                 <option key={asset.id} value={asset.id}>
                   {asset.original_filename}

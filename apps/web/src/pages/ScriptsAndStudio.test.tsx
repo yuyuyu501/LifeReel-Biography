@@ -402,18 +402,18 @@ function mockRecovery(files: unknown[] = [replacementImage]) {
   });
 }
 
-test("rejected references offer an inline replacement and a retained clip, never blind retry", async () => {
+test("rejected references stay selectable alongside explicit retry and retained clips", async () => {
   mockRecovery([replacementImage, { ...replacementImage, id: "rejected-image", original_filename: "被拒.png" },
     { ...replacementImage, id: "foreign-image", subject_id: "person-2", original_filename: "别人的.png" }]);
   renderPage(<StudioPage />, "/studio");
   expect(await screen.findByText("更换第 2 段参考图")).toBeVisible();
-  expect(screen.getByRole("alert")).toHaveTextContent("续接素材未通过");
+  expect(screen.getByRole("alert")).toHaveTextContent("参考素材未通过");
   expect(screen.queryByText("视频服务暂时无法连接")).not.toBeInTheDocument();
-  expect(screen.queryByRole("button", { name: "重新尝试" })).not.toBeInTheDocument();
-  expect(screen.getByRole("button", { name: "生成影像" })).toBeDisabled();
+  expect(screen.getByRole("button", { name: "重新尝试" })).toBeEnabled();
+  expect(screen.getByRole("button", { name: "重新生成" })).toBeEnabled();
   expect(screen.getByLabelText("第 1 段视频")).toHaveAttribute("src", expect.stringContaining("/blocked-run/segments/0/content"));
   await screen.findByRole("option", { name: "老宅.png" });
-  expect(screen.queryByRole("option", { name: "被拒.png" })).not.toBeInTheDocument();
+  expect(screen.getByRole("option", { name: "被拒.png" })).toBeInTheDocument();
   expect(screen.queryByRole("option", { name: "别人的.png" })).not.toBeInTheDocument();
   expect(screen.getByRole("button", { name: "使用此图继续生成" })).toBeDisabled();
   fireEvent.change(screen.getByLabelText("参考图片"), { target: { value: replacementImage.id } });
@@ -422,6 +422,25 @@ test("rejected references offer an inline replacement and a retained clip, never
   await waitFor(() => expect(fetch).toHaveBeenCalledWith(expect.stringContaining("/blocked-run/reference"),
     expect.objectContaining({ method: "POST", body: JSON.stringify({ reference_asset_id: replacementImage.id }) })));
   expect(window.confirm).not.toHaveBeenCalled();
+});
+
+test("retrying a rejected chapter uses its existing job and disables repeated clicks", async () => {
+  mockRecovery([{ ...replacementImage, id: "rejected-image", original_filename: "被拒.png" }]);
+  const original = vi.mocked(fetch).getMockImplementation()!;
+  let resolveRetry: (value: Response) => void;
+  vi.mocked(fetch).mockImplementation(async (input, init) => {
+    if (String(input).endsWith("/blocked-job/retry")) {
+      return new Promise<Response>((resolve) => { resolveRetry = resolve; });
+    }
+    return original(input, init);
+  });
+  renderPage(<StudioPage />, "/studio");
+  fireEvent.click(await screen.findByRole("button", { name: "重新生成" }));
+  await waitFor(() => expect(screen.getByRole("button", { name: "正在生成" })).toBeDisabled());
+  expect(screen.getByRole("button", { name: "重新尝试" })).toBeDisabled();
+  expect(vi.mocked(fetch).mock.calls.filter(([, init]) => init?.method === "POST")).toHaveLength(1);
+  expect(fetch).toHaveBeenCalledWith(expect.stringContaining("/blocked-job/retry"), expect.objectContaining({ method: "POST" }));
+  await act(async () => resolveRetry!(response({ id: "blocked-job", status: "queued" })));
 });
 
 test("missing replacement images lead to interview uploads without generating", async () => {
