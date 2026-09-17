@@ -10,10 +10,11 @@ from fastapi import APIRouter, Depends, File, Form, Header, UploadFile, status
 from fastapi.responses import Response, StreamingResponse
 from sqlalchemy.orm import Session
 
+from lifereel_api.core.config import get_settings
 from lifereel_api.core.database import get_db
 from lifereel_api.core.errors import ApiError, ErrorCode
 from lifereel_api.core.tenant import get_tenant_id
-from lifereel_api.modules.evidence import direct_uploads, service
+from lifereel_api.modules.evidence import direct_uploads, redraw, service
 from lifereel_api.modules.evidence.schemas import (
     DirectUploadComplete,
     DirectUploadCreate,
@@ -27,6 +28,7 @@ from lifereel_api.modules.evidence.schemas import (
     TranscriptVersionRead,
 )
 from lifereel_api.modules.evidence.storage import media_redirect, private_storage
+from lifereel_api.modules.jobs.schemas import JobRead
 
 router = APIRouter(prefix="/evidence", tags=["evidence"])
 Db = Annotated[Session, Depends(get_db)]
@@ -156,6 +158,25 @@ def asset_content(
         media_type=asset.mime_type,
         headers=headers,
     )
+
+
+@router.get("/assets/{asset_id}/redraw")
+def redraw_status(asset_id: UUID, db: Db, tenant_id: Tenant) -> dict:
+    job = redraw.current_job(db, tenant_id, asset_id)
+    settings = get_settings()
+    configured = (
+        settings.photo_redraw_provider == "siliconflow" and bool(settings.siliconflow_api_key)
+        or settings.photo_redraw_provider == "mock" and settings.is_development
+    )
+    return {
+        "enabled": configured and settings.job_queue_backend == "database",
+        "job": JobRead.model_validate(job) if job else None,
+    }
+
+
+@router.post("/assets/{asset_id}/redraw", response_model=JobRead, status_code=202)
+def redraw_photo(asset_id: UUID, db: Db, tenant_id: Tenant) -> JobRead:
+    return redraw.create(db, tenant_id, asset_id)
 
 
 @router.post(

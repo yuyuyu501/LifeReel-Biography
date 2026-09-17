@@ -56,6 +56,8 @@ def build_reference_package(
             .order_by(SourceAsset.quality_score.desc().nullslast(), SourceAsset.created_at.desc())
         )
     )
+    # Independent redraws are not platform-authorized video references.
+    assets = [a for a in assets if not a.is_redraw]
     chapter_assets = [a for a in assets if a.chapter_id == chapter_id and _age_match(a, chapter)]
     fallback_assets = [a for a in assets if a.chapter_id != chapter_id and _age_match(a, chapter)]
     chosen = chapter_assets + fallback_assets

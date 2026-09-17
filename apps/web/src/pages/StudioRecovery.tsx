@@ -30,6 +30,7 @@ export function StudioRecovery({
       (asset) =>
         asset.subject_id === subjectId &&
         asset.kind === "photo" &&
+        !asset.is_redraw &&
         asset.status === "ready" &&
         ["image/jpeg", "image/png", "image/webp"].includes(asset.mime_type) &&
         asset.byte_size <= 10 * 1024 * 1024 &&

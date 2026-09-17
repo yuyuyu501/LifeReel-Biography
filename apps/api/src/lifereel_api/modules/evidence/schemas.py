@@ -28,6 +28,7 @@ class SourceAssetRead(BaseModel):
     voice_score: float | None = None
     analysis_status: str = "pending"
     derived_from_asset_id: UUID | None = None
+    is_redraw: bool = False
     captured_at: datetime
     created_at: datetime
 

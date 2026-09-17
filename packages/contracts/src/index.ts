@@ -63,6 +63,9 @@ export interface SourceAsset {
   sha256: string;
   status: string;
   consent_scope: string;
+  consent_status?: string;
+  derived_from_asset_id?: UUID | null;
+  is_redraw?: boolean;
   captured_at: string;
   created_at: string;
 }

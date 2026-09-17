@@ -512,6 +512,58 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.photo-redraw {
+  min-width: 0;
+}
+.photo-redraw .memory-file-stage {
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
+}
+.photo-redraw .asset-preview-image {
+  min-width: 0;
+  min-height: 0;
+}
+.photo-redraw-toolbar {
+  min-height: 56px;
+  padding: 10px 15px;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  border-bottom: 1px solid var(--line);
+}
+.photo-redraw-toolbar > span {
+  color: var(--muted-foreground);
+  font-size: 12px;
+}
+.photo-redraw-toolbar > a {
+  margin-left: auto;
+}
+.photo-redraw-modes {
+  display: flex;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  overflow: hidden;
+}
+.photo-redraw-modes button {
+  min-height: 34px;
+  padding: 6px 12px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  font-size: 12px;
+}
+.photo-redraw-modes button[aria-pressed="true"] {
+  color: var(--green);
+  background: var(--green-soft);
+}
+.photo-redraw-error {
+  margin: 0;
+  padding: 10px 15px;
+  color: var(--danger);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
 .memory-file-stage {
   height: 440px;
   padding: 18px;

@@ -230,6 +230,10 @@ export const api = {
     request<Transcript>(`/v1/evidence/assets/${assetId}/transcribe`, { method: "POST" }),
   analyzeEvidence: (assetId: string) =>
     request<EvidenceObservation>(`/v1/evidence/assets/${assetId}/analyze`, { method: "POST" }),
+  photoRedrawStatus: (assetId: string) =>
+    request<{ enabled: boolean; job: Job | null }>(`/v1/evidence/assets/${assetId}/redraw`),
+  redrawPhoto: (assetId: string) =>
+    request<Job>(`/v1/evidence/assets/${assetId}/redraw`, { method: "POST" }),
   listEvidenceObservations: (assetId: string) =>
     request<EvidenceObservation[]>(`/v1/evidence/assets/${assetId}/observations`),
   reviseTranscript: (transcriptId: string, text: string, edit_reason: string) =>

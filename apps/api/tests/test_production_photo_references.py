@@ -141,6 +141,7 @@ def test_already_planned_run_binds_photo_without_overriding_manual_reference(
     {"consent_status": "revoked"}, {"consent_status": "unknown"},
     {"status": "processing"}, {"subject_id": uuid4()}, {"tenant_id": uuid4()},
     {"mime_type": "image/svg+xml"}, {"byte_size": 11 * 1024 * 1024},
+    {"metadata_json": {"purpose": "photo_redraw"}},
 ])
 def test_selected_photo_is_revalidated_before_any_model_request(client, photo_pipeline, change):
     payload, photo_id, requests, plans, _ = photo_pipeline

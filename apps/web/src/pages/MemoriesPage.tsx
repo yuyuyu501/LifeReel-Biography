@@ -18,6 +18,7 @@ import { formatAssetBytes } from "../assetFormatting";
 import { AssetPreview } from "../components/AssetPreview";
 import { EmptyState } from "../components/EmptyState";
 import { MemoryGraph } from "../components/MemoryGraph";
+import { PhotoRedraw } from "../components/PhotoRedraw";
 import { QueryState } from "../components/QueryState";
 import { hasQueryIssue } from "../queryHelpers";
 import { statusLabel } from "../statusLabels";
@@ -203,7 +204,7 @@ export function MemoriesPage() {
             <div className="memory-file-viewer">
               {selectedAsset ? <>
                 <header><div><span>{statusLabel(selectedAsset.kind, "文件")}</span><h3>{selectedAsset.original_filename}</h3></div><a className="icon-button" href={evidenceAssetUrl(selectedAsset.id)} target="_blank" rel="noreferrer" aria-label="在新窗口打开文件" title="在新窗口打开"><ExternalLink size={17} /></a></header>
-                <div className={`memory-file-stage is-${selectedAsset.kind}`}><AssetPreview asset={selectedAsset} /></div>
+                {selectedAsset.kind === "photo" ? <PhotoRedraw key={selectedAsset.id} asset={selectedAsset} onStart={() => setSelectedAssetId(selectedAsset.id)} /> : <div className={`memory-file-stage is-${selectedAsset.kind}`}><AssetPreview asset={selectedAsset} /></div>}
               </> : <div className="memory-file-empty">选择左侧文件后在这里查看</div>}
             </div>
           </div> : <EmptyState icon={Archive} title="还没有回忆文件" description="在采访聊天中上传照片、音频、视频或文档后，它们会自动归入当前人物。" />}

@@ -62,6 +62,10 @@ class SourceAsset(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     )
     captured_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
+    @property
+    def is_redraw(self) -> bool:
+        return (self.metadata_json or {}).get("purpose") == "photo_redraw"
+
 
 class EvidenceUpload(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "evidence_uploads"
