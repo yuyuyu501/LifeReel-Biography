@@ -158,8 +158,12 @@ export function StudioPage() {
       ));
   const pipelineChanged = Boolean(
     settings.data?.reference_style === "color_redraw" &&
-    activeRun?.output_manifest?.generation_config?.reference_style !==
-      "color_redraw",
+    (activeRun?.output_manifest?.generation_config?.reference_style !==
+      "color_redraw" ||
+      (settings.data.reference_prompt_version &&
+        activeRun?.output_manifest?.generation_config
+          ?.reference_prompt_version !==
+          settings.data.reference_prompt_version)),
   );
   const blocksCurrentScript =
     blocked &&

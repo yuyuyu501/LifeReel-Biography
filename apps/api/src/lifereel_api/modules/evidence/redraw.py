@@ -142,7 +142,7 @@ def execute(db: Session, job: Job) -> None:
     derived = SourceAsset(
         tenant_id=source.tenant_id, subject_id=source.subject_id, chapter_id=source.chapter_id,
         derived_from_asset_id=source.id, kind="photo", status="ready",
-        original_filename=f"{Path(source.original_filename).stem[:200]}-彩色转绘.{extension}",
+        original_filename=f"{Path(source.original_filename).stem[:200]}-AI标注.{extension}",
         mime_type=output.mime_type, byte_size=len(output.content), sha256=digest, storage_key=key,
         consent_scope=source.consent_scope, consent_status=source.consent_status,
         analysis_status="not_applicable", metadata_json={

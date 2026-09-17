@@ -446,17 +446,22 @@ test("a failed run without images has no upload or replacement detour", async ()
   expect(vi.mocked(fetch).mock.calls.some(([, init]) => init?.method === "POST")).toBe(false);
 });
 
-test("a new reference pipeline starts a new run instead of retrying the old raw-photo job", async () => {
+test.each([undefined, "color-redraw-v1"])("a new prompt starts a new run instead of retrying version %s", async (previousVersion) => {
   mockRecovery([]);
   const original = vi.mocked(fetch).getMockImplementation()!;
   vi.mocked(fetch).mockImplementation(async (input, init) => {
     if (String(input).endsWith("/v1/production/settings")) return response({
       provider: "volcengine-seedance", model: "doubao-seedance-2-0-mini-260615",
       mode: "segmented", reference_style: "color_redraw", resolution: "720p",
+      reference_prompt_version: "ai-label-v2",
       ratio: "16:9", duration_seconds: 15, generate_audio: true,
     });
     if (String(input).endsWith("/v1/production/runs") && init?.method === "POST")
       return response({ ...rejectedRun, id: "new-run", status: "queued", recovery: null });
+    if (String(input).endsWith("/v1/production/runs") && previousVersion)
+      return response([{ ...rejectedRun, output_manifest: { ...rejectedRun.output_manifest,
+        generation_config: { reference_style: "color_redraw", reference_prompt_version: previousVersion },
+      } }]);
     return original(input, init);
   });
   renderPage(<StudioPage />, "/studio");
@@ -468,6 +473,7 @@ test("a new reference pipeline starts a new run instead of retrying the old raw-
   fireEvent.click(button);
   await waitFor(() => expect(fetch).toHaveBeenCalledWith(expect.stringContaining("/v1/production/runs"),
     expect.objectContaining({ method: "POST" })));
+  expect(vi.mocked(fetch).mock.calls.some(([input]) => String(input).endsWith("/blocked-job/retry"))).toBe(false);
   expect(window.confirm).not.toHaveBeenCalled();
 });
 

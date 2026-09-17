@@ -356,7 +356,7 @@ export interface ProductionRun {
     script_version?: number;
     script_snapshot?: ScriptScene[];
     stage?: "preparing_references" | "planning" | "generating" | "assembling" | "completed";
-    generation_config?: { reference_style?: "original" | "color_redraw" };
+    generation_config?: { reference_style?: "original" | "color_redraw"; reference_prompt_version?: string | null };
     completed_segments?: number;
     planning_diagnostics?: Array<{ attempt: number; diagnostic_id: string; issues: Array<{ code: string; field: string }> }>;
     plan?: { continuity?: string; voice?: string };
@@ -374,6 +374,7 @@ export interface ProductionRun {
 
 export interface ProductionSettings {
   reference_style?: "original" | "color_redraw";
+  reference_prompt_version?: string | null;
   mode?: "segmented" | "single_clip";
   max_segment_seconds?: number;
   provider: string;

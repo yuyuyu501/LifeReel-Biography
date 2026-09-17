@@ -12,7 +12,11 @@ script version, and increment it. Script regeneration preserves the chapter's
 selection. Production freezes IDs and source hashes before reserving funds.
 
 With `VIDEO_REFERENCE_STYLE=color_redraw`, chapter images are prepared using
-SiliconFlow `Qwen/Qwen-Image-Edit-2509` and the existing `color-redraw-v1` prompt.
+SiliconFlow `Qwen/Qwen-Image-Edit-2509` and the `ai-label-v2` prompt. This prompt
+preserves the original photo and asks only for the user's text in the bottom-right
+corner. `color_redraw` remains the configuration name for compatibility; the
+versioned prompt determines the operation. New runs do not impose the previous
+hand-drawn video style. Historical tasks and media are preserved.
 The pipeline shares durable redraw jobs, including cached results and uncertain-call
 protection. It passes the traced prepared images to Seedance as `reference_image`.
 A user's explicit generation retry can retry a transient redraw failure, bounded
@@ -32,8 +36,10 @@ Support at most nine images and three audio files. Uploaded video screenshots ar
 ordinary JPEG, PNG, or WebP images; full video extraction is not part of this UI.
 
 The style and prepared-image prompt version participate in production idempotency.
-A failed run from the previous original-photo pipeline starts a new run under the
-current configuration, rather than resuming its frozen old inputs.
+A failed run from a previous pipeline or prompt version starts a new run under
+the current configuration. Settings expose the prompt version so the studio can
+detect both changes without resuming frozen old inputs. Prepared image records
+and asset metadata must match the run's prompt version.
 
 Release requires migration `20260917_0028`, a configured photo redraw provider,
 and `VIDEO_REFERENCE_STYLE=color_redraw` in the server environment. The migration

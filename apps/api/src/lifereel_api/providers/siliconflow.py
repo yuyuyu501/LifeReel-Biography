@@ -1,4 +1,4 @@
-"""Photo stylization; no video-provider authorization is inferred."""
+"""Photo annotation; no video-provider authorization is inferred."""
 
 import base64
 import ipaddress
@@ -11,11 +11,12 @@ from lifereel_api.core.config import get_settings
 from lifereel_api.core.errors import ApiError, ErrorCode
 
 MODEL = "Qwen/Qwen-Image-Edit-2509"
-PROMPT_VERSION = "color-redraw-v1"
+PROMPT_VERSION = "ai-label-v2"
 PROMPT = (
-    "对照片进行彩色二维手绘转描，用清晰的轮廓线、平涂色块和简化的分层阴影重画人物与背景，"
-    "去掉皮肤毛孔、摄影纹理和写实光影。保留人物的脸型、五官特征、眼镜、原有表情、服装、"
-    "姿势和原构图。整体明显是手绘画面，不要照片质感，不要黑白素描，不要夸张五官。"
+    "保持原图的人物外貌、五官、表情、服装、姿势、背景、色彩、光影和构图不变。"
+    "仅在图片的右下角添加一行清晰可读的文字：本图片由ai生成。"
+    "文字内容严格为“本图片由ai生成”，其中ai使用小写字母；文字与图片边缘留出适当间距，"
+    "不要遮挡人物。除这行文字外，保持原图内容不变。"
 )
 MAX_BYTES = 10 * 1024 * 1024
 MIMES = {"image/png": "png", "image/jpeg": "jpg", "image/webp": "webp"}

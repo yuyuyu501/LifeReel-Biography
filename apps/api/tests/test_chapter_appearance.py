@@ -109,7 +109,7 @@ def test_redraw_reaches_video_request_and_is_reused_across_segments_and_runs(
     sent = requests[0]["content"][1]
     assert sent["role"] == "reference_image"
     assert base64.b64decode(sent["image_url"]["url"].split(",", 1)[1]) == OUTPUT + SOURCE[-1:]
-    assert "彩色二维手绘" in requests[0]["content"][0]["text"]
+    assert "彩色二维手绘" not in requests[0]["content"][0]["text"]
     saved = first["output_manifest"]["prepared_references"][photo]
     assert saved["asset_id"] != photo
     assert client.post(endpoint).json()["status"] == "running"
@@ -122,6 +122,38 @@ def test_redraw_reaches_video_request_and_is_reused_across_segments_and_runs(
     new_run = client.post("/v1/production/runs", json=payload).json()
     assert client.post(f"/v1/production/runs/{new_run['id']}/execute").json()["status"] == "running"
     assert redraw_calls == [SOURCE]
+
+
+def test_new_prompt_uses_new_run_and_new_image_without_reusing_previous_redraw(
+    client, monkeypatch, appearance_pipeline,
+):
+    payload, photo, requests, redraw_calls = appearance_pipeline
+    current_version = siliconflow.PROMPT_VERSION
+    with monkeypatch.context() as old:
+        old.setattr(siliconflow, "PROMPT_VERSION", "color-redraw-v1")
+        old.setattr(siliconflow, "PROMPT", "Previous color redraw prompt")
+        old_run = client.post("/v1/production/runs", json=payload).json()
+        old_result = client.post(f"/v1/production/runs/{old_run['id']}/execute").json()
+        assert old_result["status"] == "running"
+    settings = client.get("/v1/production/settings").json()
+    assert settings["reference_prompt_version"] == current_version
+
+    def annotate(content, mime):
+        redraw_calls.append(content)
+        return siliconflow.RedrawOutput(OUTPUT + b"-label-v2", "image/png")
+
+    monkeypatch.setattr(siliconflow, "redraw", annotate)
+    new_run = client.post("/v1/production/runs", json=payload).json()
+    assert new_run["id"] != old_run["id"]
+    result = client.post(f"/v1/production/runs/{new_run['id']}/execute").json()
+    assert result["status"] == "running"
+    assert result["output_manifest"]["prepared_references"][photo]["asset_id"] != (
+        old_result["output_manifest"]["prepared_references"][photo]["asset_id"]
+    )
+    sent = requests[-1]["content"][1]["image_url"]["url"]
+    assert base64.b64decode(sent.split(",", 1)[1]) == OUTPUT + b"-label-v2"
+    assert "彩色二维手绘" not in requests[-1]["content"][0]["text"]
+    assert redraw_calls == [SOURCE, SOURCE]
 
 
 def test_redraw_failure_stops_before_video_and_never_falls_back_to_original(

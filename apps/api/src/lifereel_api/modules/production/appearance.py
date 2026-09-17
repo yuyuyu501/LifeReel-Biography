@@ -62,12 +62,15 @@ def validate_package(db, project, package, config):
 
 def prepared_photo(db, run, source, record):
     asset = db.get(SourceAsset, UUID(record["asset_id"]))
+    version = run.output_manifest["generation_config"]["reference_prompt_version"]
     if (
         not asset or asset.tenant_id != run.tenant_id or asset.subject_id != source.subject_id
         or asset.status != "ready" or asset.consent_status != "granted" or not asset.is_redraw
         or asset.derived_from_asset_id != source.id
         or asset.metadata_json.get("source_sha256") != source.sha256
         or record.get("source_sha256") != source.sha256
+        or record.get("prompt_version") != version
+        or asset.metadata_json.get("prompt_version") != version
     ):
         raise ApiError(422, ErrorCode.VIDEO_REFERENCE_INVALID)
     return asset

@@ -111,11 +111,12 @@ def test_production_settings_expose_only_public_parameters(client, monkeypatch):
     data = client.get("/v1/production/settings").json()
     assert set(data) == {
         "provider", "model", "resolution", "ratio", "duration_seconds", "generate_audio",
-        "mode", "max_segment_seconds", "reference_style",
+        "mode", "max_segment_seconds", "reference_style", "reference_prompt_version",
     }
     assert data["duration_seconds"] == 5
     assert data["generate_audio"] is False
     assert data["reference_style"] == "original"
+    assert data["reference_prompt_version"] is None
 
 
 def test_retry_resets_production_status(client, monkeypatch):

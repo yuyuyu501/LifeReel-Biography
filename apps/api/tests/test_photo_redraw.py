@@ -195,6 +195,8 @@ def test_provider_uses_exact_prompt_and_downloads_without_credentials(monkeypatc
             payload = json.loads(request.content)
             assert payload["model"] == "Qwen/Qwen-Image-Edit-2509"
             assert payload["prompt"] == siliconflow.PROMPT
+            assert "右下角" in payload["prompt"] and "本图片由ai生成" in payload["prompt"]
+            assert "转描" not in payload["prompt"] and "手绘" not in payload["prompt"]
             assert payload["num_inference_steps"] == 20
             assert "image_size" not in payload and "guidance_scale" not in payload
             assert payload["image"] == "data:image/png;base64," + base64.b64encode(SOURCE).decode()

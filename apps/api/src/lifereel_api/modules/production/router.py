@@ -24,6 +24,7 @@ from lifereel_api.modules.production.schemas import (
     ProductionStart,
     ReferenceRetry,
 )
+from lifereel_api.providers.siliconflow import PROMPT_VERSION
 
 router = APIRouter(prefix="/production", tags=["production"])
 Db = Annotated[Session, Depends(get_db)]
@@ -48,6 +49,9 @@ def production_settings(tenant_id: Tenant) -> dict:
         ),
         "max_segment_seconds": 15,
         "reference_style": settings.video_reference_style,
+        "reference_prompt_version": (
+            PROMPT_VERSION if settings.video_reference_style == "color_redraw" else None
+        ),
     }
 
 

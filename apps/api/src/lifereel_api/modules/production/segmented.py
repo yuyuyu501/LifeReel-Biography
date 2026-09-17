@@ -144,7 +144,7 @@ def advance(db: Session, run: ProductionRun) -> ProviderOutput | None:
                         f"口播全文：{json.dumps(segment['narration'], ensure_ascii=False)}。"
                         "无背景音乐，低音量自然环境声，口播优先。不添加字幕或片尾。"
                     )
-                    if config.get("reference_style") == "color_redraw":
+                    if config.get("reference_prompt_version") == "color-redraw-v1":
                         prompt += (
                             "统一使用彩色二维手绘画面、清晰轮廓线、平涂色块和分层阴影。"
                             "参考图片用于人物与场景设计，不照搬照片质感，不改成黑白素描。"
