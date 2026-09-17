@@ -12,11 +12,13 @@ script version, and increment it. Script regeneration preserves the chapter's
 selection. Production freezes IDs and source hashes before reserving funds.
 
 With `VIDEO_REFERENCE_STYLE=color_redraw`, chapter images are prepared using
-SiliconFlow `Qwen/Qwen-Image-Edit-2509` and the `ai-label-v2` prompt. This prompt
-preserves the original photo and asks only for the user's text in the bottom-right
-corner. `color_redraw` remains the configuration name for compatibility; the
-versioned prompt determines the operation. New runs do not impose the previous
-hand-drawn video style. Historical tasks and media are preserved.
+SiliconFlow `Qwen/Qwen-Image-Edit-2509` and the `portrait-redraw-v3` prompt. This
+prompt prioritizes likeness over stylization: preserve facial proportions, age,
+hairline, expression, and visible identifying details, with only light hand-drawn
+texture. It removes the previous request for a corner text label. Every video
+segment carries the same likeness priority and avoids further caricature or face
+simplification. `color_redraw` remains the configuration name; the versioned
+prompt determines the operation. Historical tasks and media are preserved.
 The pipeline shares durable redraw jobs, including cached results and uncertain-call
 protection. It passes the traced prepared images to Seedance as `reference_image`.
 A user's explicit generation retry can retry a transient redraw failure, bounded

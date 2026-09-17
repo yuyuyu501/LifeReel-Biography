@@ -1,6 +1,6 @@
 import type { Job, SourceAsset } from "@lifereel/contracts";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ExternalLink, RotateCcw, Type } from "lucide-react";
+import { ExternalLink, Paintbrush, RotateCcw } from "lucide-react";
 import { useEffect, useState } from "react";
 import { api, evidenceAssetUrl } from "../api/client";
 import { ERROR_MESSAGES, errorMessage } from "../api/errors";
@@ -89,7 +89,7 @@ export function PhotoRedraw({
                 aria-pressed={Boolean(showResult)}
                 onClick={() => setMode("redraw")}
               >
-                标注图
+                转描图
               </button>
             </div>
             <a
@@ -97,8 +97,8 @@ export function PhotoRedraw({
               href={evidenceAssetUrl(resultId)}
               target="_blank"
               rel="noreferrer"
-              aria-label="打开标注图片"
-              title="打开标注图片"
+              aria-label="打开转描图片"
+              title="打开转描图片"
             >
               <ExternalLink size={17} />
             </a>
@@ -120,22 +120,22 @@ export function PhotoRedraw({
                 else start.mutate();
               }}
             >
-              {canRetry ? <RotateCcw size={16} /> : <Type size={16} />}
+              {canRetry ? <RotateCcw size={16} /> : <Paintbrush size={16} />}
               {busy
                 ? job?.status === "running"
-                  ? "标注中"
-                  : "等待标注"
+                  ? "转描中"
+                  : "等待转描"
                 : canRetry
-                  ? "重新标注"
-                  : "添加标注"}
+                  ? "重新转描"
+                  : "轻度转描"}
             </button>
             <span role="status">
               {status.isPending
-                ? "读取标注状态"
+                ? "读取转描状态"
                 : !status.data?.enabled
                   ? "暂未启用"
                   : !validSource
-                    ? "当前素材不支持标注"
+                    ? "当前素材不支持转描"
                     : ""}
             </span>
           </>
@@ -145,7 +145,7 @@ export function PhotoRedraw({
         <p className="photo-redraw-error" role="alert">
           {error
             ? errorMessage(error)
-            : ERROR_MESSAGES[job?.error_code ?? ""] || "照片标注失败。"}
+            : ERROR_MESSAGES[job?.error_code ?? ""] || "照片转描失败。"}
         </p>
       )}
       <div className="memory-file-stage is-photo">
@@ -153,7 +153,7 @@ export function PhotoRedraw({
           <img
             className="asset-preview-image"
             src={evidenceAssetUrl(resultId)}
-            alt={`${asset.original_filename} 标注图`}
+            alt={`${asset.original_filename} 转描图`}
           />
         ) : (
           <AssetPreview asset={asset} />

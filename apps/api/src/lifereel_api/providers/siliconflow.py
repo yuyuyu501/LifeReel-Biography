@@ -1,4 +1,4 @@
-"""Photo annotation; no video-provider authorization is inferred."""
+"""Portrait-preserving redraw; no video-provider authorization is inferred."""
 
 import base64
 import ipaddress
@@ -11,12 +11,17 @@ from lifereel_api.core.config import get_settings
 from lifereel_api.core.errors import ApiError, ErrorCode
 
 MODEL = "Qwen/Qwen-Image-Edit-2509"
-PROMPT_VERSION = "ai-label-v2"
+PROMPT_VERSION = "portrait-redraw-v3"
 PROMPT = (
-    "保持原图的人物外貌、五官、表情、服装、姿势、背景、色彩、光影和构图不变。"
-    "仅在图片的右下角添加一行清晰可读的文字：本图片由ai生成。"
-    "文字内容严格为“本图片由ai生成”，其中ai使用小写字母；文字与图片边缘留出适当间距，"
-    "不要遮挡人物。除这行文字外，保持原图内容不变。"
+    "对照片进行轻度彩色手绘转描，以保留人物辨识特征为首要目标，人物相似度优先于风格化。"
+    "严格依据原照片，保留每个人的头脸比例、脸型、五官的相对位置和大小、眼距、眼形、"
+    "鼻形、嘴形、下颌轮廓、发际线和发型；保留原有年龄感、肤色，以及照片中可见的皱纹、"
+    "痣、眼镜等辨识细节，不添加原图中不存在的特征。"
+    "只将摄影质感轻度转为细腻的手绘笔触和自然柔和的明暗，保留面部结构与必要细节，"
+    "轮廓自然细致，避免粗重描边、大片平涂和过度简化五官。"
+    "不要卡通化、夸张五官、放大眼睛、缩小鼻子、瘦脸、美颜磨皮或幼态化；"
+    "不要改变原有表情、视线方向和眼睛开闭状态。"
+    "保留原有服装、姿势、人物关系、背景和构图，保持彩色，不改成黑白素描，不额外添加文字。"
 )
 MAX_BYTES = 10 * 1024 * 1024
 MIMES = {"image/png": "png", "image/jpeg": "jpg", "image/webp": "webp"}

@@ -65,11 +65,11 @@ function setup(source = asset) {
 
 test("requests once, shows progress, restores completed result and switches to original", async () => {
   const { queryClient, onStart } = setup();
-  const button = screen.getByRole("button", { name: "添加标注" });
+  const button = screen.getByRole("button", { name: "轻度转描" });
   await waitFor(() => expect(button).toBeEnabled());
   fireEvent.click(button);
   expect(
-    await screen.findByRole("button", { name: "等待标注" }),
+    await screen.findByRole("button", { name: "等待转描" }),
   ).toBeDisabled();
   expect(api.redrawPhoto).toHaveBeenCalledExactlyOnceWith("source");
   expect(onStart).toHaveBeenCalledOnce();
@@ -81,14 +81,14 @@ test("requests once, shows progress, restores completed result and switches to o
     queryClient.invalidateQueries({ queryKey: ["photo-redraw", asset.id] }),
   );
   expect(
-    await screen.findByRole("img", { name: "portrait.png 标注图" }),
+    await screen.findByRole("img", { name: "portrait.png 转描图" }),
   ).toHaveAttribute("src", "/v1/evidence/assets/redrawn/content");
   fireEvent.click(screen.getByRole("button", { name: "原图" }));
   expect(screen.getByRole("img", { name: "portrait.png" })).toHaveAttribute(
     "src",
     "/v1/evidence/assets/source/content",
   );
-  expect(screen.getByRole("link", { name: "打开标注图片" })).toHaveAttribute(
+  expect(screen.getByRole("link", { name: "打开转描图片" })).toHaveAttribute(
     "href",
     "/v1/evidence/assets/redrawn/content",
   );
@@ -108,7 +108,7 @@ test("explicitly retries interrupted work and displays the possible extra charge
   expect(await screen.findByRole("alert")).toHaveTextContent(
     "可能产生新的费用",
   );
-  fireEvent.click(screen.getByRole("button", { name: "重新标注" }));
+  fireEvent.click(screen.getByRole("button", { name: "重新转描" }));
   await waitFor(() =>
     expect(api.retryJob).toHaveBeenCalledExactlyOnceWith("redraw-job"),
   );
@@ -127,9 +127,9 @@ test("does not retry a provider rejection", async () => {
   });
   setup();
   expect(await screen.findByRole("alert")).toHaveTextContent("未接受");
-  expect(screen.getByRole("button", { name: "添加标注" })).toBeDisabled();
+  expect(screen.getByRole("button", { name: "轻度转描" })).toBeDisabled();
   expect(
-    screen.queryByRole("button", { name: "重新标注" }),
+    screen.queryByRole("button", { name: "重新转描" }),
   ).not.toBeInTheDocument();
 });
 
@@ -140,14 +140,14 @@ test("disabled deployment cannot start paid work", async () => {
   });
   setup();
   expect(await screen.findByText("暂未启用")).toBeInTheDocument();
-  expect(screen.getByRole("button", { name: "添加标注" })).toBeDisabled();
+  expect(screen.getByRole("button", { name: "轻度转描" })).toBeDisabled();
 });
 
 test("derived photos are labelled and cannot be submitted again", () => {
   setup({ ...asset, is_redraw: true, derived_from_asset_id: "original" });
   expect(screen.getByText("AI 处理图片")).toBeInTheDocument();
   expect(
-    screen.queryByRole("button", { name: "添加标注" }),
+    screen.queryByRole("button", { name: "轻度转描" }),
   ).not.toBeInTheDocument();
   expect(api.photoRedrawStatus).not.toHaveBeenCalled();
 });

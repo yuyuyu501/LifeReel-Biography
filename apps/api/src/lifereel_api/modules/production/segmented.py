@@ -149,6 +149,14 @@ def advance(db: Session, run: ProductionRun) -> ProviderOutput | None:
                             "统一使用彩色二维手绘画面、清晰轮廓线、平涂色块和分层阴影。"
                             "参考图片用于人物与场景设计，不照搬照片质感，不改成黑白素描。"
                         )
+                    elif config.get("reference_prompt_version") == "portrait-redraw-v3":
+                        prompt += (
+                            "沿用参考图中人物的头脸比例、五官相对位置、脸型、发际线及辨识细节，"
+                            "同一章节内保持人物年龄感和外貌一致。人物相似度优先于风格化，"
+                            "保持参考图已有的轻度手绘质感，不二次卡通化，不放大眼睛、缩小鼻子、"
+                            "瘦脸、美颜磨皮或幼态化。动作和表情变化时仍保持原有面部结构；"
+                            "续接片段不随镜头推进逐步简化五官或增强卡通程度。"
+                        )
                     if reference_options.get("reference_images"):
                         prompt += "本章形象参考图片按顺序为图片1起，保持人物和场景设计一致。"
                     if reference_options.get("reference_audio"):

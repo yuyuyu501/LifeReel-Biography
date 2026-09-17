@@ -116,6 +116,10 @@ def test_redraw_reaches_video_request_and_is_reused_across_segments_and_runs(
     assert client.post(endpoint).json()["status"] == "completed"
     assert redraw_calls == [SOURCE]
     assert requests[1]["content"][1]["role"] == "first_frame"
+    for request in requests:
+        prompt = request["content"][0]["text"]
+        assert "人物相似度优先于风格化" in prompt
+        assert "不二次卡通化" in prompt
     assert client.patch(
         refs_url(payload), json={"expected_version": 1, "asset_ids": [photo]},
     ).status_code == 200
@@ -124,25 +128,26 @@ def test_redraw_reaches_video_request_and_is_reused_across_segments_and_runs(
     assert redraw_calls == [SOURCE]
 
 
+@pytest.mark.parametrize("previous_version", ["color-redraw-v1", "ai-label-v2"])
 def test_new_prompt_uses_new_run_and_new_image_without_reusing_previous_redraw(
-    client, monkeypatch, appearance_pipeline,
+    client, monkeypatch, appearance_pipeline, previous_version,
 ):
     payload, photo, requests, redraw_calls = appearance_pipeline
     current_version = siliconflow.PROMPT_VERSION
     with monkeypatch.context() as old:
-        old.setattr(siliconflow, "PROMPT_VERSION", "color-redraw-v1")
-        old.setattr(siliconflow, "PROMPT", "Previous color redraw prompt")
+        old.setattr(siliconflow, "PROMPT_VERSION", previous_version)
+        old.setattr(siliconflow, "PROMPT", "Previous image editing prompt")
         old_run = client.post("/v1/production/runs", json=payload).json()
         old_result = client.post(f"/v1/production/runs/{old_run['id']}/execute").json()
         assert old_result["status"] == "running"
     settings = client.get("/v1/production/settings").json()
     assert settings["reference_prompt_version"] == current_version
 
-    def annotate(content, mime):
+    def redraw_portrait(content, mime):
         redraw_calls.append(content)
-        return siliconflow.RedrawOutput(OUTPUT + b"-label-v2", "image/png")
+        return siliconflow.RedrawOutput(OUTPUT + b"-portrait-v3", "image/png")
 
-    monkeypatch.setattr(siliconflow, "redraw", annotate)
+    monkeypatch.setattr(siliconflow, "redraw", redraw_portrait)
     new_run = client.post("/v1/production/runs", json=payload).json()
     assert new_run["id"] != old_run["id"]
     result = client.post(f"/v1/production/runs/{new_run['id']}/execute").json()
@@ -151,8 +156,9 @@ def test_new_prompt_uses_new_run_and_new_image_without_reusing_previous_redraw(
         old_result["output_manifest"]["prepared_references"][photo]["asset_id"]
     )
     sent = requests[-1]["content"][1]["image_url"]["url"]
-    assert base64.b64decode(sent.split(",", 1)[1]) == OUTPUT + b"-label-v2"
+    assert base64.b64decode(sent.split(",", 1)[1]) == OUTPUT + b"-portrait-v3"
     assert "彩色二维手绘" not in requests[-1]["content"][0]["text"]
+    assert "不二次卡通化" in requests[-1]["content"][0]["text"]
     assert redraw_calls == [SOURCE, SOURCE]
 
 
