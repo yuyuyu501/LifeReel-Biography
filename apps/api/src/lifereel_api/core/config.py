@@ -90,6 +90,7 @@ class Settings(BaseSettings):
     video_provider: str = "mock"
     image_provider: str = "mock"
     photo_redraw_provider: Literal["disabled", "mock", "siliconflow"] = "disabled"
+    video_reference_style: Literal["original", "color_redraw"] = "original"
     siliconflow_api_key: str | None = None
     voice_provider: str = "mock"
     openai_compatible_base_url: str | None = None

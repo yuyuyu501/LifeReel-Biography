@@ -276,12 +276,26 @@ class VolcengineSeedanceProvider:
         reference_frame: bytes | None = None,
         reference_mime: str = "image/jpeg",
         reference_video_url: str | None = None,
+        reference_images: list[str] | None = None,
+        reference_audio: list[str] | None = None,
     ) -> str:
         if not 4 <= duration <= 15:
             raise VideoProviderError("VIDEO_DURATION_UNSUPPORTED")
         content: list[dict] = [{"type": "text", "text": prompt}]
         if reference_frame and reference_video_url:
             raise VideoProviderError("VIDEO_CONTINUATION_UNAVAILABLE")
+        if reference_images and (reference_frame or reference_video_url):
+            raise VideoProviderError("VIDEO_REFERENCE_INVALID")
+        if reference_audio and not (reference_images or reference_video_url):
+            raise VideoProviderError("VIDEO_AUDIO_REQUIRES_IMAGE")
+        if len(reference_images or []) > 9 or len(reference_audio or []) > 3:
+            raise VideoProviderError("VIDEO_REFERENCE_INVALID")
+        for url in reference_images or []:
+            content.append({"type": "image_url", "image_url": {"url": url},
+                            "role": "reference_image"})
+        for url in reference_audio or []:
+            content.append({"type": "audio_url", "audio_url": {"url": url},
+                            "role": "reference_audio"})
         if reference_frame:
             content.append(
                 {

@@ -20,6 +20,7 @@ import { useEffect, useState } from "react";
 import { api } from "../api/client";
 import { ErrorNotice } from "./QueryState";
 import { ScriptSections } from "./ScriptSections";
+import { ScriptReferences } from "./ScriptReferences";
 
 const shotTypes = {
   wide: "全景",
@@ -124,7 +125,15 @@ export function EditableScript({
         )}
       </header>
       {!draft ? (
-        <ScriptSections scene={scene} shots={project.shots} />
+        <>
+          <ScriptReferences
+            project={project}
+            scene={scene}
+            disabled={disabled}
+            onEditingChange={onEditingChange}
+          />
+          <ScriptSections scene={scene} shots={project.shots} />
+        </>
       ) : (
         <form
           className="script-editor"

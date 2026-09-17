@@ -47,6 +47,7 @@ def production_settings(tenant_id: Tenant) -> dict:
             else "single_clip"
         ),
         "max_segment_seconds": 15,
+        "reference_style": settings.video_reference_style,
     }
 
 

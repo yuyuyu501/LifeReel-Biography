@@ -33,6 +33,20 @@ def edited_payload(script):
     }
 
 
+def test_regenerating_script_preserves_explicit_empty_appearance(client):
+    person, chapter, _, script = setup_script(client)
+    url = f"/v1/scripts/{script['id']}/scenes/{script['scenes'][0]['id']}/references"
+    assert client.patch(url, json={
+        "expected_version": script["version_number"], "asset_ids": [],
+    }).status_code == 200
+    regenerated = client.post("/v1/scripts/generate", json={
+        "subject_id": person["id"], "chapter_id": chapter["id"], "mode": "single_chapter",
+        "idempotency_key": str(uuid4()),
+    })
+    assert regenerated.status_code == 201, regenerated.text
+    assert regenerated.json()["scenes"][0]["reference_asset_ids"] == []
+
+
 def test_manual_edit_is_shared_free_and_leaves_production_snapshot_unchanged(client, monkeypatch):
     from lifereel_api.core.config import get_settings
     from lifereel_api.modules.jobs import service as jobs

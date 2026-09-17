@@ -279,6 +279,7 @@ export interface ScriptSceneUpdate {
 }
 
 export interface ScriptScene {
+  reference_asset_ids?: UUID[] | null;
   id: UUID;
   chapter_id: UUID | null;
   order_index: number;
@@ -354,7 +355,8 @@ export interface ProductionRun {
     scene_id?: UUID | null;
     script_version?: number;
     script_snapshot?: ScriptScene[];
-    stage?: "planning" | "generating" | "assembling" | "completed";
+    stage?: "preparing_references" | "planning" | "generating" | "assembling" | "completed";
+    generation_config?: { reference_style?: "original" | "color_redraw" };
     completed_segments?: number;
     planning_diagnostics?: Array<{ attempt: number; diagnostic_id: string; issues: Array<{ code: string; field: string }> }>;
     plan?: { continuity?: string; voice?: string };
@@ -371,6 +373,7 @@ export interface ProductionRun {
 }
 
 export interface ProductionSettings {
+  reference_style?: "original" | "color_redraw";
   mode?: "segmented" | "single_clip";
   max_segment_seconds?: number;
   provider: string;

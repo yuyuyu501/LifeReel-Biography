@@ -5,15 +5,7 @@ import type {
   ScriptScene,
 } from "@lifereel/contracts";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import {
-  Ban,
-  BookOpen,
-  Check,
-  Film,
-  Play,
-  RefreshCw,
-  Send,
-} from "lucide-react";
+import { Ban, BookOpen, Check, Film, Play, Send } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { api, generatedAssetUrl, productionSegmentUrl } from "../api/client";
@@ -21,7 +13,6 @@ import { EmptyState } from "../components/EmptyState";
 import { ErrorNotice, QueryState } from "../components/QueryState";
 import { hasQueryIssue } from "../queryHelpers";
 import { statusLabel } from "../statusLabels";
-import { StudioRecovery } from "./StudioRecovery";
 import { EditableScript } from "../components/EditableScript";
 import { ProductionDetails } from "../components/ProductionDetails";
 import { usePageSubject } from "../usePageSubject";
@@ -165,14 +156,24 @@ export function StudioPage() {
       ["VIDEO_REFERENCE_REJECTED", "VIDEO_CONTENT_REJECTED"].includes(
         activeRun.error_message ?? "",
       ));
+  const pipelineChanged = Boolean(
+    settings.data?.reference_style === "color_redraw" &&
+    activeRun?.output_manifest?.generation_config?.reference_style !==
+      "color_redraw",
+  );
   const blocksCurrentScript =
     blocked &&
+    !pipelineChanged &&
     (activeRun?.output_manifest?.script_version ??
       selected?.project.version_number) === selected?.project.version_number;
   const retryReference = Boolean(
-    blocksCurrentScript &&
+    activeRun?.status === "failed" &&
+    !pipelineChanged &&
+    (activeRun.output_manifest?.script_version ??
+      selected?.project.version_number) === selected?.project.version_number &&
     activeRun?.job_id &&
-    (activeRun?.recovery?.code === "VIDEO_REFERENCE_REJECTED" ||
+    (!blocked ||
+      activeRun?.recovery?.code === "VIDEO_REFERENCE_REJECTED" ||
       activeRun?.error_message === "VIDEO_REFERENCE_REJECTED"),
   );
   const publication = publications.data?.find(
@@ -200,11 +201,13 @@ export function StudioPage() {
   const progress = activeRun?.output_manifest;
   const progressText =
     activeRun?.status === "running" && progress?.stage
-      ? progress.stage === "planning"
-        ? "正在规划分镜"
-        : progress.stage === "assembling"
-          ? "正在拼接整章视频"
-          : `已完成 ${progress.completed_segments ?? 0} / ${progress.segments?.length ?? 0} 段`
+      ? progress.stage === "preparing_references"
+        ? "正在准备本章形象"
+        : progress.stage === "planning"
+          ? "正在规划分镜"
+          : progress.stage === "assembling"
+            ? "正在拼接整章视频"
+            : `已完成 ${progress.completed_segments ?? 0} / ${progress.segments?.length ?? 0} 段`
       : null;
   const refresh = () =>
     queryClient.invalidateQueries({ queryKey: ["production-runs"] });
@@ -249,10 +252,6 @@ export function StudioPage() {
       await refresh();
     },
   });
-  const refreshSettlement = async () => {
-    await queryClient.invalidateQueries({ queryKey: ["wallet"] });
-    await refresh();
-  };
   const queries = [
     people,
     scripts,
@@ -433,7 +432,7 @@ export function StudioPage() {
                         <Play size={16} aria-hidden="true" />{" "}
                         {isGenerating || retry.isPending
                           ? "正在生成"
-                          : retryReference
+                          : activeRun?.status === "failed"
                             ? "重新生成"
                             : "生成影像"}
                       </Button>
@@ -508,37 +507,7 @@ export function StudioPage() {
                     {activeRun?.error_message && (
                       <div className="notice error" role="alert">
                         {productionError}
-                        {activeRun.job_id && (!blocked || retryReference) && (
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            className="button secondary small"
-                            disabled={
-                              retry.isPending ||
-                              (!hasBalance &&
-                                activeRun.output_manifest?.billing?.status !==
-                                  "pending")
-                            }
-                            onClick={() => retry.mutate(activeRun.job_id!)}
-                          >
-                            <RefreshCw size={15} aria-hidden="true" /> 重新尝试
-                          </Button>
-                        )}
                       </div>
-                    )}
-                    {activeRun?.recovery?.code ===
-                      "VIDEO_REFERENCE_REJECTED" && (
-                      <StudioRecovery
-                        key={`${activeRun.id}:${activeRun.updated_at}`}
-                        run={activeRun}
-                        subjectId={effectiveSubjectId}
-                        canSpend={
-                          hasBalance ||
-                          activeRun.output_manifest?.billing?.status ===
-                            "pending"
-                        }
-                        onSettled={refreshSettlement}
-                      />
                     )}
                     {blocked &&
                       activeRun?.error_message === "VIDEO_CONTENT_REJECTED" && (

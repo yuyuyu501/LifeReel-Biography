@@ -78,6 +78,9 @@ class ScriptScene(UUIDPrimaryKeyMixin, Base):
     review_status: Mapped[str] = mapped_column(String(32), default="needs_review")
     locked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
+    # None selects existing chapter media; [] is an intentionally empty selection.
+    reference_asset_ids: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
+
 
 class ScriptShot(UUIDPrimaryKeyMixin, Base):
     __tablename__ = "script_shots"

@@ -54,6 +54,13 @@ class ScriptSceneRead(BaseModel):
     visual_prompt: str
     duration_seconds: int
     source_claim_ids: list[str]
+    reference_asset_ids: list[UUID] | None = None
+
+
+class ScriptReferencesUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    expected_version: int = Field(ge=1)
+    asset_ids: list[UUID] = Field(max_length=12)
 
 
 class ScriptShotRead(BaseModel):

@@ -126,6 +126,21 @@ def start_production(db: Session, tenant_id: UUID, payload: ProductionStart) -> 
     reference_package = build_reference_package(
         db, tenant_id, project.subject_id, scenes[0].chapter_id if len(scenes) == 1 else None,
     )
+    if len(scenes) == 1 and (
+        settings.video_reference_style == "color_redraw"
+        or scenes[0].reference_asset_ids is not None
+    ):
+        from lifereel_api.modules.production.appearance import validate_package
+        from lifereel_api.modules.production.references import chapter_package
+
+        reference_package = chapter_package(db, project, scenes[0])
+        if config and config["mode"] == "segmented":
+            config["reference_style"] = settings.video_reference_style
+            if config["reference_style"] == "color_redraw":
+                from lifereel_api.providers.siliconflow import PROMPT_VERSION
+
+                config["reference_prompt_version"] = PROMPT_VERSION
+            validate_package(db, project, reference_package, config)
     idempotency_key = (
         f"production:{project.id}:v{project.version_number}:{payload.audience}:{provider_name}"
     )
@@ -133,7 +148,9 @@ def start_production(db: Session, tenant_id: UUID, payload: ProductionStart) -> 
         idempotency_key += f":scene:{payload.scene_id}"
     if config:
         fingerprint_config = config
-        if (
+        if reference_package.get("schema") == 2:
+            fingerprint_config = {**config, "references": reference_package}
+        elif (
             config["mode"] == "segmented"
             and reference_package.get("character_reference_kind") == "photo"
         ):
@@ -374,6 +391,9 @@ def _execute_run(db: Session, tenant_id: UUID, run_id: UUID) -> ProductionRun:
         db.refresh(job)
         provider_code = getattr(exc, "code", ErrorCode.VIDEO_PROVIDER_FAILED.value)
         known_provider_codes = {
+            *(code.value for code in ErrorCode if code.name.startswith("PHOTO_REDRAW_")),
+            ErrorCode.VIDEO_AUDIO_REFERENCE_INVALID.value,
+            ErrorCode.VIDEO_AUDIO_REQUIRES_IMAGE.value,
             ErrorCode.VIDEO_PROVIDER_CONFIGURATION_INCOMPLETE.value,
             ErrorCode.VIDEO_PROVIDER_REQUEST_FAILED.value,
             ErrorCode.VIDEO_PROVIDER_TIMEOUT.value,

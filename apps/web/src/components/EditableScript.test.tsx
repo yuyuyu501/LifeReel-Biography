@@ -1,10 +1,12 @@
 import type { ScriptProject } from "@lifereel/contracts";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { vi } from "vitest";
+import { beforeEach, vi } from "vitest";
 import { api } from "../api/client";
 import { ApiError } from "../api/errors";
 import { EditableScript } from "./EditableScript";
+
+beforeEach(() => { vi.spyOn(api, "scriptReferences").mockResolvedValue([]); });
 
 const project = { id: "p1", version_number: 2, shots: [{id: "sh1", scene_id: "s1", order_index: 1,
   shot_type: "wide", visual_prompt: "老屋全景", duration_seconds: 20}], scenes: [{

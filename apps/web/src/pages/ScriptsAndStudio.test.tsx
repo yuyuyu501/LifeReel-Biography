@@ -322,7 +322,7 @@ test.each([
   expect(await screen.findByRole("alert")).toHaveTextContent(message);
   expect(screen.queryByText("private-diagnostic")).not.toBeInTheDocument();
   expect(screen.queryByText("分镜未完整保留剧本，请重试")).not.toBeInTheDocument();
-  expect(screen.getByRole("button", { name: "重新尝试" })).toBeEnabled();
+  expect(screen.getByRole("button", { name: "重新生成" })).toBeEnabled();
 });
 
 test("compares a video with its saved script and isolates other chapters", async () => {
@@ -402,25 +402,19 @@ function mockRecovery(files: unknown[] = [replacementImage]) {
   });
 }
 
-test("rejected references stay selectable alongside explicit retry and retained clips", async () => {
+test("rejected references use one generation action and keep selection in the script", async () => {
   mockRecovery([replacementImage, { ...replacementImage, id: "rejected-image", original_filename: "被拒.png" },
     { ...replacementImage, id: "foreign-image", subject_id: "person-2", original_filename: "别人的.png" }]);
   renderPage(<StudioPage />, "/studio");
-  expect(await screen.findByText("更换第 2 段参考图")).toBeVisible();
-  expect(screen.getByRole("alert")).toHaveTextContent("参考素材未通过");
+  expect(await screen.findByRole("alert")).toHaveTextContent("本章素材未通过");
   expect(screen.queryByText("视频服务暂时无法连接")).not.toBeInTheDocument();
-  expect(screen.getByRole("button", { name: "重新尝试" })).toBeEnabled();
+  expect(screen.queryByRole("button", { name: "重新尝试" })).not.toBeInTheDocument();
   expect(screen.getByRole("button", { name: "重新生成" })).toBeEnabled();
   expect(screen.getByLabelText("第 1 段视频")).toHaveAttribute("src", expect.stringContaining("/blocked-run/segments/0/content"));
-  await screen.findByRole("option", { name: "老宅.png" });
-  expect(screen.getByRole("option", { name: "被拒.png" })).toBeInTheDocument();
-  expect(screen.queryByRole("option", { name: "别人的.png" })).not.toBeInTheDocument();
-  expect(screen.getByRole("button", { name: "使用此图继续生成" })).toBeDisabled();
-  fireEvent.change(screen.getByLabelText("参考图片"), { target: { value: replacementImage.id } });
-  expect(screen.getByRole("img", { name: "参考图：老宅.png" })).toBeVisible();
-  fireEvent.click(screen.getByRole("button", { name: "使用此图继续生成" }));
-  await waitFor(() => expect(fetch).toHaveBeenCalledWith(expect.stringContaining("/blocked-run/reference"),
-    expect.objectContaining({ method: "POST", body: JSON.stringify({ reference_asset_id: replacementImage.id }) })));
+  expect(screen.queryByLabelText("参考图片")).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "使用此图继续生成" })).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole("tab", { name: "本章剧本" }));
+  expect(screen.getByRole("region", { name: "本章形象" })).toBeVisible();
   expect(window.confirm).not.toHaveBeenCalled();
 });
 
@@ -437,37 +431,42 @@ test("retrying a rejected chapter uses its existing job and disables repeated cl
   renderPage(<StudioPage />, "/studio");
   fireEvent.click(await screen.findByRole("button", { name: "重新生成" }));
   await waitFor(() => expect(screen.getByRole("button", { name: "正在生成" })).toBeDisabled());
-  expect(screen.getByRole("button", { name: "重新尝试" })).toBeDisabled();
+  expect(screen.queryByRole("button", { name: "重新尝试" })).not.toBeInTheDocument();
   expect(vi.mocked(fetch).mock.calls.filter(([, init]) => init?.method === "POST")).toHaveLength(1);
   expect(fetch).toHaveBeenCalledWith(expect.stringContaining("/blocked-job/retry"), expect.objectContaining({ method: "POST" }));
   await act(async () => resolveRetry!(response({ id: "blocked-job", status: "queued" })));
 });
 
-test("missing replacement images lead to interview uploads without generating", async () => {
+test("a failed run without images has no upload or replacement detour", async () => {
   mockRecovery([]);
   renderPage(<StudioPage />, "/studio");
-  expect(await screen.findByText("暂无可用的图片素材")).toBeVisible();
-  expect(screen.getByRole("link", { name: "前往采访添加素材" })).toHaveAttribute("href", "/interviews");
+  await screen.findByRole("alert");
+  expect(screen.queryByText("暂无可用的图片素材")).not.toBeInTheDocument();
+  expect(screen.queryByRole("link", { name: "前往采访添加素材" })).not.toBeInTheDocument();
   expect(vi.mocked(fetch).mock.calls.some(([, init]) => init?.method === "POST")).toBe(false);
 });
 
-test("legacy continuation uses the original clip without requiring another photo", async () => {
+test("a new reference pipeline starts a new run instead of retrying the old raw-photo job", async () => {
   mockRecovery([]);
   const original = vi.mocked(fetch).getMockImplementation()!;
   vi.mocked(fetch).mockImplementation(async (input, init) => {
-    if (String(input).endsWith("/v1/production/runs")) return response([{
-      ...rejectedRun, recovery: { ...rejectedRun.recovery, can_restore_original: true },
-    }]);
+    if (String(input).endsWith("/v1/production/settings")) return response({
+      provider: "volcengine-seedance", model: "doubao-seedance-2-0-mini-260615",
+      mode: "segmented", reference_style: "color_redraw", resolution: "720p",
+      ratio: "16:9", duration_seconds: 15, generate_audio: true,
+    });
+    if (String(input).endsWith("/v1/production/runs") && init?.method === "POST")
+      return response({ ...rejectedRun, id: "new-run", status: "queued", recovery: null });
     return original(input, init);
   });
   renderPage(<StudioPage />, "/studio");
-  const button = await screen.findByRole("button", { name: "继续生成" });
+  const button = await screen.findByRole("button", { name: "重新生成" });
   expect(button).toBeEnabled();
   expect(screen.queryByText("暂无可用的图片素材")).not.toBeInTheDocument();
   expect(screen.queryByLabelText("参考图片")).not.toBeInTheDocument();
   expect(screen.queryByRole("link", { name: "前往采访添加素材" })).not.toBeInTheDocument();
   fireEvent.click(button);
-  await waitFor(() => expect(fetch).toHaveBeenCalledWith(expect.stringContaining("/blocked-run/continuation"),
+  await waitFor(() => expect(fetch).toHaveBeenCalledWith(expect.stringContaining("/v1/production/runs"),
     expect.objectContaining({ method: "POST" })));
   expect(window.confirm).not.toHaveBeenCalled();
 });
@@ -487,8 +486,8 @@ test.each(["failed", "completed"])("terminal %s immediately refreshes the frozen
   balance = 874;
   act(() => queryClient.setQueryData(["production-runs"], [{ ...running, status,
     updated_at: "2026-09-14T01:16:00Z", error_message: status === "failed" ? "VIDEO_PROVIDER_TIMEOUT" : null }]));
-  await waitFor(() => expect(screen.getByRole("button", { name: "生成影像" })).toBeEnabled());
-  if (status === "failed") expect(screen.getByRole("button", { name: "重新尝试" })).toBeEnabled();
+  await waitFor(() => expect(screen.getByRole("button", { name: status === "failed" ? "重新生成" : "生成影像" })).toBeEnabled());
+  expect(screen.queryByRole("button", { name: "重新尝试" })).not.toBeInTheDocument();
 });
 
 test("an updated script can generate after an older version was rejected", async () => {
@@ -497,5 +496,5 @@ test("an updated script can generate after an older version was rejected", async
   vi.mocked(fetch).mockImplementation(async (input, init) => String(input).endsWith("/v1/scripts")
     ? response([{ ...project, version_number: 2 }]) : original(input, init));
   renderPage(<StudioPage />, "/studio");
-  expect(await screen.findByRole("button", { name: "生成影像" })).toBeEnabled();
+  expect(await screen.findByRole("button", { name: "重新生成" })).toBeEnabled();
 });

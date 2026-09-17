@@ -1,4 +1,4 @@
-"""Durable, user-initiated photo redraw jobs with private derived outputs."""
+"""Durable photo redraw jobs shared by explicit edits and chapter preparation."""
 
 import hashlib
 from pathlib import Path
@@ -71,16 +71,21 @@ def retry(db: Session, job: Job) -> Job:
         if not acquired:
             raise ApiError(409, ErrorCode.JOB_RETRY_NOT_ALLOWED)
         db.refresh(job)
-        if (
-            job.status != "failed" or job.attempt_count >= 3
-            or job.error_code == ErrorCode.PHOTO_REDRAW_REJECTED
-        ):
-            raise ApiError(409, ErrorCode.JOB_RETRY_NOT_ALLOWED)
-        validate_source(db, job.tenant_id, UUID(job.payload["source_asset_id"]))
-        job.status, job.error_code, job.error_message = "queued", None, None
-        job.result = None
+        reset_failed_job(db, job)
         db.commit()
         return job
+
+
+def reset_failed_job(db: Session, job: Job) -> None:
+    """Reset an explicitly retried job while its execution lock is held."""
+    if (
+        job.status != "failed" or job.attempt_count >= 3
+        or job.error_code == ErrorCode.PHOTO_REDRAW_REJECTED
+    ):
+        raise ApiError(409, ErrorCode.JOB_RETRY_NOT_ALLOWED)
+    validate_source(db, job.tenant_id, UUID(job.payload["source_asset_id"]))
+    job.status, job.error_code, job.error_message = "queued", None, None
+    job.result = None
 
 
 def execute(db: Session, job: Job) -> None:

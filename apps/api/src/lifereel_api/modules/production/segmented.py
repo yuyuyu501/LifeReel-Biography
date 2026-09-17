@@ -10,6 +10,7 @@ from uuid import UUID, uuid4
 from sqlalchemy.orm import Session
 
 from lifereel_api.modules.evidence.storage import private_storage
+from lifereel_api.modules.production import appearance
 from lifereel_api.modules.production.continuation import prepare_original, save_tail
 from lifereel_api.modules.production.media import (
     assemble_videos,
@@ -42,6 +43,8 @@ def advance(db: Session, run: ProductionRun) -> ProviderOutput | None:
     assert_retry_allowed(run)
     manifest = copy.deepcopy(run.output_manifest or {})
     config = manifest["generation_config"]
+    if not appearance.prepare(db, run, manifest):
+        return None
     if not manifest.get("plan"):
         photo = initial_photo_reference(db, run)
         manifest["stage"] = "planning"
@@ -107,7 +110,10 @@ def advance(db: Session, run: ProductionRun) -> ProviderOutput | None:
                         photo = initial_photo_reference(db, run)
                         if photo is not None:
                             segment["reference_asset_id"] = str(photo.id)
-                    if segment.get("reference_asset_id"):
+                    if index == 0 and manifest.get("reference_package", {}).get("schema") == 2:
+                        reference_options = appearance.inputs(db, run, manifest)
+                        segment["reference_kind"] = config.get("reference_style", "original")
+                    elif segment.get("reference_asset_id"):
                         asset = reference_asset(db, run, UUID(segment["reference_asset_id"]))
                         frame = storage.get(asset.storage_key)
                         if not frame or hashlib.sha256(frame).hexdigest() != asset.sha256:
@@ -138,6 +144,18 @@ def advance(db: Session, run: ProductionRun) -> ProviderOutput | None:
                         f"口播全文：{json.dumps(segment['narration'], ensure_ascii=False)}。"
                         "无背景音乐，低音量自然环境声，口播优先。不添加字幕或片尾。"
                     )
+                    if config.get("reference_style") == "color_redraw":
+                        prompt += (
+                            "统一使用彩色二维手绘画面、清晰轮廓线、平涂色块和分层阴影。"
+                            "参考图片用于人物与场景设计，不照搬照片质感，不改成黑白素描。"
+                        )
+                    if reference_options.get("reference_images"):
+                        prompt += "本章形象参考图片按顺序为图片1起，保持人物和场景设计一致。"
+                    if reference_options.get("reference_audio"):
+                        prompt += (
+                            "参考音频用于声音的语气、节奏和环境质感，"
+                            "口播内容仍严格使用本段剧本。"
+                        )
                     if reference_options.get("reference_video_url"):
                         prompt = (
                             f"将视频1向后延长{segment['duration_seconds']}秒，"

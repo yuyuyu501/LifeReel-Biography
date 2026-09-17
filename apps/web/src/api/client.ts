@@ -148,6 +148,12 @@ export const api = {
       body: JSON.stringify(payload),
     }),
   listScripts: () => request<ScriptProject[]>("/v1/scripts"),
+  scriptReferences: (projectId: string, sceneId: string) =>
+    request<SourceAsset[]>(`/v1/scripts/${projectId}/scenes/${sceneId}/references`),
+  updateScriptReferences: (projectId: string, sceneId: string, expectedVersion: number, assetIds: string[]) =>
+    request<ScriptProject>(`/v1/scripts/${projectId}/scenes/${sceneId}/references`, {
+      method: "PATCH", body: JSON.stringify({ expected_version: expectedVersion, asset_ids: assetIds }),
+    }),
   updateScriptScene: (projectId: string, sceneId: string, payload: import("@lifereel/contracts").ScriptSceneUpdate) =>
     request<ScriptProject>(`/v1/scripts/${projectId}/scenes/${sceneId}`, {
       method: "PATCH", body: JSON.stringify(payload),

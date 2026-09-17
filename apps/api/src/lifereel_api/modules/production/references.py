@@ -33,6 +33,23 @@ def _age_match(asset: SourceAsset, chapter: Chapter | None) -> bool:
     return asset.age_start <= target_end and asset_end >= chapter.age_start
 
 
+def chapter_package(db, project, scene) -> dict:
+    from lifereel_api.modules.script.references import resolve
+
+    assets = resolve(db, project, scene)
+    photos = [str(a.id) for a in assets if a.kind == "photo"]
+    audio = [str(a.id) for a in assets if a.kind == "audio"]
+    return {
+        "schema": 2, "chapter_id": str(scene.chapter_id) if scene.chapter_id else None,
+        "character_reference": photos[0] if photos else None,
+        "character_reference_kind": "photo" if photos else None,
+        "image_references": photos, "audio_references": audio,
+        "source_assets": [str(a.id) for a in assets],
+        "source_hashes": {str(a.id): a.sha256 for a in assets},
+        "selection_reason": "chapter_appearance", "consent_snapshot": "granted_only",
+    }
+
+
 def build_reference_package(
     db: Session,
     tenant_id: UUID,
@@ -56,7 +73,7 @@ def build_reference_package(
             .order_by(SourceAsset.quality_score.desc().nullslast(), SourceAsset.created_at.desc())
         )
     )
-    # Independent redraws are not platform-authorized video references.
+    # Select originals; chapter production prepares its own traced derivatives.
     assets = [a for a in assets if not a.is_redraw]
     chapter_assets = [a for a in assets if a.chapter_id == chapter_id and _age_match(a, chapter)]
     fallback_assets = [a for a in assets if a.chapter_id != chapter_id and _age_match(a, chapter)]

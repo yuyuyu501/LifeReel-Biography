@@ -15,7 +15,9 @@ the platform rejected the previous clip's last frame as the next reference.
   ownership. Keep direct execution blocked until that retry clears the saved
   rejection under the production lock. Never automatically remove the reference,
   switch providers or repeatedly submit rejected content.
-- Offer an inline, explicit replacement from the same person's image assets.
+- Legacy API clients can explicitly replace references in older runs.
+  The current studio owns only the generation action; users manage new-run
+  references in the script's appearance section (ADR 0020).
   Only ready JPEG/PNG/WebP files up to 10 MiB are eligible. Validate tenant,
   person, type, size and content hashes on the server. Prior rejection IDs and
   hashes are audit history, not an eligibility filter.
@@ -38,8 +40,8 @@ Provider tests cover submission and terminal moderation mapping. Pipeline tests
 cover legacy projection, explicit same-file retries, tenant/person isolation, invalid
 reference files, atomic insufficient-balance handling, partial
 preview, checkpoint preservation, continued generation and exactly-once billing.
-UI tests cover previously rejected images staying selectable, job reuse, disabled
-duplicate clicks, image preview, empty lists and terminal-state wallet refresh.
+UI tests cover job reuse, disabled duplicate clicks, terminal-state wallet refresh,
+and the absence of a separate reference-selection form in the studio.
 
 No schema migration is required. Deploy the same Git revision for API and web;
 do not reset the existing failed production run or its already-settled charge.

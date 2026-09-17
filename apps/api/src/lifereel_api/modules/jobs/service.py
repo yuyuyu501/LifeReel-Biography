@@ -122,6 +122,9 @@ def _retry_job(
                 replace_reference(db, run, reference_asset_id)
             else:
                 retry_reference(db, run)
+            from lifereel_api.modules.production.appearance import authorize_retry
+
+            authorize_retry(db, run)
             billing.video_reserve(db, run)
             run.status = "queued"
             run.error_message = None

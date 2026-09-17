@@ -1,4 +1,4 @@
-"""Isolated photo stylization; no video-provider authorization is inferred."""
+"""Photo stylization; no video-provider authorization is inferred."""
 
 import base64
 import ipaddress

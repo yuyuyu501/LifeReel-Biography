@@ -17,6 +17,7 @@ def moderation_code(provider_code: str | None) -> str | None:
         return None
     if provider_code.startswith((
         "InputImageSensitiveContentDetected", "InputVideoSensitiveContentDetected",
+        "InputAudioSensitiveContentDetected",
     )):
         return ErrorCode.VIDEO_REFERENCE_REJECTED.value
     if "SensitiveContentDetected" in provider_code:
@@ -151,6 +152,7 @@ def replace_reference(db, run, asset_id: UUID) -> None:
         run.status != "failed" or not blocked
         or blocked[2] != ErrorCode.VIDEO_REFERENCE_REJECTED
         or blocked[1].get("task_id")
+        or (run.output_manifest or {}).get("reference_package", {}).get("schema") == 2
     ):
         raise ApiError(409, ErrorCode.JOB_RETRY_NOT_ALLOWED)
     index, previous, _ = blocked

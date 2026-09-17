@@ -553,6 +553,7 @@ def _generate_draft(
         else [scene for scene in existing_scenes if scene.chapter_id == payload.chapter_id]
     )
     replaced_ids = [scene.id for scene in replaced_scenes]
+    saved_references = {scene.chapter_id: scene.reference_asset_ids for scene in replaced_scenes}
     if replaced_ids:
         db.execute(delete(ScriptShot).where(ScriptShot.scene_id.in_(replaced_ids)))
         db.execute(delete(ScriptScene).where(ScriptScene.id.in_(replaced_ids)))
@@ -569,6 +570,7 @@ def _generate_draft(
             tenant_id=tenant_id,
             project_id=project.id,
             chapter_id=scene_payload["chapter_id"],
+            reference_asset_ids=saved_references.get(scene_payload["chapter_id"]),
             order_index=insert_at + offset,
             heading=scene_payload["heading"],
             plot=scene_payload.get("plot"),

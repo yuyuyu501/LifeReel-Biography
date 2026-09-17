@@ -8,10 +8,12 @@ from sqlalchemy.orm import Session
 
 from lifereel_api.core.database import get_db
 from lifereel_api.core.tenant import get_tenant_id
-from lifereel_api.modules.script import service
+from lifereel_api.modules.evidence.schemas import SourceAssetRead
+from lifereel_api.modules.script import references, service
 from lifereel_api.modules.script.schemas import (
     ScriptGenerateRequest,
     ScriptProjectRead,
+    ScriptReferencesUpdate,
     ScriptSceneUpdate,
 )
 
@@ -48,3 +50,16 @@ def update_scene(
     project_id: UUID, scene_id: UUID, payload: ScriptSceneUpdate, db: Db, tenant_id: Tenant,
 ) -> ScriptProjectRead:
     return to_read(*service.update_scene(db, tenant_id, project_id, scene_id, payload))
+
+
+@router.get("/{project_id}/scenes/{scene_id}/references", response_model=list[SourceAssetRead])
+def scene_references(project_id: UUID, scene_id: UUID, db: Db, tenant_id: Tenant):
+    project, scene = references.get_scene(db, tenant_id, project_id, scene_id)
+    return references.resolve(db, project, scene, strict=False)
+
+
+@router.patch("/{project_id}/scenes/{scene_id}/references", response_model=ScriptProjectRead)
+def update_references(
+    project_id: UUID, scene_id: UUID, payload: ScriptReferencesUpdate, db: Db, tenant_id: Tenant,
+):
+    return to_read(*references.update(db, tenant_id, project_id, scene_id, payload))
