@@ -282,6 +282,10 @@ def start_interview(db: Session, tenant_id: UUID, payload: InterviewStart) -> In
 def add_round(
     db: Session, tenant_id: UUID, session_id: UUID, payload: InterviewRoundCreate
 ) -> InterviewRound:
+    from lifereel_api.modules.interview.voice_service import assert_no_call, lock_session
+
+    lock_session(db, tenant_id, session_id)
+    assert_no_call(db, tenant_id, session_id)
     session = get_session(db, tenant_id, session_id)
     next_index = (
         db.scalar(
@@ -312,6 +316,10 @@ def answer_round(
     answer_text: str,
     source_asset_id: UUID | None = None,
 ) -> InterviewRound:
+    from lifereel_api.modules.interview.voice_service import assert_no_call, lock_session
+
+    lock_session(db, tenant_id, session_id)
+    assert_no_call(db, tenant_id, session_id)
     session = get_session(db, tenant_id, session_id)
     round_ = db.scalar(
         select(InterviewRound).where(
@@ -348,6 +356,9 @@ def suggest_next_question(
     session_id: UUID,
     assessment: dict | None = None,
 ) -> dict[str, str]:
+    from lifereel_api.modules.interview.voice_service import assert_no_call
+
+    assert_no_call(db, tenant_id, session_id)
     session = get_session(db, tenant_id, session_id)
     answered = [item for item in session.rounds if item.answer_text]
     if not answered:

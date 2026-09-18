@@ -41,6 +41,12 @@ export type RestorationPhoto = {
   byte_size: number;
   created_at: string;
 };
+export type VoiceMessage = { id: string; role: "user" | "assistant"; text: string; at?: string };
+export type InterviewVoiceCall = {
+  id: string; session_id: string; status: string; messages: VoiceMessage[];
+  source_asset_id: string | null; workflow_id: string | null;
+  error_code: string | null; started_at: string; ended_at: string | null;
+};
 export type PhotoRestoration = {
   id: string;
   photo: RestorationPhoto;
@@ -84,6 +90,12 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export const api = {
+  interviewVoiceState: (id: string) => request<{
+    enabled: boolean; max_seconds: number; call: InterviewVoiceCall | null;
+  }>(`/v1/interviews/${id}/voice`),
+  startInterviewVoice: (id: string) => request<InterviewVoiceCall>(
+    `/v1/interviews/${id}/voice`, { method: "POST" },
+  ),
   restorationSettings: () =>
     request<{ enabled: boolean; max_bytes: number }>(
       "/v1/photo-restoration/settings",

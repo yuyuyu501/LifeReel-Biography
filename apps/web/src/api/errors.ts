@@ -1,4 +1,13 @@
 export const ERROR_MESSAGES: Record<string, string> = {
+  VOICE_NOT_CONFIGURED: "实时语音暂未开通。",
+  VOICE_CALL_BUSY: "当前已有语音采访，请先结束正在进行的通话。",
+  VOICE_CALL_NOT_FOUND: "找不到这次语音采访。",
+  VOICE_CALL_EXPIRED: "通话连接已过期，请重新开始。",
+  VOICE_CONNECTION_FAILED: "语音连接中断，已确认的转写已保留。",
+  VOICE_PROTOCOL_INVALID: "语音数据异常，请重新开始通话。",
+  VOICE_LIMIT_REACHED: "本次语音采访已达到时长或用量上限。",
+  VOICE_RECORDING_FAILED: "原声未能完整保存，已确认的转写已保留。",
+  VOICE_SAVE_PENDING: "通话记录正在恢复，请稍后刷新查看。",
   PHOTO_RESTORATION_NOT_FOUND: "找不到这张照片或修复记录。",
   PHOTO_RESTORATION_NOT_READY: "照片尚未修复完成。",
   PHOTO_RESTORATION_NOT_CONFIGURED: "照片修复暂未启用。",

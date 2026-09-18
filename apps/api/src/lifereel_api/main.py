@@ -1,10 +1,13 @@
 from __future__ import annotations
 
-from contextlib import asynccontextmanager
+import asyncio
+import logging
+from contextlib import asynccontextmanager, suppress
 
 import redis
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.concurrency import run_in_threadpool
 
 from lifereel_api.api import api_router
 from lifereel_api.core.config import get_settings
@@ -17,6 +20,8 @@ from lifereel_api.modules.evidence import models as evidence_models  # noqa: F40
 from lifereel_api.modules.governance import models as governance_models  # noqa: F401
 from lifereel_api.modules.identity import models as identity_models  # noqa: F401
 from lifereel_api.modules.interview import models as interview_models  # noqa: F401
+from lifereel_api.modules.interview.voice_router import socket_router
+from lifereel_api.modules.interview.voice_service import recover_stale
 from lifereel_api.modules.jobs import models as job_models  # noqa: F401
 from lifereel_api.modules.jobs.dispatch import router as worker_router
 from lifereel_api.modules.memory import models as memory_models  # noqa: F401
@@ -39,7 +44,21 @@ async def lifespan(_: FastAPI):
         Base.metadata.create_all(bind=engine)
         with SessionLocal() as db:
             seed_foundation(db)
-    yield
+    async def recover_voice_calls():
+        while True:
+            try:
+                await run_in_threadpool(recover_stale)
+            except Exception as exc:
+                logging.getLogger(__name__).warning("Voice recovery: %s", type(exc).__name__)
+            await asyncio.sleep(15)
+
+    recovery = asyncio.create_task(recover_voice_calls())
+    try:
+        yield
+    finally:
+        recovery.cancel()
+        with suppress(asyncio.CancelledError):
+            await recovery
 
 
 app = FastAPI(
@@ -58,6 +77,7 @@ app.add_middleware(
 install_error_handlers(app)
 app.include_router(api_router)
 app.include_router(worker_router)
+app.include_router(socket_router)
 
 
 @app.get("/health", tags=["system"])

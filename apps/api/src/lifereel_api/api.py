@@ -8,6 +8,7 @@ from lifereel_api.modules.evidence.router import router as evidence_router
 from lifereel_api.modules.governance.router import router as governance_router
 from lifereel_api.modules.identity.router import router as identity_router
 from lifereel_api.modules.interview.router import router as interview_router
+from lifereel_api.modules.interview.voice_router import router as voice_router
 from lifereel_api.modules.jobs.router import router as jobs_router
 from lifereel_api.modules.memory.router import router as memory_router
 from lifereel_api.modules.orchestration.router import router as orchestration_router
@@ -27,6 +28,7 @@ api_router.include_router(evidence_router)
 api_router.include_router(restoration_router)
 api_router.include_router(identity_router)
 api_router.include_router(interview_router)
+api_router.include_router(voice_router)
 api_router.include_router(jobs_router)
 api_router.include_router(memory_router)
 api_router.include_router(orchestration_router)

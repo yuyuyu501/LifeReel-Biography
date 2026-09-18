@@ -143,6 +143,9 @@ def create_turn(
         if existing.session_id != session_id:
             raise ApiError(status.HTTP_409_CONFLICT, ErrorCode.INTERVIEW_TURN_STATE_INVALID)
         return existing
+    from lifereel_api.modules.interview.voice_service import assert_no_call
+
+    assert_no_call(db, tenant_id, session_id)
     if (not (payload.answer_text or "").strip() and not payload.asset_ids
             and payload.action == "interview"):
         raise ApiError(

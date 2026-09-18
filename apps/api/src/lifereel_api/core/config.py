@@ -93,6 +93,10 @@ class Settings(BaseSettings):
     video_reference_style: Literal["original", "color_redraw"] = "original"
     siliconflow_api_key: str | None = None
     voice_provider: str = "mock"
+    realtime_voice_provider: Literal["disabled", "doubao", "mock"] = "disabled"
+    doubao_realtime_api_key: str | None = None
+    doubao_realtime_voice: str = "zh_female_xiaohe_jupiter_bigtts"
+    realtime_voice_max_seconds: int = Field(default=900, ge=60, le=1800)
     openai_compatible_base_url: str | None = None
     openai_compatible_api_key: str | None = None
     openai_compatible_model: str | None = None

@@ -3,7 +3,8 @@ from __future__ import annotations
 import secrets
 from typing import Annotated
 
-from fastapi import Header, Request, status
+from fastapi import Header, status
+from starlette.requests import HTTPConnection
 
 from lifereel_api.core.config import get_settings
 from lifereel_api.core.errors import ApiError, ErrorCode
@@ -11,7 +12,7 @@ from lifereel_api.modules.auth.dependencies import PUBLIC_AUTH_PATHS
 
 
 def require_api_access(
-    request: Request,
+    request: HTTPConnection,
     x_api_key: Annotated[str | None, Header(alias="X-API-Key")] = None,
 ) -> None:
     settings = get_settings()

@@ -37,6 +37,8 @@ import {
   type EvidenceKind,
 } from "../evidenceLimits";
 import { useAudioRecorder } from "../hooks/useAudioRecorder";
+import { useRealtimeInterview } from "../hooks/useRealtimeInterview";
+import { InterviewVoice } from "../components/InterviewVoice";
 
 const kindIcon = {
   audio: FileAudio,
@@ -68,6 +70,10 @@ function Attachment({ asset }: { asset: SourceAsset }) {
 
 export function InterviewRoomPage() {
   const { id = "" } = useParams();
+  return <InterviewWorkspace key={id} id={id} />;
+}
+
+function InterviewWorkspace({ id }: { id: string }) {
   const queryClient = useQueryClient();
   const workspace = useQuery({
     queryKey: ["interview-workspace", id],
@@ -96,6 +102,7 @@ export function InterviewRoomPage() {
   const [scriptEditing, setScriptEditing] = useState(false);
   const regenerationRequest = useRef<string | null>(null);
   const recorder = useAudioRecorder();
+  const voice = useRealtimeInterview(id);
 
   const session = workspace.data?.session;
   const current = session?.rounds.at(-1);
@@ -211,6 +218,7 @@ export function InterviewRoomPage() {
   function onSubmit(event: FormEvent) {
     event.preventDefault();
     if (
+      voice.busy ||
       scriptEditing ||
       regenerate.isPending ||
       recorder.isRecording ||
@@ -302,6 +310,7 @@ export function InterviewRoomPage() {
             size="sm"
             className="button secondary small"
             disabled={
+              voice.busy ||
               retryWorkflow.isPending ||
               submitTurn.isPending ||
               !retryAllowed ||
@@ -366,6 +375,11 @@ export function InterviewRoomPage() {
             )}
           </div>
 
+          <InterviewVoice voice={voice} disabled={
+            scriptEditing || workflowRunning || regenerate.isPending || submitTurn.isPending ||
+            retryWorkflow.isPending || recorder.isRecording || Boolean(recorder.audioBlob) ||
+            Boolean(answer.trim()) || files.length > 0
+          } />
           <form className="answer-composer" onSubmit={onSubmit}>
             {recorder.audioUrl && (
               <div className="recording-preview">
@@ -419,7 +433,7 @@ export function InterviewRoomPage() {
               onChange={(event) => setAnswer(event.target.value)}
               placeholder="说说这段往事……"
               rows={3}
-              disabled={submitTurn.isPending}
+              disabled={voice.busy || submitTurn.isPending}
             />
             <div className="composer-actions">
               <label
@@ -433,14 +447,14 @@ export function InterviewRoomPage() {
                   multiple
                   accept="image/*,audio/*,video/*,.pdf,.txt,.md"
                   onChange={selectFiles}
-                  disabled={submitTurn.isPending}
+                  disabled={voice.busy || submitTurn.isPending}
                 />
               </label>
               <Button
                 variant="outline"
                 type="button"
                 className={`composer-tool px-2 text-xs ${recorder.isRecording ? "recording" : ""}`}
-                disabled={submitTurn.isPending}
+                disabled={voice.busy || submitTurn.isPending}
                 aria-pressed={recorder.isRecording}
                 onClick={() =>
                   recorder.isRecording ? recorder.stop() : recorder.start()
@@ -474,6 +488,7 @@ export function InterviewRoomPage() {
                         : "发送并更新剧本"
                 }
                 disabled={
+                  voice.busy ||
                   scriptEditing ||
                   regenerate.isPending ||
                   (!answer.trim() && !recorder.audioBlob && !files.length) ||
@@ -543,6 +558,7 @@ export function InterviewRoomPage() {
                 title="重新生成本章剧本"
                 aria-label="重新生成本章剧本"
                 disabled={
+                  voice.busy ||
                   scriptEditing ||
                   regenerate.isPending ||
                   workflowRunning ||
@@ -582,6 +598,7 @@ export function InterviewRoomPage() {
                     scene={chapterScript}
                     project={workspace.data.script!}
                     disabled={
+                      voice.busy ||
                       workflowRunning ||
                       regenerate.isPending ||
                       submitTurn.isPending

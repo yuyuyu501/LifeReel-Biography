@@ -154,6 +154,9 @@ def _retry_job(
             )
             db.refresh(job)
             db.refresh(workflow)
+            from lifereel_api.modules.interview.voice_service import assert_no_call
+
+            assert_no_call(db, tenant_id, workflow.session_id)
             latest_id = db.scalar(
                 select(InterviewTurnWorkflow.id)
                 .where(

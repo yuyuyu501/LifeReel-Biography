@@ -592,6 +592,76 @@
   color: var(--muted-foreground);
   font-size: 9px;
 }
+.interview-voice {
+  padding: 12px 20px;
+  border-top: 1px solid var(--line);
+  flex-shrink: 0;
+}
+.interview-voice.is-active {
+  background: #f0f8f5;
+}
+.voice-toolbar,
+.voice-status,
+.voice-buttons {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.voice-toolbar {
+  justify-content: space-between;
+  flex-wrap: wrap;
+  min-height: 36px;
+}
+.voice-status {
+  font-size: 13px;
+  flex-wrap: wrap;
+}
+.voice-status time {
+  font-variant-numeric: tabular-nums;
+  min-width: 40px;
+  color: #64736e;
+}
+.voice-toolbar small {
+  color: #64736e;
+  font-size: 12px;
+}
+.voice-live-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #219a72;
+}
+.voice-buttons {
+  flex-shrink: 0;
+  margin-left: auto;
+}
+.voice-transcript {
+  max-height: 180px;
+  overflow-y: auto;
+  margin-top: 12px;
+  overscroll-behavior: contain;
+}
+.voice-transcript p {
+  font-size: 14px;
+  line-height: 1.7;
+  margin: 8px 0;
+  overflow-wrap: anywhere;
+}
+.voice-transcript p > span {
+  font-size: 11px;
+  color: #64736e;
+  margin-right: 10px;
+}
+.voice-transcript .user {
+  color: #15694f;
+}
+.voice-transcript .pending {
+  opacity: 0.65;
+}
+.interview-voice .form-error {
+  margin-bottom: 0;
+  font-size: 12px;
+}
 @media (max-width: 1080px) {
   .interview-room {
     width: min(100% - 40px, 1000px);
@@ -709,6 +779,14 @@
   }
   .live-manuscript footer {
     margin-left: 0;
+  }
+}
+@media (max-width: 600px) {
+  .interview-voice {
+    padding: 10px 14px;
+  }
+  .voice-transcript {
+    max-height: 130px;
   }
 }
 @media (prefers-reduced-motion: reduce) {

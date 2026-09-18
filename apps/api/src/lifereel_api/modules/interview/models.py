@@ -146,3 +146,27 @@ class InterviewTurnWorkflow(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         from lifereel_api.modules.memory.recovery import retry_after
 
         return retry_after(self) if self.status == "failed" else 0
+
+
+class InterviewVoiceCall(UUIDPrimaryKeyMixin, Base):
+    __tablename__ = "interview_voice_calls"
+
+    tenant_id: Mapped[UUID] = mapped_column(
+        Uuid, ForeignKey("tenants.id", ondelete="CASCADE"), index=True
+    )
+    session_id: Mapped[UUID] = mapped_column(
+        Uuid, ForeignKey("interview_sessions.id", ondelete="CASCADE"), index=True
+    )
+    user_id: Mapped[UUID | None] = mapped_column(
+        Uuid, ForeignKey("user_accounts.id", ondelete="SET NULL"), nullable=True
+    )
+    status: Mapped[str] = mapped_column(String(32), default="connecting", index=True)
+    messages: Mapped[list[dict]] = mapped_column(JSON, default=list)
+    usage: Mapped[list[dict]] = mapped_column(JSON, default=list)
+    last_round_id: Mapped[UUID | None] = mapped_column(Uuid, nullable=True)
+    source_asset_id: Mapped[UUID | None] = mapped_column(Uuid, nullable=True)
+    workflow_id: Mapped[UUID | None] = mapped_column(Uuid, nullable=True)
+    error_code: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    heartbeat_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    ended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

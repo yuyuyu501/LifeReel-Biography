@@ -26,6 +26,7 @@ export default defineConfig(({ mode }) => {
         "/v1": {
           target: env.VITE_DEV_API_TARGET || "http://localhost:8000",
           changeOrigin: true,
+          ws: true,
           headers: apiAccessKey ? { "X-API-Key": apiAccessKey } : undefined,
         },
         "/health": {

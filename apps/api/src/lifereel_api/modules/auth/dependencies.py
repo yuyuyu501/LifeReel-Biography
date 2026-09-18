@@ -7,6 +7,7 @@ from uuid import UUID
 from fastapi import Cookie, Depends, Header, Request, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
+from starlette.requests import HTTPConnection
 
 from lifereel_api.core.config import get_settings
 from lifereel_api.core.database import get_db
@@ -32,7 +33,7 @@ class AuthContext:
 
 
 def auth_context(
-    request: Request,
+    request: HTTPConnection,
     db: Annotated[Session, Depends(get_db)],
     authorization: Annotated[str | None, Header()] = None,
     x_tenant_id: Annotated[str | None, Header(alias="X-Tenant-ID")] = None,
