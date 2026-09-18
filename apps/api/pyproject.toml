@@ -16,6 +16,7 @@ dependencies = [
   "fastapi>=0.116,<1",
   "faster-whisper>=1.2,<2",
   "httpx>=0.28,<1",
+  "pillow>=12.3,<13",
   "psycopg[binary]>=3.2,<4",
   "pydantic-settings>=2.10,<3",
   "pypdf>=5.9,<6",

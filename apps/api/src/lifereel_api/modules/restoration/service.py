@@ -14,7 +14,7 @@ from lifereel_api.modules.jobs.models import Job
 from lifereel_api.modules.production.locking import execution_lock
 from lifereel_api.modules.restoration.models import RestorationPhoto
 from lifereel_api.modules.restoration.schemas import PhotoRead, RestorationRead
-from lifereel_api.providers import siliconflow
+from lifereel_api.providers import seedream, siliconflow
 
 KIND = "photo.restoration"
 PROMPT_VERSION = "photo-restoration-v1"
@@ -36,12 +36,21 @@ def prompt(colorize):
     )
 
 
-def enabled():
+def selected_provider():
     settings = get_settings()
+    if settings.photo_restoration_provider == "inherit":
+        return settings.photo_redraw_provider
+    return settings.photo_restoration_provider
+
+
+def enabled(provider=None):
+    settings = get_settings()
+    provider = provider or selected_provider()
     return settings.job_queue_backend == "database" and (
-        settings.photo_redraw_provider == "siliconflow"
+        provider == "seedream" and bool(settings.volcengine_api_key)
+        or provider == settings.photo_redraw_provider == "siliconflow"
         and bool(settings.siliconflow_api_key)
-        or settings.photo_redraw_provider == "mock"
+        or provider == settings.photo_redraw_provider == "mock"
         and settings.is_development
     )
 
@@ -100,10 +109,16 @@ def start(db, tenant_id, payload):
         raise ApiError(503, ErrorCode.PHOTO_RESTORATION_NOT_CONFIGURED)
     photo = get_photo(db, tenant_id, payload.photo_id)
     text = prompt(payload.colorize)
-    provider = get_settings().photo_redraw_provider
-    fingerprint = hashlib.sha256(
-        f"{PROMPT_VERSION}:{siliconflow.MODEL}:{provider}:{text}".encode(),
-    ).hexdigest()[:20]
+    provider = selected_provider()
+    model = seedream.MODEL if provider == "seedream" else siliconflow.MODEL
+    parameters = {}
+    if provider == "seedream":
+        content = checked_content(photo.storage_key, photo.byte_size, photo.sha256)
+        parameters = {"size": seedream.output_size(content), "image_count": 1}
+    identity = f"{PROMPT_VERSION}:{model}:{provider}:{text}"
+    if parameters:
+        identity += f":{parameters['size']}:1"
+    fingerprint = hashlib.sha256(identity.encode()).hexdigest()[:20]
     with execution_lock(db, photo.id) as acquired:
         if not acquired:
             raise ApiError(409, ErrorCode.RESOURCE_BUSY)
@@ -117,8 +132,9 @@ def start(db, tenant_id, payload):
                 "colorize": payload.colorize,
                 "prompt_version": PROMPT_VERSION,
                 "prompt": text,
-                "model": siliconflow.MODEL,
+                "model": model,
                 "provider": provider,
+                **parameters,
             },
             f"restore:{photo.id}:{photo.sha256}:{fingerprint}",
         )
@@ -146,7 +162,7 @@ def retry(db, job):
         if not can_retry(job):
             raise ApiError(409, ErrorCode.JOB_RETRY_NOT_ALLOWED)
         get_photo(db, job.tenant_id, UUID(job.payload["photo_id"]))
-        if not enabled():
+        if not enabled() or not enabled(job.payload["provider"]):
             raise ApiError(503, ErrorCode.PHOTO_RESTORATION_NOT_CONFIGURED)
         job.status, job.error_code, job.error_message = "queued", None, None
         job.result = None
@@ -170,18 +186,30 @@ def execute(db, job):
         return
     if (job.result or {}).get("request_started"):
         raise ApiError(409, ErrorCode.PHOTO_RESTORATION_UNCERTAIN)
-    if not enabled() or job.payload["provider"] != get_settings().photo_redraw_provider:
+    provider = job.payload["provider"]
+    if not enabled() or not enabled(provider):
         raise ApiError(503, ErrorCode.PHOTO_RESTORATION_NOT_CONFIGURED)
     photo = get_photo(db, job.tenant_id, UUID(job.payload["photo_id"]))
-    if photo.sha256 != job.payload["source_sha256"] or job.payload["model"] != siliconflow.MODEL:
+    model = seedream.MODEL if provider == "seedream" else siliconflow.MODEL
+    if photo.sha256 != job.payload["source_sha256"] or job.payload["model"] != model:
         raise ApiError(422, ErrorCode.PHOTO_RESTORATION_SOURCE_INVALID)
     content = checked_content(photo.storage_key, photo.byte_size, photo.sha256)
+    if provider == "seedream" and (
+        job.payload.get("size") != seedream.output_size(content)
+        or job.payload.get("image_count") != 1
+    ):
+        raise ApiError(422, ErrorCode.PHOTO_RESTORATION_SOURCE_INVALID)
     job.status = "running"
     job.attempt_count += 1
     job.result = {"request_started": True}
     db.commit()
     try:
-        result = siliconflow.edit(content, photo.mime_type, prompt=job.payload["prompt"])
+        if provider == "seedream":
+            result = seedream.edit(
+                content, photo.mime_type, prompt=job.payload["prompt"], size=job.payload["size"],
+            )
+        else:
+            result = siliconflow.edit(content, photo.mime_type, prompt=job.payload["prompt"])
     except ApiError as exc:
         mapped = exc.code.value.replace("PHOTO_REDRAW_", "PHOTO_RESTORATION_")
         raise ApiError(exc.status_code, ErrorCode(mapped)) from None

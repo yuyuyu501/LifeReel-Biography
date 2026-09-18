@@ -5,7 +5,7 @@ a JPEG, PNG, or WebP up to 10 MiB without creating a person, interview, or scrip
 Uploading does not call an AI provider. Explicit start creates a durable
 `photo.restoration` job; the database video lane executes it.
 
-SiliconFlow `Qwen/Qwen-Image-Edit-2509` uses the independent
+Seedream `doubao-seedream-5-0-pro-260628` uses the independent
 `photo-restoration-v1` prompt. Conservative restoration removes scratches,
 creases, stains, and noise while prioritizing identity, age, expression, original
 composition, and photographic texture. Black-and-white stays black-and-white
@@ -16,7 +16,7 @@ Portrait redraw and chapter-video prompts are unchanged.
 Originals are tenant-scoped in `restoration_photos`, deduplicated by content
 hash, and kept in private storage. Results are stored separately. All media,
 history, task, and export endpoints enforce tenant ownership. Job identity
-includes source, model, provider, prompt text and version, and colorization.
+includes source, model, provider, prompt text and version, colorization, and output size/count.
 Duplicate starts return the existing task. Inputs are frozen on creation.
 Requests are checkpointed before provider invocation; interrupted calls fail as
 uncertain and are never automatically submitted again. Explicit retries are
@@ -31,8 +31,20 @@ cannot be analyzed as factual evidence and are excluded from automatic chapter
 reference selection. Users may explicitly choose them in chapter appearance.
 No restoration action starts video generation.
 
-Configuration reuses `PHOTO_REDRAW_PROVIDER=siliconflow`, `SILICONFLOW_API_KEY`,
-and `JOB_QUEUE_BACKEND=database`. The key remains server-side. Like standalone
+Configure `PHOTO_RESTORATION_PROVIDER=seedream`, `VOLCENGINE_API_KEY`,
+and `JOB_QUEUE_BACKEND=database`. The key remains server-side. The model returns
+exactly one image; no count or group-generation option is sent. 1080p means a
+1920 x 1080 pixel budget, preserving source aspect ratio (including EXIF rotation)
+and rounding dimensions to even pixels. Landscape 16:9 is 1920x1080; portrait
+9:16 is 1080x1920. Other API options are omitted, retaining provider defaults
+(JPEG, URL response, watermark enabled, standard prompt optimization).
+
+The code default `PHOTO_RESTORATION_PROVIDER=inherit` retains legacy deployment
+behavior through `PHOTO_REDRAW_PROVIDER` and `SILICONFLOW_API_KEY`; `disabled`
+disables restoration independently. Production selects `seedream` explicitly.
+Existing jobs keep their frozen provider/model and require its credentials for
+retry. A new start after switching providers creates a separate job. Video
+portrait redraw continues using Qwen and its existing configuration. Like standalone
 redraw, image-edit provider costs are borne by the operator; this feature does
 not add wallet charges or a new pricing policy. Development may use the mock
 provider. Routine verification uses isolated databases and mocked provider calls.
