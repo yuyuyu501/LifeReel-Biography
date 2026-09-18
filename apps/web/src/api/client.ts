@@ -34,6 +34,29 @@ export type SmsVerification = { phone: string; challenge_id: string; code: strin
 export type Account = { id: string; email: string | null; phone: string | null; display_name: string; is_active: boolean; is_admin: boolean; created_at: string; deleted_at: string | null };
 export type AccountChanges = { display_name?: string; email?: string; password?: string; is_active?: boolean };
 
+export type RestorationPhoto = {
+  id: string;
+  original_filename: string;
+  mime_type: string;
+  byte_size: number;
+  created_at: string;
+};
+export type PhotoRestoration = {
+  id: string;
+  photo: RestorationPhoto;
+  status: string;
+  colorize: boolean;
+  error_code: string | null;
+  can_retry: boolean;
+  created_at: string;
+};
+export type RestorationHistory = {
+  items: PhotoRestoration[];
+  total: number;
+  page: number;
+  page_size: number;
+};
+
 export const API_BASE_URL =
   import.meta.env.VITE_API_BASE_URL ?? "";
 
@@ -61,6 +84,32 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export const api = {
+  restorationSettings: () =>
+    request<{ enabled: boolean; max_bytes: number }>(
+      "/v1/photo-restoration/settings",
+    ),
+  uploadRestorationPhoto: (file: File) => {
+    const form = new FormData();
+    form.set("file", file);
+    return request<RestorationPhoto>("/v1/photo-restoration/photos", {
+      method: "POST",
+      body: form,
+    });
+  },
+  startRestoration: (photo_id: string, colorize: boolean) =>
+    request<PhotoRestoration>("/v1/photo-restoration/runs", {
+      method: "POST",
+      body: JSON.stringify({ photo_id, colorize }),
+    }),
+  restorationHistory: (page: number) =>
+    request<RestorationHistory>(`/v1/photo-restoration/runs?page=${page}`),
+  restorationRun: (id: string) =>
+    request<PhotoRestoration>(`/v1/photo-restoration/runs/${id}`),
+  saveRestoration: (id: string, subject_id: string) =>
+    request<SourceAsset>(`/v1/photo-restoration/runs/${id}/save`, {
+      method: "POST",
+      body: JSON.stringify({ subject_id }),
+    }),
   rechargeOrders: (page = 1) => request<WalletPage<RechargeOrder>>(`/v1/wallet/recharge/orders?page=${page}`),
   rechargeOrder: (id: string) => request<RechargeOrder>(`/v1/wallet/recharge/${id}`),
   createRecharge: (payload: { request_id: string; amount_cents: number }) => request<RechargeOrder>("/v1/wallet/recharge", { method: "POST", body: JSON.stringify(payload) }),

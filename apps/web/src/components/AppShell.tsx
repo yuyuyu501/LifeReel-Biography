@@ -10,6 +10,7 @@ import {
   UserRound,
   ShieldCheck,
   ChevronsUpDown,
+  ImagePlus,
 } from "lucide-react";
 import type { PropsWithChildren } from "react";
 import { Link, NavLink, useLocation, useNavigate } from "react-router-dom";
@@ -43,12 +44,21 @@ const profileItems = [
   { to: "/wallet", label: "钱包", icon: Wallet },
   { to: "/account", label: "账号", icon: UserRound },
 ];
+const toolItems = [
+  { to: "/photo-restoration", label: "照片修复", icon: ImagePlus },
+];
 const navigationGroups = [
   {
     id: "workflow-navigation",
     label: "生命档案流程",
     items: workflowItems,
     workflow: true,
+  },
+  {
+    id: "photo-navigation",
+    label: "照片修复",
+    items: toolItems,
+    workflow: false,
   },
   {
     id: "profile-navigation",
@@ -82,6 +92,7 @@ export function AppShell({
     : navigationGroups;
   const currentSection = [
     ...workflowItems,
+    ...toolItems,
     ...profileItems,
     ...adminItems,
   ].find(
@@ -114,7 +125,7 @@ export function AppShell({
           {groups.map((group) => (
             <div
               key={group.id}
-              className={`sidebar-group${group.workflow ? "" : " sidebar-profile"}`}
+              className={`sidebar-group${group.id === "photo-navigation" ? " sidebar-tools" : group.workflow ? "" : " sidebar-profile"}`}
             >
               <span id={group.id} className="sidebar-label">
                 {group.label}

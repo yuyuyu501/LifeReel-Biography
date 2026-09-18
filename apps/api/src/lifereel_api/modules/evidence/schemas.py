@@ -29,6 +29,7 @@ class SourceAssetRead(BaseModel):
     analysis_status: str = "pending"
     derived_from_asset_id: UUID | None = None
     is_redraw: bool = False
+    is_restoration: bool = False
     captured_at: datetime
     created_at: datetime
 

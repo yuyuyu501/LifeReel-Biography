@@ -74,7 +74,7 @@ def build_reference_package(
         )
     )
     # Select originals; chapter production prepares its own traced derivatives.
-    assets = [a for a in assets if not a.is_redraw]
+    assets = [a for a in assets if not a.is_redraw and not a.is_restoration]
     chapter_assets = [a for a in assets if a.chapter_id == chapter_id and _age_match(a, chapter)]
     fallback_assets = [a for a in assets if a.chapter_id != chapter_id and _age_match(a, chapter)]
     chosen = chapter_assets + fallback_assets

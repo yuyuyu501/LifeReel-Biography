@@ -232,8 +232,12 @@
     width: auto;
     height: calc(70px + env(safe-area-inset-bottom));
     padding: 7px 10px calc(7px + env(safe-area-inset-bottom));
-    display: block;
+    display: grid;
+    grid-template-columns: 4fr 1fr;
     border-top: 1px solid var(--line);
+  }
+  .sidebar-tools.sidebar-group {
+    margin-top: 0;
   }
   .brand,
   .sidebar-label,
@@ -244,6 +248,9 @@
   .sidebar nav {
     grid-template-columns: repeat(4, 1fr);
     gap: 3px;
+  }
+  .sidebar-tools nav {
+    grid-template-columns: 1fr;
   }
   .nav-item {
     min-height: 56px;
@@ -260,6 +267,7 @@
   }
   .nav-item span {
     font-size: 12px;
+    white-space: nowrap;
   }
   .nav-item svg {
     width: 19px;

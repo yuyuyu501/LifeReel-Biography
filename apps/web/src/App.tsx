@@ -14,6 +14,7 @@ import { LoginPage } from "./pages/LoginPage";
 import { AccountPage } from "./pages/AccountPage";
 import { AccountsAdminPage } from "./pages/AccountsAdminPage";
 import { PublicReelPage } from "./pages/PublicReelPage";
+import { PhotoRestorationPage } from "./pages/PhotoRestorationPage";
 import { api } from "./api/client";
 import { isAuthenticationError } from "./api/errors";
 import { QueryState } from "./components/QueryState";
@@ -55,6 +56,7 @@ function ProtectedApp() {
         <Route path="/scripts" element={<ScriptLibraryPage />} />
         <Route path="/scripts/:subjectId" element={<ScriptBookPage />} />
         <Route path="/studio" element={<StudioPage />} />
+        <Route path="/photo-restoration" element={<PhotoRestorationPage />} />
         <Route path="/wallet" element={<WalletPage />} />
         <Route path="/account" element={<AccountPage />} />
         <Route

@@ -13,6 +13,7 @@ from lifereel_api.modules.memory.router import router as memory_router
 from lifereel_api.modules.orchestration.router import router as orchestration_router
 from lifereel_api.modules.production.router import router as production_router
 from lifereel_api.modules.publication.router import router as publication_router
+from lifereel_api.modules.restoration.router import router as restoration_router
 from lifereel_api.modules.script.router import router as script_router
 from lifereel_api.providers.router import router as providers_router
 
@@ -23,6 +24,7 @@ api_router = APIRouter(
 api_router.include_router(auth_router)
 api_router.include_router(billing_router)
 api_router.include_router(evidence_router)
+api_router.include_router(restoration_router)
 api_router.include_router(identity_router)
 api_router.include_router(interview_router)
 api_router.include_router(jobs_router)

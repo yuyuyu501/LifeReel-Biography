@@ -21,6 +21,7 @@ from lifereel_api.modules.production import (
     reference_models as production_reference_models,  # noqa: F401
 )
 from lifereel_api.modules.publication import models as publication_models  # noqa: F401
+from lifereel_api.modules.restoration import models as restoration_models  # noqa: F401
 from lifereel_api.modules.script import models as script_models  # noqa: F401
 
 config = context.config

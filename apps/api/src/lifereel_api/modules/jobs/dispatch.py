@@ -53,7 +53,11 @@ def claim_job(db: Session, lane: str):
         raise ApiError(409, ErrorCode.JOB_RETRY_NOT_ALLOWED)
     now = datetime.now(UTC)
     kind = KINDS[lane]
-    kinds = [kind, "production.cleanup", "evidence.photo_redraw"] if lane == "video" else [kind]
+    kinds = (
+        [kind, "production.cleanup", "evidence.photo_redraw", "photo.restoration"]
+        if lane == "video"
+        else [kind]
+    )
     limit = settings.interview_concurrency if lane == "interview" else settings.video_concurrency
     # Serialise only admission to each lane, not its jobs or their AI calls.
     if db.get_bind().dialect.name == "postgresql":
@@ -178,6 +182,10 @@ def execute_claim(db: Session, job_id: UUID, token: UUID):
                 from lifereel_api.modules.evidence.redraw import execute as execute_redraw
 
                 execute_redraw(db, job)
+            elif job.kind == "photo.restoration":
+                from lifereel_api.modules.restoration.service import execute as restore
+
+                restore(db, job)
             else:
                 raise ApiError(409, ErrorCode.JOB_RETRY_NOT_ALLOWED)
         except Exception as exc:

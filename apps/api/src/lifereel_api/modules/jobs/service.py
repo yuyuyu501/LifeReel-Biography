@@ -60,6 +60,12 @@ def retry_job(
     if resume_original and reference_asset_id:
         raise ApiError(409, ErrorCode.JOB_RETRY_NOT_ALLOWED)
     job = get_job(db, tenant_id, job_id)
+    if job.kind == "photo.restoration":
+        from lifereel_api.modules.restoration.service import retry
+
+        if reference_asset_id or resume_original:
+            raise ApiError(409, ErrorCode.JOB_RETRY_NOT_ALLOWED)
+        return retry(db, job)
     if job.kind == "evidence.photo_redraw":
         from lifereel_api.modules.evidence.redraw import retry
 

@@ -55,6 +55,12 @@ def validate_download_url(value: str) -> httpx.URL:
 
 
 def redraw(content: bytes, mime_type: str, *, client: httpx.Client | None = None) -> RedrawOutput:
+    return edit(content, mime_type, prompt=PROMPT, client=client)
+
+
+def edit(
+    content: bytes, mime_type: str, *, prompt: str, client: httpx.Client | None = None,
+) -> RedrawOutput:
     settings = get_settings()
     if settings.photo_redraw_provider == "mock" and settings.is_development:
         # A synthetic PNG is only used by explicitly configured development/test runs.
@@ -74,7 +80,7 @@ def redraw(content: bytes, mime_type: str, *, client: httpx.Client | None = None
                 "X-Enable-Watermark": "1",
             },
             json={
-                "model": MODEL, "prompt": PROMPT, "num_inference_steps": 20,
+                "model": MODEL, "prompt": prompt, "num_inference_steps": 20,
                 "seed": 20260916,
                 "image": f"data:{mime_type};base64," + base64.b64encode(content).decode(),
             },

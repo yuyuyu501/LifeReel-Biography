@@ -68,6 +68,7 @@ export function PhotoRedraw({
   return (
     <div className="photo-redraw">
       <div className="photo-redraw-toolbar">
+        {asset.is_restoration && <span>AI 修复图</span>}
         {asset.is_redraw ? (
           <span>AI 处理图片</span>
         ) : resultId ? (

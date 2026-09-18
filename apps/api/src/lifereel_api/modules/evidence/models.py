@@ -66,6 +66,10 @@ class SourceAsset(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     def is_redraw(self) -> bool:
         return (self.metadata_json or {}).get("purpose") == "photo_redraw"
 
+    @property
+    def is_restoration(self) -> bool:
+        return (self.metadata_json or {}).get("purpose") == "photo_restoration"
+
 
 class EvidenceUpload(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "evidence_uploads"

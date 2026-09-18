@@ -358,7 +358,7 @@ def list_observations(db: Session, tenant_id: UUID, asset_id: UUID) -> list[Evid
 @track_usage("evidence")
 def analyze_asset(db: Session, tenant_id: UUID, asset_id: UUID) -> EvidenceObservation:
     asset = get_asset(db, tenant_id, asset_id)
-    if asset.is_redraw:
+    if asset.is_redraw or asset.is_restoration:
         raise ApiError(422, ErrorCode.EVIDENCE_ANALYSIS_UNSUPPORTED)
     settings = get_settings()
     content = (

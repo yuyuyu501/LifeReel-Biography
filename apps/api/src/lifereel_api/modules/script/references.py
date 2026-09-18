@@ -54,6 +54,8 @@ def resolve(db, project, scene, *, strict=True):
     ).order_by(SourceAsset.quality_score.desc().nullslast(), SourceAsset.created_at.desc())))
     selected = []
     for asset in assets:
+        if asset.is_restoration:
+            continue
         duration = (asset.metadata_json or {}).get("duration_seconds")
         short_audio = isinstance(duration, (int, float)) and 2 <= duration <= 15
         if eligible(asset) and (asset.kind == "photo" or short_audio):

@@ -1,4 +1,14 @@
 export const ERROR_MESSAGES: Record<string, string> = {
+  PHOTO_RESTORATION_NOT_FOUND: "找不到这张照片或修复记录。",
+  PHOTO_RESTORATION_NOT_READY: "照片尚未修复完成。",
+  PHOTO_RESTORATION_NOT_CONFIGURED: "照片修复暂未启用。",
+  PHOTO_RESTORATION_SOURCE_INVALID:
+    "照片无效，请重新上传不超过 10 MB 的 JPG、PNG 或 WebP 图片。",
+  PHOTO_RESTORATION_FAILED: "照片修复失败，请稍后重试。",
+  PHOTO_RESTORATION_REJECTED: "服务商未接受此照片修复请求，请更换照片。",
+  PHOTO_RESTORATION_UNCERTAIN:
+    "修复结果尚未确认。重新修复可能产生新的服务商费用。",
+  PHOTO_RESTORATION_RESULT_INVALID: "修复结果未完整保存，请稍后重试。",
   PHOTO_REDRAW_NOT_CONFIGURED: "照片转描暂未启用。",
   PHOTO_REDRAW_SOURCE_INVALID: "请使用已授权的原始 PNG、JPEG 或 WebP 照片，大小不超过 10 MB。",
   PHOTO_REDRAW_FAILED: "照片转描失败，请稍后重试。",

@@ -14,3 +14,4 @@
 @import "./styles/login.css" layer(components);
 @import "./styles/account.css" layer(components);
 @import "./styles/public-reel.css" layer(components);
+@import "./styles/restoration.css" layer(components);

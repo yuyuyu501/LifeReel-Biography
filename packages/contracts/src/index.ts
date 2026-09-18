@@ -66,6 +66,7 @@ export interface SourceAsset {
   consent_status?: string;
   derived_from_asset_id?: UUID | null;
   is_redraw?: boolean;
+  is_restoration?: boolean;
   captured_at: string;
   created_at: string;
 }
