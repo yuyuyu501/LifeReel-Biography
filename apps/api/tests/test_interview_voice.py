@@ -1,6 +1,5 @@
 from contextlib import asynccontextmanager
 from datetime import timedelta
-from io import BytesIO
 from uuid import UUID, uuid4
 
 import pytest
@@ -47,11 +46,8 @@ def receive_until(socket, kind):
     raise AssertionError(f"Missing {kind}")
 
 
-def test_call_stream_saves_speakers_audio_and_one_workflow(client, voice):
-    import wave
-
+def test_call_stream_saves_transcripts_and_workflow_without_audio(client, voice, tmp_path):
     from lifereel_api.modules.evidence.models import SourceAsset
-    from lifereel_api.modules.evidence.storage import private_storage
 
     session, call = voice
     with client.websocket_connect(f"/v1/interview-voice/{call['id']}/stream", headers=ORIGIN) as ws:
@@ -62,7 +58,7 @@ def test_call_stream_saves_speakers_audio_and_one_workflow(client, voice):
         ws.send_json({"type": "end"})
         result, events = receive_until(ws, "ended")
     assert result["call"]["status"] == "completed"
-    assert result["call"]["source_asset_id"]
+    assert result["call"]["source_asset_id"] is None
     assert result["call"]["workflow_id"]
     assert any(e["type"] == "transcript.done" and e["role"] == "user" for e in events)
     workspace = client.get(f"/v1/interviews/{session['id']}/workspace").json()
@@ -70,13 +66,8 @@ def test_call_stream_saves_speakers_audio_and_one_workflow(client, voice):
     assert answers == ["小时候我和母亲住在村里。"]
     assert workspace["latest_workflow"]["status"] == "queued"
     with SessionLocal() as db:
-        asset = db.get(SourceAsset, UUID(result["call"]["source_asset_id"]))
-        content = private_storage().get(asset.storage_key)
-        assert asset.byte_size == len(content)
-        assert asset.consent_scope == "private"
-        with wave.open(BytesIO(content)) as audio:
-            assert audio.getframerate() == 16000
-            assert audio.getnframes() == 320
+        assert db.scalar(select(func.count()).select_from(SourceAsset)) == 0
+    assert not list(tmp_path.rglob("*"))
     repeated = service.finish(get_settings().default_tenant_id, UUID(call["id"]))
     assert str(repeated["workflow_id"]) == result["call"]["workflow_id"]
     with SessionLocal() as db:

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import hashlib
 import json
 from datetime import UTC, timedelta
 from uuid import UUID
@@ -13,8 +12,6 @@ from lifereel_api.core.database import SessionLocal
 from lifereel_api.core.errors import ApiError, ErrorCode
 from lifereel_api.core.models import utcnow
 from lifereel_api.modules.auth.dependencies import AuthContext
-from lifereel_api.modules.evidence.models import SourceAsset
-from lifereel_api.modules.evidence.storage import private_storage
 from lifereel_api.modules.identity.models import Person, Tenant
 from lifereel_api.modules.interview import service as interviews
 from lifereel_api.modules.interview.chapter_prompts import get_chapter_prompt_profile
@@ -251,50 +248,6 @@ def save_usage(tenant_id: UUID, call_id: UUID, event: dict):
     with SessionLocal() as db:
         call = get_call(db, tenant_id, call_id)
         call.usage = [*call.usage[-399:], {"response_id": event.get("response_id"), "usage": usage}]
-        db.commit()
-
-
-def save_recording(tenant_id: UUID, call_id: UUID, content):
-    content.seek(0)
-    digest = hashlib.file_digest(content, "sha256").hexdigest()
-    size = content.tell()
-    content.seek(0)
-    key = f"{tenant_id}/interview-voice/{call_id}.wav"
-    private_storage().put_file(key, content)
-    with SessionLocal() as db:
-        call = get_call(db, tenant_id, call_id)
-        session = lock_session(db, tenant_id, call.session_id)
-        asset = db.scalar(
-            select(SourceAsset).where(
-                SourceAsset.tenant_id == tenant_id,
-                SourceAsset.subject_id == session.subject_id,
-                SourceAsset.sha256 == digest,
-            )
-        )
-        if asset is None:
-            asset = SourceAsset(
-                tenant_id=tenant_id,
-                subject_id=session.subject_id,
-                interview_session_id=session.id,
-                chapter_id=session.chapter_id,
-                kind="audio",
-                original_filename=f"语音采访-{utcnow():%Y%m%d-%H%M%S}.wav",
-                mime_type="audio/wav",
-                byte_size=size,
-                sha256=digest,
-                storage_key=key,
-                consent_scope="private",
-                analysis_status="done",
-                metadata_json={"purpose": "interview_voice", "call_id": str(call.id)},
-            )
-            db.add(asset)
-            db.flush()
-        call.source_asset_id = asset.id
-        for message in call.messages:
-            if message.get("round_id"):
-                round_ = db.get(InterviewRound, UUID(message["round_id"]))
-                if round_:
-                    round_.source_asset_id = asset.id
         db.commit()
 
 

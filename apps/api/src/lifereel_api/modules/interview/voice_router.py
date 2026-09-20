@@ -5,9 +5,7 @@ import base64
 import json
 import logging
 import time
-import wave
 from contextlib import suppress
-from tempfile import TemporaryFile
 from typing import Annotated
 from uuid import UUID, uuid4
 
@@ -86,11 +84,6 @@ async def stream(socket: WebSocket, call_id: UUID):
     disconnected = False
     tasks = []
     audio_bytes = 0
-    recording = TemporaryFile()
-    wav = wave.open(recording, "wb")
-    wav.setnchannels(1)
-    wav.setsampwidth(2)
-    wav.setframerate(16000)
     send_lock = asyncio.Lock()
 
     async def send(event: dict):
@@ -151,7 +144,6 @@ async def stream(socket: WebSocket, call_id: UUID):
                         audio_bytes += len(data)
                         if audio_bytes > (time.monotonic() - started + 2) * 32000:
                             raise ApiError(429, ErrorCode.VOICE_LIMIT_REACHED)
-                        wav.writeframesraw(data)
                         await upstream.send(
                             {
                                 "type": "input_audio_buffer.append",
@@ -296,16 +288,7 @@ async def stream(socket: WebSocket, call_id: UUID):
             task.cancel()
         if tasks:
             await asyncio.gather(*tasks, return_exceptions=True)
-        wav.close()
         if attached and context:
-            if audio_bytes:
-                try:
-                    await run_in_threadpool(
-                        service.save_recording, context.tenant_id, call_id, recording
-                    )
-                except Exception as exc:
-                    logger.error("Voice recording save failed: %s", type(exc).__name__)
-                    error_code = error_code or "VOICE_RECORDING_FAILED"
             try:
                 result = await run_in_threadpool(
                     service.finish, context.tenant_id, call_id, error_code
@@ -314,6 +297,5 @@ async def stream(socket: WebSocket, call_id: UUID):
             except Exception as exc:
                 logger.error("Voice finalization failed: %s", type(exc).__name__)
                 await send({"type": "error", "code": "VOICE_SAVE_PENDING"})
-        recording.close()
         with suppress(RuntimeError, OSError):
             await socket.close(code=1000 if attached else 1008)

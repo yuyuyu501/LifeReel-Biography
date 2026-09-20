@@ -44,12 +44,16 @@ Check the host/TLS proxy too. Allow API egress to `openspeech.bytedance.com:443`
 Final user transcripts are saved immediately as interview answers. AI replies
 are stored separately as questions and never inserted as user answers.
 Only final transcripts enter memory extraction; incomplete transcription is
-not treated as verified speech. The microphone recording is saved privately
-when the connection closes. A process crash can lose the unfinished original
-audio, but previously committed final transcripts survive.
+not treated as verified speech. Microphone audio is streamed to the realtime
+provider without creating a local recording or a saved media asset. Committed
+final transcripts survive process crashes. Existing recordings from earlier
+versions remain accessible; new calls leave `source_asset_id` empty.
 
 On hang-up/disconnection, one durable existing interview workflow processes
 the saved answers and updates the chapter when enough evidence is present.
+Memory/graph compilation and script updates currently run after the call,
+not after each spoken turn. They use the application workflow and do not
+require model function calling.
 It follows the existing script billing policy. Stale calls are recovered after
 a 60-second lease, checked every 15 seconds. No reconnect or audio replay occurs
 automatically. One simultaneous call is allowed per tenant; calls are bounded
@@ -63,7 +67,8 @@ Set an appropriate quota in the Speech console before enabling public access.
 
 Use isolated databases and the mock transport for routine tests. Verify origin,
 cookie/role/tenant checks, duplicate joins, transcript deduplication, interruption,
-mute, disconnect recovery, final-utterance flushing and one workflow per call.
+mute, disconnect recovery, final-utterance flushing, no audio persistence and
+one workflow per call.
 Check pending jobs and active `interview_voice_calls` before releasing. Preserve
 the database, environment and old runtime images. Apply migration
 `20260918_0030`, update API/web runtimes, and verify the TLS WebSocket path.

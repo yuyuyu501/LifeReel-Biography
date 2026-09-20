@@ -90,7 +90,7 @@ export function InterviewVoice({
           </>
         )}
         {!voice.active && voice.saved && (
-          <small role="status">通话已保存</small>
+          <small role="status">采访文字已保存</small>
         )}
         {!voice.active && voice.remoteActive && (
           <small role="status">语音采访正在进行</small>
