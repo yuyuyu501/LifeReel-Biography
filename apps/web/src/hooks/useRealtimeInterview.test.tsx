@@ -118,6 +118,11 @@ it("handles interruption, mute, transcript roles and graceful end", async () => 
     }),
   );
   expect(result.current.messages).toHaveLength(2);
+  act(() => socket.event({ type: "update.started" }));
+  expect(result.current.updateStatus).toContain("正在更新");
+  act(() => socket.event({ type: "update.done", memory_updated: true, script_updated: true }));
+  expect(result.current.updateStatus).toBe("知识和剧本已更新");
+  expect(result.current.active).toBe(true);
   act(() => result.current.end());
   expect(audio.stopMicrophone).toHaveBeenCalledOnce();
   expect(result.current.phase).toBe("ending");
@@ -127,10 +132,10 @@ it("handles interruption, mute, transcript roles and graceful end", async () => 
   act(() =>
     socket.event({
       type: "ended",
-      call: { ...call, messages: [{ role: "user", text: "已保存" }] },
+      call,
     }),
   );
-  expect(result.current.saved).toBe(true);
+  expect(result.current.messages).toEqual([]);
   expect(result.current.active).toBe(false);
   expect(audio.close).toHaveBeenCalledOnce();
 });
@@ -157,4 +162,21 @@ it("closes tracks and socket on navigation without reconnecting", async () => {
   expect(socket.close).toHaveBeenCalledOnce();
   expect(audio.close).toHaveBeenCalledOnce();
   expect(api.startInterviewVoice).toHaveBeenCalledOnce();
+});
+
+it("refreshes the workspace while still talking and clears temporary captions on disconnect", async () => {
+  const invalidate = vi.spyOn(QueryClient.prototype, "invalidateQueries");
+  const { result } = setup();
+  await act(async () => { await result.current.start(); });
+  const socket = Socket.current;
+  act(() => socket.event({ type: "ready" }));
+  act(() => socket.event({ type: "transcript.done", id: "one", role: "user", text: "临时字幕" }));
+  act(() => socket.event({ type: "update.done", memory_updated: true, script_updated: true }));
+  expect(result.current.active).toBe(true);
+  expect(invalidate).toHaveBeenCalledWith({ queryKey: ["interview-workspace", "session-1"] });
+  expect(invalidate).toHaveBeenCalledWith({ queryKey: ["memory-graph"] });
+  expect(invalidate).toHaveBeenCalledWith({ queryKey: ["scripts"] });
+  act(() => socket.onclose?.());
+  expect(result.current.messages).toEqual([]);
+  expect(result.current.draft).toBeNull();
 });

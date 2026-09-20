@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   api,
@@ -39,10 +39,10 @@ export function useRealtimeInterview(sessionId: string) {
   const [error, setError] = useState<string | null>(null);
   const [messages, setMessages] = useState<VoiceMessage[]>([]);
   const [draft, setDraft] = useState<VoiceMessage | null>(null);
-  const [saved, setSaved] = useState(false);
+  const [updateStatus, setUpdateStatus] = useState("");
   const runtime = useRef<VoiceRuntime | null>(null);
 
-  function refresh() {
+  const refresh = useCallback(() => {
     void queryClient.invalidateQueries({
       queryKey: ["interview-workspace", sessionId],
     });
@@ -50,7 +50,17 @@ export function useRealtimeInterview(sessionId: string) {
       queryKey: ["interview-voice", sessionId],
     });
     void queryClient.invalidateQueries({ queryKey: ["interviews"] });
-  }
+    for (const key of ["scripts", "memory-overview", "memory-graph", "memory-timeline",
+      "memory-conflicts", "persons", "wallet", "wallet-ledger"]) {
+      void queryClient.invalidateQueries({ queryKey: [key] });
+    }
+  }, [queryClient, sessionId]);
+
+  const remoteStatus = state.data?.call?.status;
+  const remoteCallId = state.data?.call?.id;
+  useEffect(() => {
+    if (remoteStatus && !activeStatuses.includes(remoteStatus)) refresh();
+  }, [remoteStatus, remoteCallId, refresh]);
 
   function cleanup() {
     const current = runtime.current;
@@ -66,6 +76,8 @@ export function useRealtimeInterview(sessionId: string) {
       current.socket.close();
     }
     runtime.current = null;
+    setMessages([]);
+    setDraft(null);
   }
 
   useEffect(
@@ -100,7 +112,7 @@ export function useRealtimeInterview(sessionId: string) {
     };
     runtime.current = current;
     setError(null);
-    setSaved(false);
+    setUpdateStatus("");
     setMessages([]);
     setDraft(null);
     setMuted(false);
@@ -110,7 +122,7 @@ export function useRealtimeInterview(sessionId: string) {
       await current.audio.open((frame) => {
         if (current.ready && current.socket?.readyState === WebSocket.OPEN) {
           if (current.socket.bufferedAmount > 64000) {
-            setError("网络传输过慢，通话已中断，已确认的转写已保留。");
+            setError("网络传输过慢，通话已中断。已完成的知识和剧本更新仍然保留。");
             cleanup();
             setPhase("idle");
             refresh();
@@ -183,12 +195,24 @@ export function useRealtimeInterview(sessionId: string) {
             setMessages((items) => [
               ...items.filter(
                 (item) => !(item.id === event.id && item.role === event.role),
-              ),
+              ).slice(-1),
               { id: event.id, role: event.role, text: event.text },
             ]);
           } else if (event.type === "transcript.failed") {
             setDraft(null);
             setError("刚才一段没有听清，请再说一遍。");
+          } else if (event.type === "update.started") {
+            setUpdateStatus("正在更新知识和剧本…");
+          } else if (event.type === "update.done") {
+            setUpdateStatus(event.script_updated ?
+              (event.memory_updated ? "知识和剧本已更新" : "剧本已更新") :
+              event.memory_updated ? "知识已更新，继续讲述可完善剧本" : "可以继续讲述");
+            refresh();
+          } else if (event.type === "update.failed") {
+            setUpdateStatus("本轮更新未完成");
+            setError("本轮知识或剧本更新失败，请稍后重述需要补充的内容。" +
+              errorMessage(new ApiError(event.code, 503)));
+            refresh();
           } else if (event.type === "limit") {
             setError(errorMessage(new ApiError("VOICE_LIMIT_REACHED", 409)));
             current.ready = false;
@@ -200,7 +224,6 @@ export function useRealtimeInterview(sessionId: string) {
           } else if (event.type === "ended") {
             const result = event.call as InterviewVoiceCall;
             current.ended = true;
-            setSaved(result.messages.some((item) => item.role === "user"));
             setDraft(null);
             setMessages([]);
             if (result.error_code)
@@ -222,7 +245,7 @@ export function useRealtimeInterview(sessionId: string) {
       socket.onclose = () => {
         if (current.canceled) return;
         if (!current.ended)
-          setError("语音连接已断开，已确认的转写已保留，正在整理。");
+          setError("语音连接已断开。已完成的知识和剧本更新仍然保留。");
         cleanup();
         setPhase("idle");
         setDraft(null);
@@ -261,7 +284,7 @@ export function useRealtimeInterview(sessionId: string) {
       current.socket.send(JSON.stringify({ type: "end" }));
       clearTimeout(current.timeout);
       current.timeout = setTimeout(() => {
-        setError("通话已结束，记录正在保存，请稍后刷新查看。");
+        setUpdateStatus("通话已结束，正在完成最后的知识和剧本更新…");
         cleanup();
         setPhase("idle");
         refresh();
@@ -298,7 +321,7 @@ export function useRealtimeInterview(sessionId: string) {
     error,
     messages,
     draft,
-    saved,
+    updateStatus,
     enabled: state.data?.enabled ?? false,
     remoteActive,
     maxSeconds: state.data?.max_seconds ?? 900,

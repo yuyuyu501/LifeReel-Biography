@@ -78,7 +78,9 @@ RELATIONSHIP_LABELS = {
 }
 
 
-def _extract_claim(text: str, source_kind: str) -> tuple[str, str, float, str, str | None]:
+def _extract_claim(
+    text: str, source_kind: str, *, question: str = "",
+) -> tuple[str, str, float, str, str | None]:
     settings = get_settings()
     model = settings.model_for("memory")
     if settings.llm_provider == "mock":
@@ -101,11 +103,13 @@ def _extract_claim(text: str, source_kind: str) -> tuple[str, str, float, str, s
     try:
         result = client.chat_json(
             "你是口述史证据整理员。只能根据输入原文整理一条可核对的记忆陈述，不得补充输入中"
-            "没有的事实。保留不确定语气。只输出 JSON："
+            "没有的事实。问题只用于理解简短回答，不能把采访者的猜测当成事实。"
+            "保留不确定语气。只输出 JSON："
             '{"claim_text":"...","claim_type":"recollection|event|relationship|place|time",'
             '"confidence":0.0}。',
             json.dumps(
-                {"source_kind": source_kind, "source_text": text[:20000]}, ensure_ascii=False
+                {"source_kind": source_kind, "source_text": text[:20000],
+                 "question_context": question[:2000]}, ensure_ascii=False
             ),
         )
     except json.JSONDecodeError as exc:

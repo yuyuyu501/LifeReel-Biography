@@ -79,9 +79,6 @@ class MockConnection:
         elif kind == "input_audio_buffer.append":
             if not self.audio_received:
                 await self.events.put({"type": ASR_PREFIX + "started", "item_id": "mock-user"})
-            self.audio_received = True
-        elif kind in {"input_audio_buffer.commit", "session.close"}:
-            if self.audio_received:
                 self.turn += 1
                 await self.events.put(
                     {
@@ -103,7 +100,8 @@ class MockConnection:
                         "delta": base64.b64encode(bytes(960)).decode(),
                     }
                 )
-                self.audio_received = False
+                self.audio_received = True
+        elif kind in {"input_audio_buffer.commit", "session.close"}:
             if kind == "session.close":
                 await self.events.put({"type": "session.closed"})
 

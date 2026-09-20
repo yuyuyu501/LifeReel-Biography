@@ -46,32 +46,55 @@ def receive_until(socket, kind):
     raise AssertionError(f"Missing {kind}")
 
 
-def test_call_stream_saves_transcripts_and_workflow_without_audio(client, voice, tmp_path):
+def test_call_updates_graph_and_script_before_hangup_without_saving_conversation(
+    client, voice, tmp_path, monkeypatch,
+):
     from lifereel_api.modules.evidence.models import SourceAsset
+    from lifereel_api.modules.jobs.models import Job
+    from lifereel_api.modules.memory import service as memory
+    from lifereel_api.modules.memory.models import MemoryClaim, MemoryEntity
 
+    monkeypatch.setattr(memory, "_extract_claim", lambda *_a, **_kw: (
+        "童年与母亲共同生活在村里。", "recollection", 0.9, "test-extractor", None,
+    ))
     session, call = voice
     with client.websocket_connect(f"/v1/interview-voice/{call['id']}/stream", headers=ORIGIN) as ws:
         receive_until(ws, "ready")
         ws.send_bytes(bytes(640))
+        update, events = receive_until(ws, "update.done")
+        assert update["memory_updated"] and update["script_updated"]
+        # The update is observable while the voice connection is still active.
+        workspace = client.get(f"/v1/interviews/{session['id']}/workspace").json()
+        assert workspace["script"]["scenes"]
+        assert not any(r["answer_text"] for r in workspace["session"]["rounds"])
+        assert workspace["latest_workflow"] is None
+        with SessionLocal() as db:
+            stored_call = db.get(InterviewVoiceCall, UUID(call["id"]))
+            assert stored_call.status == "active" and stored_call.messages == []
+            claim = db.scalar(select(MemoryClaim))
+            assert claim.claim_text == "童年与母亲共同生活在村里。"
+            assert claim.source_quote == "" and claim.source_round_id is None
+            assert db.scalar(select(func.count()).select_from(MemoryEntity)) > 0
+            assert db.scalar(select(func.count()).select_from(Job)) == 0
         ws.send_json({"type": "mute", "muted": True})
         ws.send_json({"type": "mute", "muted": False})
         ws.send_json({"type": "end"})
-        result, events = receive_until(ws, "ended")
+        result, _ = receive_until(ws, "ended")
     assert result["call"]["status"] == "completed"
+    assert result["call"]["messages"] == []
     assert result["call"]["source_asset_id"] is None
-    assert result["call"]["workflow_id"]
+    assert result["call"]["workflow_id"] is None
     assert any(e["type"] == "transcript.done" and e["role"] == "user" for e in events)
-    workspace = client.get(f"/v1/interviews/{session['id']}/workspace").json()
-    answers = [r["answer_text"] for r in workspace["session"]["rounds"] if r["answer_text"]]
-    assert answers == ["小时候我和母亲住在村里。"]
-    assert workspace["latest_workflow"]["status"] == "queued"
     with SessionLocal() as db:
         assert db.scalar(select(func.count()).select_from(SourceAsset)) == 0
+        assert db.scalar(select(func.count()).select_from(InterviewTurnWorkflow)) == 0
+        from lifereel_api.core.database import Base
+
+        for table in Base.metadata.sorted_tables:
+            assert "小时候我和母亲住在村里。" not in str(db.execute(select(table)).all())
     assert not list(tmp_path.rglob("*"))
     repeated = service.finish(get_settings().default_tenant_id, UUID(call["id"]))
-    assert str(repeated["workflow_id"]) == result["call"]["workflow_id"]
-    with SessionLocal() as db:
-        assert db.scalar(select(func.count()).select_from(InterviewTurnWorkflow)) == 1
+    assert repeated["workflow_id"] is None
 
 
 def test_busy_blocks_text_calls_and_manual_rounds(client, voice):
@@ -108,40 +131,50 @@ def test_provider_protocol_is_current_json_and_pcm16(monkeypatch):
     assert "never-send-to-browser" not in str(event)
 
 
-def test_final_transcripts_are_deduplicated_and_only_user_becomes_answer(client, voice):
-    session, call = voice
-    tenant = get_settings().default_tenant_id
-    call_id = UUID(call["id"])
-    instructions, greeting = service.attach(tenant, None, call_id)
-    assert "语音测试" in instructions
-    assert greeting == session["rounds"][0]["question_text"]
-    service.save_message(tenant, call_id, "a:1", "assistant", "您哪一年开始读书？")
-    service.save_message(tenant, call_id, "u:1", "user", "我在一九六五年读小学。")
-    service.save_message(tenant, call_id, "u:1", "user", "重复结果")
-    service.save_message(tenant, call_id, "a:2", "assistant", "我猜您在北京。")
-    result = service.finish(tenant, call_id)
-    assert len(result["messages"]) == 3
-    workspace = client.get(f"/v1/interviews/{session['id']}/workspace").json()
-    answers = [r["answer_text"] for r in workspace["session"]["rounds"] if r["answer_text"]]
-    assert answers == ["我在一九六五年读小学。"]
-    from lifereel_api.modules.orchestration.service import execute_turn
-
-    with SessionLocal() as db:
-        workflow = execute_turn(db, tenant, result["workflow_id"])
-        assert workflow.status == "completed"
+def test_only_user_utterances_update_memory_and_duplicates_are_ignored(client, voice, monkeypatch):
     from lifereel_api.modules.memory.models import MemoryClaim
 
+    session, call = voice
+    @asynccontextmanager
+    async def connection():
+        mock = provider.MockConnection()
+        original_send = mock.send
+
+        async def send(event):
+            await original_send(event)
+            if event["type"] == "input_audio_buffer.append":
+                await mock.events.put({
+                    "type": provider.ASR_PREFIX + "completed",
+                    "item_id": "user-1", "transcript": "重复原文不得再次执行。",
+                })
+                await mock.events.put({
+                    "type": "response.output_text.done", "response_id": "assistant-extra",
+                    "text": "我猜您在北京。",
+                })
+        mock.send = send
+        yield mock
+
+    monkeypatch.setattr(provider, "open_connection", connection)
+    with client.websocket_connect(f"/v1/interview-voice/{call['id']}/stream", headers=ORIGIN) as ws:
+        receive_until(ws, "ready")
+        ws.send_bytes(bytes(640))
+        receive_until(ws, "update.done")
+        ws.send_json({"type": "end"})
+        result, _ = receive_until(ws, "ended")
+    assert result["call"]["messages"] == []
     with SessionLocal() as db:
-        quotes = list(db.scalars(select(MemoryClaim.source_quote)))
-        assert quotes == ["我在一九六五年读小学。"]
+        claims = list(db.scalars(select(MemoryClaim)))
+        assert len(claims) == 1 and "北京" not in claims[0].claim_text
+        assert claims[0].source_quote == ""
+    workspace = client.get(f"/v1/interviews/{session['id']}/workspace").json()
+    assert not any(r["answer_text"] for r in workspace["session"]["rounds"])
 
 
-def test_stale_call_recovery_keeps_answers_and_does_not_duplicate(client, voice):
+def test_stale_call_recovery_does_not_create_transcript_or_deferred_work(client, voice):
     _, call = voice
     tenant = get_settings().default_tenant_id
     call_id = UUID(call["id"])
     service.attach(tenant, None, call_id)
-    service.save_message(tenant, call_id, "u:1", "user", "我小时候住在农村。")
     with SessionLocal() as db:
         db.get(InterviewVoiceCall, call_id).heartbeat_at = utcnow() - timedelta(seconds=90)
         db.commit()
@@ -150,8 +183,8 @@ def test_stale_call_recovery_keeps_answers_and_does_not_duplicate(client, voice)
     with SessionLocal() as db:
         result = db.get(InterviewVoiceCall, call_id)
         assert result.status == "interrupted"
-        assert result.workflow_id
-        assert db.scalar(select(func.count()).select_from(InterviewTurnWorkflow)) == 1
+        assert result.workflow_id is None and result.messages == []
+        assert db.scalar(select(func.count()).select_from(InterviewTurnWorkflow)) == 0
 
 
 def test_live_call_not_recovered_by_old_lease_snapshot(client, voice):

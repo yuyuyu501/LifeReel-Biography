@@ -23,6 +23,7 @@ from lifereel_api.modules.auth.dependencies import AuthContext, auth_context
 from lifereel_api.modules.interview import service as interviews
 from lifereel_api.modules.interview import voice_service as service
 from lifereel_api.modules.interview.models import InterviewVoiceCall
+from lifereel_api.modules.interview.voice_updates import LiveUpdates
 from lifereel_api.providers import realtime_voice as provider
 
 logger = logging.getLogger(__name__)
@@ -83,6 +84,7 @@ async def stream(socket: WebSocket, call_id: UUID):
     error_code = None
     disconnected = False
     tasks = []
+    updates = None
     audio_bytes = 0
     send_lock = asyncio.Lock()
 
@@ -93,7 +95,7 @@ async def stream(socket: WebSocket, call_id: UUID):
         try:
             async with send_lock:
                 await asyncio.wait_for(socket.send_json(jsonable_encoder(event)), timeout=5)
-        except (WebSocketDisconnect, RuntimeError, OSError):
+        except (WebSocketDisconnect, RuntimeError, OSError, TimeoutError):
             disconnected = True
 
     try:
@@ -118,6 +120,7 @@ async def stream(socket: WebSocket, call_id: UUID):
                     if event.get("type") == "error":
                         raise ApiError(502, ErrorCode.VOICE_CONNECTION_FAILED)
             await send({"type": "ready", "call_id": str(call_id)})
+            updates = LiveUpdates(context.tenant_id, call_id, send)
             await upstream.send(
                 {"type": "speech_text_buffer.commit", "speech_id": str(uuid4()), "text": greeting}
             )
@@ -184,6 +187,7 @@ async def stream(socket: WebSocket, call_id: UUID):
                         raise ApiError(400, ErrorCode.VOICE_PROTOCOL_INVALID)
 
             async def provider_events():
+                question = greeting
                 while True:
                     event = await upstream.receive()
                     kind = event.get("type", "")
@@ -206,19 +210,15 @@ async def stream(socket: WebSocket, call_id: UUID):
                     elif kind in {provider.ASR_PREFIX + "completed", "response.output_text.done"}:
                         role = "user" if kind.startswith(provider.ASR_PREFIX) else "assistant"
                         item_id = event.get("item_id") or event.get("response_id")
-                        if not isinstance(item_id, str) or not item_id:
+                        if not isinstance(item_id, str) or not item_id or len(item_id) > 200:
                             raise ApiError(502, ErrorCode.VOICE_PROTOCOL_INVALID)
                         text = event.get("transcript") or event.get("text") or ""
-                        if not isinstance(text, str):
+                        if not isinstance(text, str) or len(text) > 12000:
                             raise ApiError(502, ErrorCode.VOICE_PROTOCOL_INVALID)
-                        await run_in_threadpool(
-                            service.save_message,
-                            context.tenant_id,
-                            call_id,
-                            f"{role}:{item_id}",
-                            role,
-                            text,
-                        )
+                        if role == "user":
+                            updates.submit(item_id, text, question)
+                        else:
+                            question = text[:2000]
                         await send(
                             {"type": "transcript.done", "role": role, "id": item_id, "text": text}
                         )
@@ -290,6 +290,11 @@ async def stream(socket: WebSocket, call_id: UUID):
             await asyncio.gather(*tasks, return_exceptions=True)
         if attached and context:
             try:
+                if updates:
+                    await run_in_threadpool(service.closing, context.tenant_id, call_id)
+                    await updates.close()
+                    if updates.failed:
+                        error_code = error_code or "VOICE_UPDATE_FAILED"
                 result = await run_in_threadpool(
                     service.finish, context.tenant_id, call_id, error_code
                 )

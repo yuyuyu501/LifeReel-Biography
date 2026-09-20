@@ -24,7 +24,7 @@ export function InterviewVoice({
     voice.phase === "connecting"
       ? "正在连接"
       : voice.phase === "ending"
-        ? "正在保存"
+        ? "正在结束"
         : voice.muted
           ? "麦克风已静音"
           : voice.phase === "speaking"
@@ -89,8 +89,8 @@ export function InterviewVoice({
             </div>
           </>
         )}
-        {!voice.active && voice.saved && (
-          <small role="status">采访文字已保存</small>
+        {voice.updateStatus && (
+          <small role="status">{voice.updateStatus}</small>
         )}
         {!voice.active && voice.remoteActive && (
           <small role="status">语音采访正在进行</small>

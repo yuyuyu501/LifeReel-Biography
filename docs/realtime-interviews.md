@@ -41,20 +41,33 @@ Check the host/TLS proxy too. Allow API egress to `openspeech.bytedance.com:443`
 
 ## Persistence And Costs
 
-Final user transcripts are saved immediately as interview answers. AI replies
-are stored separately as questions and never inserted as user answers.
-Only final transcripts enter memory extraction; incomplete transcription is
-not treated as verified speech. Microphone audio is streamed to the realtime
-provider without creating a local recording or a saved media asset. Committed
-final transcripts survive process crashes. Existing recordings from earlier
-versions remain accessible; new calls leave `source_asset_id` empty.
+Each completed user utterance immediately enters a bounded, connection-local
+memory queue. A serial background consumer extracts derived knowledge, invokes
+the existing graph/biography compiler, and updates the chapter when enough
+evidence is present. Speech input and replies continue independently. Duplicate
+ASR event IDs are ignored; AI replies are never compiled as user facts. The most
+recent question provides transient context for brief answers. Rewrite requests
+use existing knowledge without becoming biographical claims. No model function
+calling is required. WebSocket progress events refresh the workspace, graph and
+script during the call.
 
-On hang-up/disconnection, one durable existing interview workflow processes
-the saved answers and updates the chapter when enough evidence is present.
-Memory/graph compilation and script updates currently run after the call,
-not after each spoken turn. They use the application workflow and do not
-require model function calling.
-It follows the existing script billing policy. Stale calls are recovered after
+Neither microphone recordings nor transcripts are saved as files or database
+conversation history. New calls do not create interview rounds, deferred jobs,
+or turn workflows. Their `messages` stays empty, and `source_asset_id`,
+`last_round_id` and `workflow_id` stay null. Derived claims retain their person,
+chapter and interview-session association, but have no raw `source_quote` or
+fabricated source-round/asset link. Existing history from earlier versions is
+not deleted by this change. Browser captions hold at most two recent turns,
+are never written to browser storage, and are cleared on disconnect.
+
+On hang-up/disconnection the consumer finishes utterances already received;
+it does not defer initial processing until hang-up. A heartbeat keeps the call
+in `closing` until pending updates finish. Failed updates report a sanitized
+error without automatic paid resubmission; later utterances can still proceed.
+An API process crash loses pending in-memory utterances; only completed derived
+knowledge and scripts survive. Stale recovery closes call metadata without
+reconstructing transcripts or scheduling replay. It follows the existing
+memory/token and successful-script-update billing policy. Stale calls expire after
 a 60-second lease, checked every 15 seconds. No reconnect or audio replay occurs
 automatically. One simultaneous call is allowed per tenant; calls are bounded
 by the configured duration and input rate.
@@ -67,8 +80,9 @@ Set an appropriate quota in the Speech console before enabling public access.
 
 Use isolated databases and the mock transport for routine tests. Verify origin,
 cookie/role/tenant checks, duplicate joins, transcript deduplication, interruption,
-mute, disconnect recovery, final-utterance flushing, no audio persistence and
-one workflow per call.
+mute, disconnect recovery, final-utterance flushing, updates before hang-up,
+responsive audio during slow updates, ordered processing, failure handling,
+and absence of persisted audio/transcripts/workflows.
 Check pending jobs and active `interview_voice_calls` before releasing. Preserve
 the database, environment and old runtime images. Apply migration
 `20260918_0030`, update API/web runtimes, and verify the TLS WebSocket path.
