@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class PersonCreate(BaseModel):
@@ -28,6 +28,13 @@ class PersonUpdate(BaseModel):
     biography_note: str | None = None
     is_minor: bool | None = None
     guardian_name: str | None = Field(default=None, max_length=120)
+
+    @field_validator("display_name", "is_subject", "is_minor")
+    @classmethod
+    def reject_null_for_required_fields(cls, value):
+        if value is None:
+            raise ValueError("field cannot be null")
+        return value
 
 
 class PersonRead(BaseModel):

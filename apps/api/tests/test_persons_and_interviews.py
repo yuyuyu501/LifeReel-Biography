@@ -6,6 +6,50 @@ from lifereel_api.core.database import SessionLocal
 from lifereel_api.modules.interview.models import InterviewSession
 
 
+@pytest.mark.parametrize("field", ["display_name", "is_subject", "is_minor"])
+def test_person_update_rejects_explicit_null_for_required_fields(client, field):
+    person = client.post("/v1/persons", json={"display_name": "边界测试人物"}).json()
+
+    response = client.patch(f"/v1/persons/{person['id']}", json={field: None})
+
+    assert response.status_code == 422
+    unchanged = client.get(f"/v1/persons/{person['id']}").json()
+    assert unchanged["display_name"] == "边界测试人物"
+    assert unchanged["is_subject"] is True
+    assert unchanged["is_minor"] is False
+
+
+def test_person_update_distinguishes_omitted_null_and_false_values(client):
+    person = client.post(
+        "/v1/persons", json={
+            "display_name": "可编辑人物", "preferred_name": "小名",
+            "birthplace": "泉州", "is_subject": True, "is_minor": True,
+        }
+    ).json()
+
+    empty = client.patch(f"/v1/persons/{person['id']}", json={})
+    assert empty.status_code == 200
+    for field in ("display_name", "preferred_name", "birthplace", "is_subject", "is_minor"):
+        assert empty.json()[field] == person[field]
+
+    omitted = client.patch(f"/v1/persons/{person['id']}", json={"birthplace": None})
+    assert omitted.status_code == 200
+    assert omitted.json()["display_name"] == "可编辑人物"
+    assert omitted.json()["preferred_name"] == "小名"
+    assert omitted.json()["birthplace"] is None
+    assert omitted.json()["is_subject"] is True
+    assert omitted.json()["is_minor"] is True
+
+    updated = client.patch(
+        f"/v1/persons/{person['id']}",
+        json={"display_name": "新名字", "is_subject": False, "is_minor": False},
+    )
+    assert updated.status_code == 200
+    assert updated.json()["display_name"] == "新名字"
+    assert updated.json()["is_subject"] is False
+    assert updated.json()["is_minor"] is False
+
+
 def test_person_interview_flow(client):
     created = client.post(
         "/v1/persons",

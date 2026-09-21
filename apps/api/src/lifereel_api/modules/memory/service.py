@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 
 from lifereel_api.core.config import get_settings
 from lifereel_api.core.errors import ApiError, ErrorCode
+from lifereel_api.core.processing_limits import require_memory_input
 from lifereel_api.modules.billing.usage import track_usage
 from lifereel_api.modules.evidence.models import EvidenceObservation, SourceAsset
 from lifereel_api.modules.identity.models import Person
@@ -82,6 +83,8 @@ def _extract_claim(
     text: str, source_kind: str, *, question: str = "",
 ) -> tuple[str, str, float, str, str | None]:
     settings = get_settings()
+    # Preserve full-source semantics: a truncated prefix is not a completed analysis.
+    require_memory_input(text)
     model = settings.model_for("memory")
     if settings.llm_provider == "mock":
         return text, "recollection", 1.0, "rule", None
@@ -108,7 +111,7 @@ def _extract_claim(
             '{"claim_text":"...","claim_type":"recollection|event|relationship|place|time",'
             '"confidence":0.0}。',
             json.dumps(
-                {"source_kind": source_kind, "source_text": text[:20000],
+                {"source_kind": source_kind, "source_text": text,
                  "question_context": question[:2000]}, ensure_ascii=False
             ),
         )

@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 
 from lifereel_api.core.config import get_settings
 from lifereel_api.core.errors import ApiError, ErrorCode
+from lifereel_api.core.processing_limits import get_processing_limits, require_budget
 from lifereel_api.modules.billing import service as billing
 from lifereel_api.modules.billing.models import Charge
 from lifereel_api.modules.billing.usage import track_usage
@@ -27,10 +28,76 @@ from lifereel_api.modules.script.schemas import (
     ScriptDialogue,
     ScriptGenerateRequest,
     ScriptSceneUpdate,
+    ScriptShotUpdate,
 )
 from lifereel_api.providers.openai_compatible import OpenAICompatibleClient
 
 logger = logging.getLogger(__name__)
+
+
+def _script_input(request: dict) -> str:
+    """Bound the complete serialized request, including the current user-edited script."""
+    limit = get_processing_limits().script_input_max_chars
+
+    def check_strings(value):
+        if isinstance(value, str):
+            # JSONEncoder emits each string as one piece. Check before escaping
+            # so a legacy 50 MiB field never needs a second full-size allocation.
+            require_budget(
+                len(value), limit, stage="script_input", code=ErrorCode.SCRIPT_INPUT_TOO_LARGE,
+            )
+        elif isinstance(value, dict):
+            for key, item in value.items():
+                check_strings(key)
+                check_strings(item)
+        elif isinstance(value, (list, tuple)):
+            for item in value:
+                check_strings(item)
+
+    check_strings(request)
+    pieces = []
+    size = 0
+    for piece in json.JSONEncoder(ensure_ascii=False).iterencode(request):
+        size += len(piece)
+        require_budget(size, limit, stage="script_input", code=ErrorCode.SCRIPT_INPUT_TOO_LARGE)
+        pieces.append(piece)
+    return "".join(pieces)
+
+
+def _validate_generated_scene(scene: dict, allowed_ids: set[str]) -> dict:
+    """Validate both providers against the editable/output contract before any DB mutation."""
+    try:
+        edited = ScriptSceneUpdate.model_validate({
+            "expected_version": 1,
+            **{key: scene[key] for key in (
+                "heading", "plot", "dialogues", "visual_prompt", "duration_seconds",
+            )},
+            "shots": [{key: shot[key] for key in (
+                "shot_type", "visual_prompt", "duration_seconds",
+            )} for shot in scene["shots"]],
+        })
+        if not edited.plot or not edited.shots or not 15 <= edited.duration_seconds <= 30:
+            raise ValueError("invalid generated chapter")
+        if sum(shot.duration_seconds for shot in edited.shots) != edited.duration_seconds:
+            raise ValueError("shot durations do not match chapter")
+        if any(not line.text.strip() or not line.speaker.strip() for line in edited.dialogues):
+            raise ValueError("empty spoken line")
+        for item in [scene, *scene["shots"]]:
+            references = item["source_claim_ids"]
+            if (not isinstance(references, list) or not references
+                    or any(not isinstance(ref, str) or ref not in allowed_ids
+                           for ref in references)):
+                raise ValueError("invalid evidence references")
+        canonical = "\n".join(line.text for line in edited.dialogues)
+        if scene["narration"] != canonical:
+            raise ValueError("narration does not match dialogues")
+        normalized = edited.model_dump(exclude={"expected_version", "shots"})
+        return {**scene, **normalized, "narration": canonical, "shots": [
+            {**original, **shot.model_dump()}
+            for original, shot in zip(scene["shots"], edited.shots, strict=True)
+        ]}
+    except (KeyError, TypeError, ValueError) as exc:
+        raise ApiError(502, ErrorCode.SCRIPT_LLM_RESPONSE_INVALID) from exc
 
 
 def _fit_shot_durations(shots: list[dict], scene_duration: int) -> list[dict]:
@@ -57,14 +124,23 @@ def _rule_scenes(
 ) -> list[dict]:
     source_ids = [str(claim.id) for claim in claims]
     chapter_title = profile["title"] if profile else "岁月片段"
-    memories = "\n\n".join(claim.claim_text.rstrip("。") + "。" for claim in claims)
     introduction = f"我是{subject_name}。" if chapter_title == "我是谁" else ""
+    # Mock generation cannot summarize faithfully. Reject an oversized verbatim
+    # draft instead of truncating evidence or persisting an unreadable workspace.
+    spoken_size = len(introduction) + max(0, len(claims) - 1) * 2
+    for claim in claims:
+        spoken_size += len(claim.claim_text.rstrip("。")) + 1
+        require_budget(
+            spoken_size, 2000, stage="script_mock_output",
+            code=ErrorCode.SCRIPT_MOCK_OUTPUT_TOO_LARGE,
+        )
+    memories = "\n\n".join(claim.claim_text.rstrip("。") + "。" for claim in claims)
     visual_prompt = (
         f"围绕“{chapter_title}”的纪实电影画面，符合人物年代与地域；"
         "只呈现来源记忆中已有的细节，不得擅自生成未经授权的真实人脸。"
     )
     duration = max(15, min(30, (len(introduction + memories) + 3) // 4))
-    return [
+    scenes = [
         {
             "heading": chapter_title,
             "plot": memories,
@@ -90,6 +166,7 @@ def _rule_scenes(
             ],
         }
     ]
+    return [_validate_generated_scene(scene, set(source_ids)) for scene in scenes]
 
 
 def _llm_scenes(
@@ -133,6 +210,7 @@ def _llm_scenes(
         "update_brief": update_brief,
         "duration_range_seconds": {"min": 15, "max": 30},
     }
+    serialized_request = _script_input(request)
     try:
         result = client.chat_json(
             f"你是中文口述史短视频编剧。当前只能写“{profile['title']}”这一章，"
@@ -165,7 +243,7 @@ def _llm_scenes(
             '"duration_seconds":22,"source_claim_ids":["..."],'
             '"shots":[{"shot_type":"wide|medium|closeup|detail|archive",'
             '"visual_prompt":"...","duration_seconds":6,"source_claim_ids":["..."]}]}}。',
-            json.dumps(request, ensure_ascii=False),
+            serialized_request,
         )
     except json.JSONDecodeError as exc:
         raise ApiError(
@@ -175,7 +253,8 @@ def _llm_scenes(
     except ApiError:
         raise
     except Exception as exc:
-        logger.exception("Script generation provider request failed", exc_info=exc)
+        logger.warning("Script generation provider request failed: error_type=%s",
+                       type(exc).__name__)
         raise ApiError(
             status.HTTP_502_BAD_GATEWAY,
             ErrorCode.SCRIPT_LLM_REQUEST_FAILED,
@@ -185,51 +264,56 @@ def _llm_scenes(
     raw_chapter = result.get("chapter") if isinstance(result, dict) else None
     if not isinstance(raw_chapter, dict):
         logger.warning(
-            "Invalid script model response: chapter_type=%s response_keys=%s",
+            "Invalid script model response: chapter_type=%s response_key_count=%s",
             type(raw_chapter).__name__,
-            sorted(result.keys()) if isinstance(result, dict) else [],
+            len(result) if isinstance(result, dict) else 0,
         )
         raise ApiError(status.HTTP_502_BAD_GATEWAY, ErrorCode.SCRIPT_LLM_RESPONSE_INVALID)
     try:
-        raw_source_ids = [str(value) for value in raw_chapter["source_claim_ids"]]
-        source_ids = list(
-            dict.fromkeys(claim_id for claim_id in raw_source_ids if claim_id in allowed_ids)
-        )
+        raw_source_ids = raw_chapter["source_claim_ids"]
+        if (not isinstance(raw_source_ids, list) or not raw_source_ids
+                or any(not isinstance(value, str) for value in raw_source_ids)):
+            raise ValueError("chapter has no valid evidence references")
+        source_ids = list(dict.fromkeys(value for value in raw_source_ids if value in allowed_ids))
         if not source_ids:
             raise ValueError("chapter has no valid evidence references")
         duration = raw_chapter["duration_seconds"]
         if type(duration) is not int or not 15 <= duration <= 30:
             raise ValueError("chapter duration must be an integer between 15 and 30")
         shots = []
-        for raw_shot in (raw_chapter.get("shots") or [])[:12]:
+        raw_shots = raw_chapter.get("shots")
+        if not isinstance(raw_shots, list) or not 1 <= len(raw_shots) <= min(12, duration // 2):
+            raise ValueError("invalid chapter shots")
+        for raw_shot in raw_shots:
             if not isinstance(raw_shot, dict):
                 raise ValueError("shot is not an object")
-            raw_shot_source_ids = [str(value) for value in raw_shot["source_claim_ids"]]
-            shot_source_ids = list(
-                dict.fromkeys(
-                    claim_id for claim_id in raw_shot_source_ids if claim_id in allowed_ids
-                )
-            )
-            visual_prompt = str(raw_shot["visual_prompt"]).strip()
-            if not shot_source_ids or not visual_prompt:
+            raw_shot_source_ids = raw_shot["source_claim_ids"]
+            if (not isinstance(raw_shot_source_ids, list) or not raw_shot_source_ids
+                    or any(not isinstance(value, str) for value in raw_shot_source_ids)):
                 raise ValueError("shot has no valid evidence or visual prompt")
+            shot_source_ids = list(dict.fromkeys(
+                value for value in raw_shot_source_ids if value in allowed_ids
+            ))
+            if not shot_source_ids:
+                raise ValueError("shot has no valid evidence or visual prompt")
+            validated_shot = ScriptShotUpdate.model_validate({
+                "shot_type": raw_shot.get("shot_type", "medium"),
+                "visual_prompt": raw_shot["visual_prompt"],
+                "duration_seconds": raw_shot.get("duration_seconds", 6),
+            })
             source_ids.extend(
                 claim_id for claim_id in shot_source_ids if claim_id not in source_ids
             )
             shots.append(
                 {
-                    "shot_type": str(raw_shot.get("shot_type") or "medium")[:48],
-                    "visual_prompt": visual_prompt,
-                    "duration_seconds": max(
-                        2, min(duration, int(raw_shot.get("duration_seconds", 6)))
-                    ),
+                    **validated_shot.model_dump(),
                     "source_claim_ids": shot_source_ids,
                 }
             )
         if not shots:
             raise ValueError("chapter has no generated shots")
         shots = _fit_shot_durations(shots, duration)
-        heading = str(raw_chapter.get("heading") or profile["title"]).strip()[:180]
+        heading = raw_chapter.get("heading", profile["title"])
         plot = raw_chapter["plot"]
         if not isinstance(plot, str) or not plot.strip() or len(plot) > 4000:
             raise ValueError("invalid chapter plot")
@@ -240,7 +324,7 @@ def _llm_scenes(
         if any(not line["text"].strip() or not line["speaker"].strip() for line in dialogues):
             raise ValueError("empty spoken line")
         narration = "\n".join(line["text"] for line in dialogues)
-        visual_prompt = str(raw_chapter["visual_prompt"]).strip()
+        visual_prompt = raw_chapter["visual_prompt"]
         if not heading or not narration or not visual_prompt:
             raise ValueError("chapter text is empty")
         scene = {
@@ -253,17 +337,21 @@ def _llm_scenes(
             "source_claim_ids": source_ids,
             "shots": shots,
         }
+        scene = _validate_generated_scene(scene, allowed_ids)
+        title = result.get("title")
+        if title is not None and (not isinstance(title, str) or len(title) > 180):
+            raise ValueError("invalid project title")
     except (KeyError, TypeError, ValueError, StopIteration) as exc:
         logger.warning(
-            "Invalid script model response: reason=%s allowed_claim_count=%s",
-            exc,
+            "Invalid script model response: error_type=%s allowed_claim_count=%s",
+            type(exc).__name__,
             len(allowed_ids),
         )
         raise ApiError(
             status.HTTP_502_BAD_GATEWAY,
             ErrorCode.SCRIPT_LLM_RESPONSE_INVALID,
         ) from exc
-    return str(result.get("title") or "").strip()[:180] or None, [scene], model
+    return (title or "").strip() or None, [scene], model
 
 
 def list_projects(db: Session, tenant_id: UUID) -> list[ScriptProject]:
@@ -465,7 +553,7 @@ def _generate_draft(
     selected_claims: list[MemoryClaim] = []
     for chapter_id, chapter_claims in grouped_claims.items():
         # A chapter is regenerated from its full accepted memory set on every turn.
-        selected = chapter_claims[:40]
+        selected = chapter_claims
         selected_claims.extend(selected)
         chapter = db.get(Chapter, chapter_id) if chapter_id else None
         profile = get_chapter_prompt_profile(chapter)
@@ -493,6 +581,13 @@ def _generate_draft(
         chapter_payload = payload.model_copy(
             update={"chapter_id": chapter_id, "mode": "single_chapter"}
         )
+        # Applies to mock as well, including old claims created before document
+        # extraction had a budget. Never silently drop all claims after number 40.
+        _script_input({
+            "claims": [{"claim_id": str(claim.id), "claim_text": claim.claim_text,
+                        "source_quote": claim.source_quote} for claim in selected],
+            "update_brief": chapter_brief,
+        })
         if settings.llm_provider == "openai-compatible":
             title, generated, generation_model = _llm_scenes(
                 subject,
@@ -510,8 +605,11 @@ def _generate_draft(
                 status.HTTP_503_SERVICE_UNAVAILABLE,
                 ErrorCode.SCRIPT_LLM_CONFIGURATION_INCOMPLETE,
             )
+        if not isinstance(generated, list) or len(generated) != 1:
+            raise ApiError(502, ErrorCode.SCRIPT_LLM_RESPONSE_INVALID)
         for scene_payload in generated:
-            scene_payloads.append({**scene_payload, "chapter_id": chapter_id})
+            validated = _validate_generated_scene(scene_payload, {str(c.id) for c in selected})
+            scene_payloads.append({**validated, "chapter_id": chapter_id})
     project = db.scalar(
         select(ScriptProject).where(
             ScriptProject.tenant_id == tenant_id,

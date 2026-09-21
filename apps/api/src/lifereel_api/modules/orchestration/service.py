@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 
 from lifereel_api.core.config import get_settings
 from lifereel_api.core.errors import ApiError, ErrorCode
+from lifereel_api.core.processing_limits import require_memory_input
 from lifereel_api.modules.billing import service as billing
 from lifereel_api.modules.billing.usage import track_usage
 from lifereel_api.modules.evidence import service as evidence_service
@@ -31,7 +32,12 @@ from lifereel_api.modules.memory.models import MemoryClaim
 from lifereel_api.modules.memory.schemas import MemoryCompileRequest
 from lifereel_api.modules.script import service as script_service
 from lifereel_api.modules.script.models import ScriptProject
-from lifereel_api.modules.script.schemas import ScriptGenerateRequest, ScriptProjectRead
+from lifereel_api.modules.script.schemas import (
+    ScriptGenerateRequest,
+    ScriptProjectRead,
+    ScriptSceneRead,
+    ScriptShotRead,
+)
 from lifereel_api.providers.openai_compatible import OpenAICompatibleClient
 
 
@@ -79,7 +85,10 @@ def _script_payload(db: Session, tenant_id: UUID, subject_id: UUID) -> dict | No
     project, scenes, shots = script_service.get_project(db, tenant_id, project.id)
     return (
         ScriptProjectRead.model_validate(project)
-        .model_copy(update={"scenes": scenes, "shots": shots})
+        .model_copy(update={
+            "scenes": [ScriptSceneRead.model_validate(scene) for scene in scenes],
+            "shots": [ScriptShotRead.model_validate(shot) for shot in shots],
+        })
         .model_dump(mode="json")
     )
 
@@ -143,6 +152,8 @@ def create_turn(
         if existing.session_id != session_id:
             raise ApiError(status.HTTP_409_CONFLICT, ErrorCode.INTERVIEW_TURN_STATE_INVALID)
         return existing
+    # Internal callers also pass through this gate before any round/job writes.
+    require_memory_input(payload.answer_text or "")
     from lifereel_api.modules.interview.voice_service import assert_no_call
 
     assert_no_call(db, tenant_id, session_id)
@@ -242,9 +253,11 @@ def create_turn(
         idempotency_key=payload.idempotency_key,
         status="queued",
         script_brief={"requested_action": payload.action},
-        # Continue unfinished material analysis together with the new message.
+        # Continue transiently failed analysis. Rejected inputs require a new
+        # selection; keep originals stored without reattaching them automatically.
         asset_ids=list(dict.fromkeys([
-            *(latest.asset_ids if latest and latest.status == "failed" else []),
+            *(latest.asset_ids if latest and latest.status == "failed"
+              and not memory_recovery.input_rejected(latest) else []),
             *(str(item.id) for item in assets),
         ])),
     )
@@ -540,6 +553,9 @@ def _execute_turn(
             db.commit()
             job_service.fail_job(db, tenant_id, workflow.job_id, workflow.error_code, None)
             return workflow
+    # Check before clearing error_code or incrementing attempts, including direct
+    # worker delivery that did not pass through the public retry endpoint.
+    memory_recovery.require_retryable_input(workflow)
     if workflow.status == "failed" and memory_recovery.retry_after(workflow):
         raise ApiError(409, ErrorCode.MEMORY_RETRY_COOLDOWN)
 
@@ -594,6 +610,10 @@ def _execute_turn(
                 .limit(1)
             )
             if spoken_observation is not None:
+                require_memory_input(
+                    spoken_observation.text,
+                    source_asset_id=str(spoken_observation.source_asset_id),
+                )
                 source_round.answer_text = spoken_observation.text
                 source_round.source_asset_id = spoken_observation.source_asset_id
                 source_round.answered_at = datetime.now(UTC)

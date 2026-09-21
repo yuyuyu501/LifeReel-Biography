@@ -256,6 +256,9 @@ export function PhotoRestorationPage() {
                       : "开始修复"}
           </Button>
         </div>
+        <p className="notice">
+          原图会保留。修复可能重建细节，上色是对历史颜色的推测，请对比确认后保存。
+        </p>
         {run?.error_code && (
           <p className="notice error" role="alert">
             {ERROR_MESSAGES[run.error_code] ?? "照片修复失败，请稍后重试。"}

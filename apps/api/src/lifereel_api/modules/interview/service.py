@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session, selectinload
 
 from lifereel_api.core.config import get_settings
 from lifereel_api.core.errors import ApiError, ErrorCode
+from lifereel_api.core.processing_limits import require_memory_input
 from lifereel_api.modules.billing.usage import track_usage
 from lifereel_api.modules.evidence.models import SourceAsset
 from lifereel_api.modules.identity.models import Person
@@ -340,6 +341,7 @@ def answer_round(
         )
         if asset is None:
             raise ApiError(status.HTTP_404_NOT_FOUND, ErrorCode.EVIDENCE_ASSET_NOT_FOUND)
+    require_memory_input(answer_text)
     round_.answer_text = answer_text
     round_.source_asset_id = source_asset_id
     round_.answered_at = datetime.now(UTC)

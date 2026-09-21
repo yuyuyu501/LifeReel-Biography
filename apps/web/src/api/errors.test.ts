@@ -2,6 +2,15 @@ import { describe, expect, it } from "vitest";
 import { ApiError, apiErrorFromResponse, isApiError, workflowErrorContext } from "./errors";
 
 describe("API 错误码本地化", () => {
+  it.each([
+    "EVIDENCE_TEXT_TOO_LARGE", "MEMORY_INPUT_TOO_LARGE", "SCRIPT_INPUT_TOO_LARGE",
+    "SCRIPT_MOCK_OUTPUT_TOO_LARGE",
+  ])("处理预算错误 %s 明确提示保留资料和调整输入", (code) => {
+    const message = new ApiError(code, 413).message;
+    expect(message).toContain("保留");
+    expect(message).not.toContain("稍后重试");
+    expect(message).not.toContain("操作失败");
+  });
   it.each([504, 524])("区分服务商网关超时 %s，且不显示响应文本", (status) => {
     const error = apiErrorFromResponse(502, { error: {
       code: "INTERVIEW_LLM_REQUEST_FAILED",

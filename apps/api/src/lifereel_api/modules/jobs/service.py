@@ -170,6 +170,7 @@ def _retry_job(
                 raise ApiError(status.HTTP_409_CONFLICT, ErrorCode.JOB_RETRY_NOT_ALLOWED)
             from lifereel_api.modules.memory import recovery
 
+            recovery.require_retryable_input(workflow)
             if not recovery.allowed(workflow):
                 raise ApiError(409, ErrorCode.MEMORY_RETRY_LIMIT_REACHED)
             if recovery.retry_after(workflow):

@@ -9,12 +9,14 @@ from sqlalchemy.orm import Session
 from lifereel_api.core.database import get_db
 from lifereel_api.core.tenant import get_tenant_id
 from lifereel_api.modules.evidence.schemas import SourceAssetRead
-from lifereel_api.modules.script import references, service
+from lifereel_api.modules.script import queries, references, service
 from lifereel_api.modules.script.schemas import (
     ScriptGenerateRequest,
     ScriptProjectRead,
     ScriptReferencesUpdate,
+    ScriptSceneRead,
     ScriptSceneUpdate,
+    ScriptShotRead,
 )
 
 router = APIRouter(prefix="/scripts", tags=["scripts"])
@@ -24,13 +26,16 @@ Tenant = Annotated[UUID, Depends(get_tenant_id)]
 
 def to_read(project, scenes, shots) -> ScriptProjectRead:
     payload = ScriptProjectRead.model_validate(project)
-    return payload.model_copy(update={"scenes": scenes, "shots": shots})
+    return payload.model_copy(update={
+        "scenes": [ScriptSceneRead.model_validate(scene) for scene in scenes],
+        "shots": [ScriptShotRead.model_validate(shot) for shot in shots],
+    })
 
 
 @router.get("", response_model=list[ScriptProjectRead])
 def scripts(db: Db, tenant_id: Tenant) -> list[ScriptProjectRead]:
     projects = service.list_projects(db, tenant_id)
-    return [to_read(*service.get_project(db, tenant_id, item.id)) for item in projects]
+    return [to_read(*item) for item in queries.project_contents(db, tenant_id, projects)]
 
 
 @router.post("/generate", response_model=ScriptProjectRead, status_code=status.HTTP_201_CREATED)

@@ -21,7 +21,7 @@ Tenant = Annotated[UUID, Depends(get_tenant_id)]
 
 @router.get("")
 def wallet(db: Db, tenant_id: Tenant):
-    row = service.lock_wallet(db, tenant_id)
+    row = service.read_wallet(db, tenant_id)
     result = {
         "paid_cents": row.paid_cents,
         "bonus_cents": row.bonus_cents,
@@ -36,7 +36,6 @@ def wallet(db: Db, tenant_id: Tenant):
             "max_cents": 20000,
         },
     }
-    db.commit()
     return result
 
 

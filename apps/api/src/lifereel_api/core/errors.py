@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 import logging
+import traceback
 from enum import StrEnum
 from typing import Any
 
 from fastapi import FastAPI, Request
-from fastapi.exceptions import RequestValidationError
+from fastapi.exceptions import RequestValidationError, ResponseValidationError
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
@@ -87,6 +88,7 @@ class ErrorCode(StrEnum):
     EVIDENCE_RANGE_INVALID = "EVIDENCE_RANGE_INVALID"
     EVIDENCE_ANALYSIS_UNSUPPORTED = "EVIDENCE_ANALYSIS_UNSUPPORTED"
     EVIDENCE_ANALYSIS_FAILED = "EVIDENCE_ANALYSIS_FAILED"
+    EVIDENCE_TEXT_TOO_LARGE = "EVIDENCE_TEXT_TOO_LARGE"
     PHOTO_REDRAW_NOT_CONFIGURED = "PHOTO_REDRAW_NOT_CONFIGURED"
     PHOTO_REDRAW_SOURCE_INVALID = "PHOTO_REDRAW_SOURCE_INVALID"
     PHOTO_REDRAW_FAILED = "PHOTO_REDRAW_FAILED"
@@ -113,6 +115,7 @@ class ErrorCode(StrEnum):
     MEMORY_CLAIM_NOT_FOUND = "MEMORY_CLAIM_NOT_FOUND"
     MEMORY_LLM_CONFIGURATION_INCOMPLETE = "MEMORY_LLM_CONFIGURATION_INCOMPLETE"
     MEMORY_LLM_REQUEST_FAILED = "MEMORY_LLM_REQUEST_FAILED"
+    MEMORY_INPUT_TOO_LARGE = "MEMORY_INPUT_TOO_LARGE"
     MEMORY_LLM_RESPONSE_INVALID = "MEMORY_LLM_RESPONSE_INVALID"
     MEMORY_RETRY_LIMIT_REACHED = "MEMORY_RETRY_LIMIT_REACHED"
     MEMORY_RETRY_COOLDOWN = "MEMORY_RETRY_COOLDOWN"
@@ -120,6 +123,8 @@ class ErrorCode(StrEnum):
     SCRIPT_EDIT_CONFLICT = "SCRIPT_EDIT_CONFLICT"
     SCRIPT_EDIT_BUSY = "SCRIPT_EDIT_BUSY"
     SCRIPT_CONTENT_INVALID = "SCRIPT_CONTENT_INVALID"
+    SCRIPT_INPUT_TOO_LARGE = "SCRIPT_INPUT_TOO_LARGE"
+    SCRIPT_MOCK_OUTPUT_TOO_LARGE = "SCRIPT_MOCK_OUTPUT_TOO_LARGE"
     SCRIPT_MEMORIES_REQUIRED = "SCRIPT_MEMORIES_REQUIRED"
     SCRIPT_LLM_CONFIGURATION_INCOMPLETE = "SCRIPT_LLM_CONFIGURATION_INCOMPLETE"
     SCRIPT_LLM_REQUEST_FAILED = "SCRIPT_LLM_REQUEST_FAILED"
@@ -196,6 +201,25 @@ def install_error_handlers(app: FastAPI) -> None:
     async def handle_validation_error(_: Request, __: RequestValidationError) -> JSONResponse:
         return _response(422, ErrorCode.REQUEST_VALIDATION_FAILED)
 
+    @app.exception_handler(ResponseValidationError)
+    async def handle_response_validation_error(
+        request: Request, exc: ResponseValidationError,
+    ) -> JSONResponse:
+        # Validation exceptions include the entire rejected value in their string/traceback.
+        # Keep only bounded field locations, never input, message context or response bodies.
+        errors = exc.errors()
+        fields = [
+            {"type": str(error.get("type", ""))[:80],
+             "loc": [str(part)[:80] for part in error.get("loc", ())[:8]]}
+            for error in errors[:10]
+        ]
+        logger.error(
+            "Response validation failed: route=%s count=%s fields=%s",
+            getattr(request.scope.get("route"), "path", request.url.path)[:200],
+            len(errors), fields,
+        )
+        return _response(500, ErrorCode.INTERNAL_SERVER_ERROR)
+
     @app.exception_handler(StarletteHTTPException)
     async def handle_http_error(_: Request, exc: StarletteHTTPException) -> JSONResponse:
         code = {
@@ -206,5 +230,12 @@ def install_error_handlers(app: FastAPI) -> None:
 
     @app.exception_handler(Exception)
     async def handle_unexpected_error(request: Request, exc: Exception) -> JSONResponse:
-        logger.exception("Unhandled API error on %s", request.url.path, exc_info=exc)
+        # Database/provider exception strings may contain complete personal documents.
+        # Stack locations and exception type remain useful without logging their payloads.
+        logger.error(
+            "Unhandled API error: route=%s type=%s\n%s",
+            getattr(request.scope.get("route"), "path", request.url.path)[:200],
+            type(exc).__name__,
+            "".join(traceback.format_tb(exc.__traceback__, limit=8))[-6000:],
+        )
         return _response(500, ErrorCode.INTERNAL_SERVER_ERROR)

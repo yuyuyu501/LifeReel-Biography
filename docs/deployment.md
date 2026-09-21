@@ -49,6 +49,69 @@ Web 默认在 `http://localhost:5173`，API 在 `http://localhost:8000`。用户
 
 本机使用 `http://localhost:5173` 验收时保留 `AUTH_COOKIE_SECURE=false`。对外上线必须先启用 HTTPS，再改为 `AUTH_COOKIE_SECURE=true`，否则会话 Cookie 可能经明文连接发送。还应使用外部密钥管理、定期备份、日志/告警和受控对象存储。`X-API-Key` 仅供 Nginx 和 Worker 内部调用，不应交给浏览器用户。
 
+### Web 网关动态解析与私有缓存（D02）
+
+Web 的运行镜像来自 `apps/web/Dockerfile` 的 `nginx:1.27-alpine`。该标签不是不可变版本，
+检查运行镜像时应同时记录镜像 ID/digest 和 `nginx -v`；本次隔离验证使用 1.27.5。
+模板使用变量 `proxy_pass`，不依赖仅在开源 Nginx 1.27.3 起可用的 upstream `resolve`。
+`resolver 127.0.0.11 valid=5s ipv6=off` 使用 Compose 自定义网络内的 Docker DNS，
+`resolver_timeout 2s` 限定 DNS 查询等待时间。此地址仅适用于 Docker 网络；迁移到其他运行环境时需重新配置和验证解析器。
+
+`/v1/`、精确匹配的 `/v1/evidence/assets` 和 `/health` 均在请求期间解析 `api:8000`，
+并显式追加 `$request_uri`，保留编码路径、重复查询参数和上传 URL。
+两份 Compose 的 `NGINX_ENVSUBST_FILTER` 均为 `API_ACCESS_KEY|NGINX_CLIENT_MAX_BODY_SIZE`；
+镜像入口脚本只替换这些环境变量，必须保留 `$api_upstream`、`$request_uri`、`$http_upgrade` 等 Nginx 变量。
+继续保留 WebSocket Upgrade、900 秒会话超时、上传大小限制与流式转发、内部 Worker 路由 404 和 SPA 回退。
+上传 location 与 `/v1/` 使用相同的 HTTP/1.1、30 秒 connect、900 秒 read/send 超时和代理头，
+避免大文件上传后的校验超过默认 60 秒而被中断。二者都覆盖内部 API Key、清空客户端提供的
+Tenant/Worker Key 和 X-Forwarded-For，并将现有 trusted real-IP 规则处理后的 `$remote_addr`
+传给 `X-Real-IP`；保留 `real_ip_recursive off`，采用可信入口追加的最后一个地址。
+
+API 换 IP 后无需人工 reload；新请求在 DNS 缓存刷新后使用新地址。该机制不承诺无损切换：
+已建立的 WebSocket 或上传连接不会迁移；旧地址上的在途请求仍可能失败或等到连接超时，
+DNS 缓存的 5 秒不是所有请求的最大故障时间。客户端需重新建立中断的实时会话，
+涉及写入的失败请求应先核对结果，不能在网关中自动重放。`/health` 仍代理 API 的 `/health`，
+并非新增独立的 Web 存活端点；API 不可达时返回错误，以免误报健康。
+
+网关的 `/v1/`（含登录、私有 JSON、素材读取、签名重定向及上传）禁用代理缓存，
+移除上游 `Cache-Control` / `Expires`，统一返回 `Cache-Control: private, no-store`，
+包括 4xx/5xx 错误和被封锁的 Worker 路由；保留 Cookie、Range/206 和重定向。
+该最小策略同时作用于 HTTP 和经外层 TLS 代理传递的 HTTPS 响应，不改变静态页面缓存。
+外层 HTTPS 代理/CDN 必须保留此策略，不能强制缓存 `/v1/`；检查浏览器实际收到的响应头。
+仓库 `deploy/bianjiaigc.nginx.conf` 只描述 HTTP 入口，并不能证明实际 HTTPS/HSTS 配置；
+HSTS 应在已确认的 TLS 终止层设置，本次不在内部 HTTP 容器盲目添加。
+
+隔离回归不使用 Compose 或 `.env`，不连接数据库、现有应用容器或付费 Provider。
+需要 Python 3.10+、Docker Linux 容器，以及本地已有 `nginx:1.27-alpine`、`python:3.10-slim`
+镜像（缺少时先显式拉取）。从仓库根目录执行：
+
+```bash
+python apps/web/tests/test_nginx.py --output tmp/d02-nginx/fixed-results.json
+```
+
+Windows 也可使用 `apps/api/.venv/Scripts/python.exe`。测试创建随机命名的专用 bridge 网络和
+模拟 API，仅把测试 Nginx 的 HTTP/HTTPS 端口随机绑定到 `127.0.0.1`；测试证书即时生成并删除。
+上传限额在测试中设为 2 MiB，以小型合成数据检查流式转发、完整哈希和 413；
+生产默认 2050m 不变，测试不代表已做 2 GiB 压测。API 换址时保留旧 IP 上可响应的模拟服务，
+撤销它的 `api` DNS 别名并切到不同 IP，检查自动恢复与连续 20 次新地址响应，
+比较容器 ID、启动时间以及 Nginx 主/工作进程的 PID/启动 ticks，证明没有 reload/restart。
+另外检查 DNS 不存在时的启动、502 缓存策略及 API 重连后的恢复。
+上传回归同时检查伪造的内部凭证和前置 IP 不会透传，并通过 HTTPS 模拟上传后 65 秒无响应的
+校验过程，确认超过旧默认 60 秒仍返回 200；此项会增加约一分钟执行时间。
+`--template <旧模板路径> --dns-only` 可单独复现旧模板的换址失败（预期非零退出）。
+JSON 证据写入被 Git 忽略的 `tmp/`；正常或异常退出都会清理本次容器和网络。
+强制终止解释器后，按输出中的确切 `lifereel-d02-<随机值>` 名称核对残留，勿清理其他测试或应用资源。
+
+2026-09-21 本地隔离验证：原始模板在 DNS 已换址后 15 秒内的 58 次采样仍命中旧实例；
+修复模板通过上述 11 组检查（含 65 秒上传校验），换址后连续 20 次读取均命中新实例，Nginx 容器和进程未改变。
+原始/修复证据分别为 `tmp/d02-nginx/baseline-results.json`、`tmp/d02-nginx/fixed-results.json`。
+测试资源已清理，已有六个应用容器保持运行；此结果不代表已经部署或检查了实际生产 TLS 入口。
+
+后续正式发布仍按本文开头的本地修改、验证、提交推送、服务器快进和部署顺序执行。
+发布前检查活动任务，备份数据库与环境文件并保留旧 Web 镜像；重建并更新 **web** 容器，
+单纯重启旧镜像不会加载新模板。此项不新增数据库迁移，仍需记录部署时的实际迁移版本，
+核对运行模板、镜像、健康状态和三方提交 SHA，并报告备份路径。
+
 ## 数据与备份
 
 - PostgreSQL：人物、采访、记忆、剧本、授权、任务、发布与审计。

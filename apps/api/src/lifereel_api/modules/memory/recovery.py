@@ -16,6 +16,21 @@ VERSION = 1
 MAX_RUNS = 3
 MAX_RETAIL_NANO = 1_200_000_000  # Stop retries after CNY 1.20 of this policy's AI use.
 COOLDOWN_SECONDS = 30
+INPUT_BUDGET_ERRORS = frozenset({
+    ErrorCode.EVIDENCE_TEXT_TOO_LARGE.value,
+    ErrorCode.MEMORY_INPUT_TOO_LARGE.value,
+    ErrorCode.SCRIPT_INPUT_TOO_LARGE.value,
+    ErrorCode.SCRIPT_MOCK_OUTPUT_TOO_LARGE.value,
+})
+
+
+def input_rejected(workflow):
+    return getattr(workflow, "error_code", None) in INPUT_BUDGET_ERRORS
+
+
+def require_retryable_input(workflow):
+    if input_rejected(workflow):
+        raise ApiError(409, ErrorCode.JOB_RETRY_NOT_ALLOWED)
 
 
 def policy(workflow):
@@ -25,10 +40,13 @@ def policy(workflow):
 
 def allowed(workflow):
     state = policy(workflow)
-    return state.get("runs", 0) < MAX_RUNS and not state.get("budget_exhausted", False)
+    return (not input_rejected(workflow) and state.get("runs", 0) < MAX_RUNS
+            and not state.get("budget_exhausted", False))
 
 
 def retry_after(workflow):
+    if input_rejected(workflow):
+        return 0
     when = policy(workflow).get("failed_at")
     if not when:
         return 0
@@ -37,6 +55,7 @@ def retry_after(workflow):
 
 
 def begin(db, workflow):
+    require_retryable_input(workflow)
     if not allowed(workflow):
         raise ApiError(409, ErrorCode.MEMORY_RETRY_LIMIT_REACHED)
     state = policy(workflow)

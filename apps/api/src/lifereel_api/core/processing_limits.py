@@ -5,6 +5,15 @@ from pydantic import BaseModel, Field
 from lifereel_api.core.config import get_settings
 from lifereel_api.core.errors import ApiError, ErrorCode
 
+MEMORY_INPUT_MAX_CHARS = 20_000
+
+
+def require_memory_input(text: str, *, source_asset_id: str | None = None) -> None:
+    require_budget(
+        len(text), MEMORY_INPUT_MAX_CHARS, stage="memory_input",
+        code=ErrorCode.MEMORY_INPUT_TOO_LARGE, source_asset_id=source_asset_id,
+    )
+
 
 class ProcessingLimits(BaseModel):
     """Typed view for processing code/tests; only central Settings reads the environment."""

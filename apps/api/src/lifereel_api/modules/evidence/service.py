@@ -6,19 +6,21 @@ import mimetypes
 import shutil
 import subprocess
 import tempfile
-from io import BytesIO
 from pathlib import Path
 from uuid import UUID
 
 from fastapi import UploadFile, status
-from pypdf import PdfReader
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from lifereel_api.core.capacity import limited
 from lifereel_api.core.config import get_settings
 from lifereel_api.core.errors import ApiError, ErrorCode
+from lifereel_api.core.processing_limits import require_memory_input
 from lifereel_api.modules.billing.usage import track_usage
+from lifereel_api.modules.evidence.asset_conflicts import is_asset_duplicate
+from lifereel_api.modules.evidence.documents import extract_document
 from lifereel_api.modules.evidence.models import (
     EvidenceObservation,
     SourceAsset,
@@ -150,13 +152,12 @@ async def create_asset(
             status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
             ErrorCode.EVIDENCE_TYPE_UNSUPPORTED,
         )
-    existing = db.scalar(
-        select(SourceAsset).where(
-            SourceAsset.tenant_id == tenant_id,
-            SourceAsset.subject_id == subject_id,
-            SourceAsset.sha256 == digest,
-        )
+    existing_query = select(SourceAsset).where(
+        SourceAsset.tenant_id == tenant_id,
+        SourceAsset.subject_id == subject_id,
+        SourceAsset.sha256 == digest,
     )
+    existing = db.scalar(existing_query)
     if existing:
         return existing
 
@@ -166,7 +167,6 @@ async def create_asset(
         f"LifeReel-Biography/tenants/{tenant_id}/persons/{subject_id}/"
         f"{scope}/assets/{digest}/original{safe_suffix}"
     )
-    private_storage().put_file(storage_key, upload.file)
     asset = SourceAsset(
         tenant_id=tenant_id,
         subject_id=subject_id,
@@ -182,8 +182,33 @@ async def create_asset(
         consent_status="granted",
         status="ready",
     )
-    db.add(asset)
-    db.commit()
+    # begin_nested() flushes any caller changes first; keep that outside the
+    # duplicate handler so an unrelated pending write cannot become a success.
+    savepoint = db.begin_nested()
+    try:
+        with savepoint:
+            db.add(asset)
+            # Claim the unique identity before touching storage. Concurrent
+            # inserts wait for commit/rollback, including uploads to other
+            # chapters or with different suffixes (neither is part of dedup).
+            db.flush()
+            private_storage().put_file(storage_key, upload.file)
+    except IntegrityError as exc:
+        if not is_asset_duplicate(exc):
+            raise
+        # The savepoint has rolled back, so PostgreSQL READ COMMITTED can now
+        # read the winning transaction without discarding the caller's changes.
+        existing = db.scalar(existing_query)
+        if existing is None:
+            raise
+        return existing
+    try:
+        db.commit()
+    except Exception:
+        db.rollback()
+        # Object keys are shared with direct uploads. Never delete here: even
+        # a failed/uncertain commit may leave an object another writer needs.
+        raise
     db.refresh(asset)
     return asset
 
@@ -236,10 +261,26 @@ def transcribe_asset(db: Session, tenant_id: UUID, asset_id: UUID) -> Transcript
     if settings.asr_provider not in {"openai-compatible", "faster-whisper"}:
         raise ApiError(status.HTTP_422_UNPROCESSABLE_ENTITY, ErrorCode.ASR_NOT_CONFIGURED)
     if settings.asr_provider == "faster-whisper":
+        subject = db.scalar(
+            select(Person).where(Person.id == asset.subject_id, Person.tenant_id == tenant_id)
+        )
+        terms: list[str] = []
+        if subject is not None:
+            # Only explicit profile fields, never generated biographies/entities or ASR guesses.
+            for value in (subject.display_name, subject.preferred_name, subject.birthplace):
+                term = " ".join((value or "").split())
+                if term and len(term) <= 64 and term not in terms:
+                    terms.append(term)
+        # A small vocabulary biases decoding without supplying a narrative to copy.
+        bounded_terms: list[str] = []
+        for term in terms:
+            if len("、".join([*bounded_terms, term])) <= 160:
+                bounded_terms.append(term)
         client = FasterWhisperClient(
             settings.asr_runtime_model,
             settings.whisper_device,
             settings.whisper_compute_type,
+            hotwords="、".join(bounded_terms) or None,
         )
     else:
         client = OpenAICompatibleClient(
@@ -298,11 +339,8 @@ def _latest_transcript_version(
     )
 
 
-def _document_text(asset: SourceAsset, content: bytes) -> str:
-    if asset.mime_type == "application/pdf":
-        pages = [page.extract_text() or "" for page in PdfReader(BytesIO(content)).pages]
-        return "\n\n".join(text.strip() for text in pages if text.strip()).strip()
-    return content.decode("utf-8-sig", errors="replace").strip()
+def _document_text(asset: SourceAsset, content: bytes | Path) -> str:
+    return extract_document(content, asset.mime_type, str(asset.id))
 
 
 @limited("decode")
@@ -362,7 +400,7 @@ def analyze_asset(db: Session, tenant_id: UUID, asset_id: UUID) -> EvidenceObser
         raise ApiError(422, ErrorCode.EVIDENCE_ANALYSIS_UNSUPPORTED)
     settings = get_settings()
     content = (
-        private_storage().get(asset.storage_key) if asset.kind not in {"audio", "video"} else b""
+        private_storage().get(asset.storage_key) if asset.kind == "photo" else b""
     )
     transcript_version: TranscriptVersion | None = None
     provider = "local"
@@ -374,6 +412,9 @@ def analyze_asset(db: Session, tenant_id: UUID, asset_id: UUID) -> EvidenceObser
             transcribe_asset(db, tenant_id, asset.id)
             transcript_version = _latest_transcript_version(db, tenant_id, asset.id)
             transcript_text = transcript_version.text if transcript_version else ""
+            # Preserve the raw transcript/version, but do not promote oversized
+            # text to an observation/round that every later compile will revisit.
+            require_memory_input(transcript_text, source_asset_id=str(asset.id))
             text = transcript_text
             analysis_kind = "transcript" if asset.kind == "audio" else "multimodal_description"
             if transcript_version and transcript_version.source == "mock_asr":
@@ -433,7 +474,10 @@ def analyze_asset(db: Session, tenant_id: UUID, asset_id: UUID) -> EvidenceObser
                     ErrorCode.VISION_CONFIGURATION_INCOMPLETE,
                 )
         elif asset.kind == "document":
-            text = _document_text(asset, content)
+            with private_file(
+                asset.storage_key, asset.byte_size, Path(asset.original_filename).suffix.lower()
+            ) as source:
+                text = _document_text(asset, source)
             analysis_kind = "document_text"
             if not text:
                 raise ValueError("DOCUMENT_TEXT_EMPTY")
@@ -492,6 +536,9 @@ def analyze_asset(db: Session, tenant_id: UUID, asset_id: UUID) -> EvidenceObser
 
     if not text.strip():
         raise ApiError(status.HTTP_502_BAD_GATEWAY, ErrorCode.EVIDENCE_ANALYSIS_FAILED)
+    # Includes combined video descriptions and documents whose configurable
+    # extraction budget is larger than the downstream memory input contract.
+    require_memory_input(text, source_asset_id=str(asset.id))
     latest_version = db.scalar(
         select(func.max(EvidenceObservation.version_number)).where(
             EvidenceObservation.tenant_id == tenant_id,
@@ -506,7 +553,11 @@ def analyze_asset(db: Session, tenant_id: UUID, asset_id: UUID) -> EvidenceObser
         version_number=(latest_version or 0) + 1,
         analysis_kind=analysis_kind,
         text=text.strip(),
-        locator={"filename": asset.original_filename},
+        locator={
+            "filename": asset.original_filename,
+            **({"coverage": "full", "extracted_chars": len(text),
+                "source_sha256": asset.sha256} if asset.kind == "document" else {}),
+        },
         confidence=confidence,
         review_status="unreviewed",
         provider=provider,

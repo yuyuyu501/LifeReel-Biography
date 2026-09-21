@@ -263,7 +263,10 @@ function InterviewWorkspace({ id }: { id: string }) {
   const retryCooling = (workflow?.retry_after_seconds ?? 0) > 0;
   const scriptSynchronized =
     workflow?.status === "completed" ||
-    workflow?.script_brief?.followup_ready === true;
+    workflow?.script_brief?.followup_ready === true ||
+    // Realtime voice persists chapter scenes without creating a text workflow.
+    // A saved scene is sufficient only when no newer text workflow needs attention.
+    (!workflow && Boolean(chapterScript));
   const scriptStatus = workflowRunning
     ? "持续优化中"
     : scriptSynchronized
@@ -581,7 +584,7 @@ function InterviewWorkspace({ id }: { id: string }) {
                 <LoaderCircle size={18} />
                 <div>
                   <strong>采访 AI 正在整理</strong>
-                  <span>识别事实、检查缺口并同步更新本章。</span>
+                  <span>识别事实、检查缺口并同步更新本章。可能需要几分钟，刷新后可继续查看进度。</span>
                 </div>
               </div>
             )}

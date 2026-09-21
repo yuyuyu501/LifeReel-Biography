@@ -4,8 +4,9 @@ from datetime import datetime
 from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from lifereel_api.core.processing_limits import MEMORY_INPUT_MAX_CHARS, require_memory_input
 from lifereel_api.modules.evidence.schemas import SourceAssetRead
 from lifereel_api.modules.script.schemas import ScriptProjectRead
 
@@ -34,8 +35,15 @@ class InterviewRoundCreate(BaseModel):
 
 
 class InterviewAnswer(BaseModel):
-    answer_text: str = Field(min_length=1)
+    answer_text: str = Field(min_length=1, max_length=MEMORY_INPUT_MAX_CHARS)
     source_asset_id: UUID | None = None
+
+    @field_validator("answer_text", mode="before")
+    @classmethod
+    def validate_input_budget(cls, value):
+        if isinstance(value, str):
+            require_memory_input(value)
+        return value
 
 
 class InterviewRoundRead(BaseModel):
@@ -77,9 +85,18 @@ class NextQuestionRead(BaseModel):
 class InterviewTurnCreate(BaseModel):
     action: Literal["interview", "regenerate_script"] = "interview"
     round_id: UUID | None = None
-    answer_text: str | None = Field(default=None, max_length=50000)
+    answer_text: str | None = Field(default=None, max_length=MEMORY_INPUT_MAX_CHARS)
     asset_ids: list[UUID] = Field(default_factory=list, max_length=12)
     idempotency_key: str = Field(min_length=8, max_length=180)
+
+    @field_validator("answer_text", mode="before")
+    @classmethod
+    def validate_input_budget(cls, value):
+        # A budget violation has a specific 413 contract, including inputs over
+        # the legacy 50k schema limit; do not convert it to a generic 422.
+        if isinstance(value, str):
+            require_memory_input(value)
+        return value
 
 
 class InterviewTurnWorkflowRead(BaseModel):

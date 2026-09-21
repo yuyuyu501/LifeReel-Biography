@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { beforeEach, vi } from "vitest";
 import { InterviewRoomPage } from "./InterviewRoomPage";
@@ -46,6 +46,9 @@ function response(payload: unknown) {
 let interviewStatus = "completed";
 let interviewRounds = rounds;
 let workflowStatus = "completed";
+let hasWorkflow = true;
+let hasScript = true;
+let scriptChapterId = "chapter-1";
 let retryAllowed = true;
 let retryAfter = 0;
 
@@ -54,6 +57,9 @@ beforeEach(() => {
   interviewStatus = "completed";
   interviewRounds = rounds;
   workflowStatus = "completed";
+  hasWorkflow = true;
+  hasScript = true;
+  scriptChapterId = "chapter-1";
   retryAllowed = true;
   retryAfter = 0;
   vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -68,21 +74,21 @@ beforeEach(() => {
           rounds: interviewRounds,
         },
         assets: [],
-        script: {
+        script: hasScript ? {
           id: "script-1",
           subject_id: "person-1",
           version_number: 2,
           scenes: [{
             id: "scene-1",
-            chapter_id: "chapter-1",
+            chapter_id: scriptChapterId,
             heading: "海边的家乡",
             narration: "我从海边长大。",
             visual_prompt: "清晨的海边村庄。",
             duration_seconds: 12,
             source_claim_ids: ["claim-1"],
           }],
-        },
-        latest_workflow: {
+        } : null,
+        latest_workflow: hasWorkflow ? {
           id: "workflow-completed",
           status: workflowStatus,
           retry_allowed: retryAllowed,
@@ -90,7 +96,7 @@ beforeEach(() => {
           error_code: workflowStatus === "failed" ? "SCRIPT_LLM_RESPONSE_INVALID" : null,
           job_id: "job-1",
           missing_topics: ["后来影响"],
-        },
+        } : null,
       });
     }
     if (url.endsWith("/v1/evidence/assets") && init?.method === "POST") {
@@ -107,7 +113,7 @@ beforeEach(() => {
 
 function renderPage() {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  return render(
+  const view = render(
     <QueryClientProvider client={queryClient}>
       <MemoryRouter initialEntries={["/interviews/session-1"]}>
         <Routes>
@@ -116,6 +122,7 @@ function renderPage() {
       </MemoryRouter>
     </QueryClientProvider>,
   );
+  return { ...view, queryClient };
 }
 
 test("shows saved answers and only the current unanswered question", async () => {
@@ -133,6 +140,41 @@ test("shows saved answers and only the current unanswered question", async () =>
   expect(screen.queryByText("01")).not.toBeInTheDocument();
   expect(screen.queryByText("接下来还需补充")).not.toBeInTheDocument();
   expect(screen.queryByText("后来影响")).not.toBeInTheDocument();
+});
+
+test("synchronizes a voice-only chapter when its script is saved and after reload", async () => {
+  hasWorkflow = false;
+  hasScript = false;
+  interviewRounds = rounds.slice(0, 1);
+  const view = renderPage();
+  expect(await screen.findByText("等待内容")).toBeInTheDocument();
+  expect(screen.queryByText("已同步")).not.toBeInTheDocument();
+
+  hasScript = true;
+  // The voice update.done event invalidates this same workspace query.
+  await act(async () => {
+    await view.queryClient.invalidateQueries({ queryKey: ["interview-workspace", "session-1"] });
+  });
+  expect(await screen.findByText("已同步")).toBeInTheDocument();
+  expect(screen.getByText("已经同步")).toBeInTheDocument();
+  expect(screen.queryByText("最新内容尚未同步")).not.toBeInTheDocument();
+  view.unmount();
+
+  renderPage();
+  expect(await screen.findByText("海边的家乡")).toBeInTheDocument();
+  expect(screen.getByText("已同步")).toBeInTheDocument();
+  expect(screen.queryByText("最新内容尚未同步")).not.toBeInTheDocument();
+  expect(screen.queryByText("等待内容")).not.toBeInTheDocument();
+});
+
+test("does not use another chapter's persisted script as synchronization evidence", async () => {
+  hasWorkflow = false;
+  scriptChapterId = "chapter-2";
+  interviewRounds = rounds.slice(0, 1);
+  renderPage();
+  expect(await screen.findByText("等待内容")).toBeInTheDocument();
+  expect(screen.queryByText("已同步")).not.toBeInTheDocument();
+  expect(screen.queryByText("已经同步")).not.toBeInTheDocument();
 });
 
 test.each(["active", "paused", "completed"])("keeps the composer visible for legacy %s conversations", async (status) => {
@@ -162,14 +204,16 @@ test("appends a message when the last historical round has already been answered
   });
 });
 
-test("keeps the composer visible while the previous turn is processing", async () => {
+test.each(["queued", "running"])("keeps the composer visible while the previous turn is %s", async (status) => {
   interviewRounds = rounds.slice(0, 2);
-  workflowStatus = "running";
+  workflowStatus = status;
   const view = renderPage();
   const composer = await screen.findByRole("textbox", { name: /^说说这段往事/ });
   fireEvent.change(composer, { target: { value: "下一段回忆" } });
   expect(composer).toBeEnabled();
   expect(screen.getByRole("button", { name: /正在整理/ })).toBeDisabled();
+  expect(screen.getByText("持续优化中")).toBeInTheDocument();
+  expect(screen.queryByText("已同步")).not.toBeInTheDocument();
   view.unmount();
 });
 

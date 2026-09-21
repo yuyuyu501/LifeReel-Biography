@@ -44,6 +44,23 @@ def available(wallet: Wallet) -> int:
     )
 
 
+def read_wallet(db: Session, tenant_id: UUID) -> Wallet:
+    """Read a current balance without serializing against billing writers.
+
+    Only first access needs the existing locked, durable welcome-grant flow.
+    Charging and settlement must continue to use lock_wallet directly.
+    """
+    wallet = db.scalar(
+        select(Wallet)
+        .where(Wallet.tenant_id == tenant_id)
+        .execution_options(populate_existing=True)
+    )
+    if wallet is None:
+        wallet = lock_wallet(db, tenant_id)
+        db.commit()
+    return wallet
+
+
 def lock_wallet(db: Session, tenant_id: UUID) -> Wallet:
     # Lock the existing parent even on first access, avoiding competing welcome grants.
     # NO KEY UPDATE serializes balances without blocking FK inserts in the business

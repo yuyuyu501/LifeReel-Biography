@@ -7,6 +7,11 @@ server {
   listen 80;
   server_name _;
   root /usr/share/nginx/html;
+  # Docker's embedded DNS follows API container replacement without a reload.
+  # Variable proxy_pass works across nginx 1.27 releases (resolve needs >=1.27.3).
+  resolver 127.0.0.11 valid=5s ipv6=off;
+  resolver_timeout 2s;
+  set $api_upstream api:8000;
   # Host nginx appends the true client address. Ignore any earlier untrusted entries.
   set_real_ip_from 127.0.0.1;
   set_real_ip_from 172.16.0.0/12;
@@ -20,15 +25,33 @@ server {
   location = /v1/evidence/assets {
     client_max_body_size ${NGINX_CLIENT_MAX_BODY_SIZE};
     proxy_request_buffering off;
-    proxy_pass http://api:8000;
+    # With a variable upstream, explicitly preserve the raw path and query.
+    proxy_pass http://$api_upstream$request_uri;
+    proxy_cache off;
+    proxy_hide_header Cache-Control;
+    proxy_hide_header Expires;
+    add_header Cache-Control "private, no-store" always;
+    proxy_http_version 1.1;
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection $connection_upgrade;
+    proxy_connect_timeout 30s;
+    proxy_read_timeout 900s;
+    proxy_send_timeout 900s;
     proxy_set_header Host $host;
     proxy_set_header X-Forwarded-Proto $scheme;
     proxy_set_header X-API-Key "${API_ACCESS_KEY}";
     proxy_set_header X-Tenant-ID "";
+    proxy_set_header X-Worker-Key "";
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For "";
   }
 
   location /v1/ {
-    proxy_pass http://api:8000;
+    proxy_pass http://$api_upstream$request_uri;
+    proxy_cache off;
+    proxy_hide_header Cache-Control;
+    proxy_hide_header Expires;
+    add_header Cache-Control "private, no-store" always;
     proxy_http_version 1.1;
     proxy_set_header Upgrade $http_upgrade;
     proxy_set_header Connection $connection_upgrade;
@@ -45,10 +68,11 @@ server {
   }
 
   location ^~ /v1/internal/worker {
+    add_header Cache-Control "private, no-store" always;
     return 404;
   }
 
   location = /health {
-    proxy_pass http://api:8000/health;
+    proxy_pass http://$api_upstream$request_uri;
   }
 }
