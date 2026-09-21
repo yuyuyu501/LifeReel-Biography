@@ -1,7 +1,26 @@
 import { describe, expect, it } from "vitest";
-import { ApiError, apiErrorFromResponse, isApiError } from "./errors";
+import { ApiError, apiErrorFromResponse, isApiError, workflowErrorContext } from "./errors";
 
 describe("API 错误码本地化", () => {
+  it.each([504, 524])("区分服务商网关超时 %s，且不显示响应文本", (status) => {
+    const error = apiErrorFromResponse(502, { error: {
+      code: "INTERVIEW_LLM_REQUEST_FAILED",
+      context: { provider_http_status: status, body: "PRIVATE-PROMPT" },
+    } });
+    expect(error.message).toContain("AI 服务商等待超时");
+    expect(error.message).toContain("可能已产生费用");
+    expect(error.message).not.toContain("PRIVATE-PROMPT");
+  });
+
+  it("刷新后的工作流仍显示网关超时原因", () => {
+    const context = workflowErrorContext({ memory_recovery: { diagnostic: {
+      provider_http_status: 524, provider_request_id: "req-123", body: "PRIVATE-PROMPT",
+    } } });
+    expect(context).toEqual({ provider_http_status: 524, provider_request_id: "req-123" });
+    expect(new ApiError("INTERVIEW_LLM_REQUEST_FAILED", 500, context).message)
+      .toContain("AI 服务商等待超时");
+    expect(workflowErrorContext({})).toEqual({});
+  });
   it("把后端错误码转换为中文", () => {
     const error = apiErrorFromResponse(401, {
       error: { code: "AUTH_INVALID_CREDENTIALS" },

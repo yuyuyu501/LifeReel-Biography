@@ -188,7 +188,9 @@ def _response(
 def install_error_handlers(app: FastAPI) -> None:
     @app.exception_handler(ApiError)
     async def handle_api_error(_: Request, exc: ApiError) -> JSONResponse:
-        return _response(exc.status_code, exc.code, exc.context)
+        from lifereel_api.core.provider_diagnostics import provider_error_context
+
+        return _response(exc.status_code, exc.code, {**exc.context, **provider_error_context(exc)})
 
     @app.exception_handler(RequestValidationError)
     async def handle_validation_error(_: Request, __: RequestValidationError) -> JSONResponse:

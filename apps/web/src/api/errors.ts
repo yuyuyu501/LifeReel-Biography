@@ -163,6 +163,16 @@ const EVIDENCE_KIND_LABELS: Record<string, string> = {
 };
 
 function localizedErrorMessage(code: string, context?: Record<string, unknown>): string {
+  const providerFailure = [
+    "INTERVIEW_LLM_REQUEST_FAILED", "MEMORY_LLM_REQUEST_FAILED", "SCRIPT_LLM_REQUEST_FAILED",
+    "VISION_REQUEST_FAILED", "VIDEO_PLAN_FAILED",
+  ].includes(code);
+  if (providerFailure && [504, 524].includes(Number(context?.provider_http_status))) {
+    return "AI 服务商等待超时，已保存的资料仍然保留。此次请求可能已产生费用，请先核对处理状态和用量，再决定是否重试。";
+  }
+  if (providerFailure && typeof context?.provider_timeout_phase === "string") {
+    return "等待 AI 响应超时，已保存的资料仍然保留。此次请求结果和费用尚未确认，请先核对状态，避免重复提交。";
+  }
   if (code === "EVIDENCE_FILE_TOO_LARGE") {
     const kind = typeof context?.kind === "string" ? context.kind : "";
     const limitBytes = typeof context?.limit_bytes === "number" ? context.limit_bytes : 0;
@@ -201,6 +211,18 @@ export class ApiError extends Error {
     this.status = status;
     this.context = context;
   }
+}
+
+export function workflowErrorContext(brief?: Record<string, unknown>): Record<string, unknown> {
+  const recovery = brief?.memory_recovery;
+  if (!recovery || typeof recovery !== "object" || !("diagnostic" in recovery)) return {};
+  const diagnostic = recovery.diagnostic;
+  if (!diagnostic || typeof diagnostic !== "object") return {};
+  return Object.fromEntries(
+    Object.entries(diagnostic).filter(([key]) => [
+      "provider_http_status", "provider_timeout_phase", "provider_request_id",
+    ].includes(key)),
+  );
 }
 
 export function apiErrorFromResponse(

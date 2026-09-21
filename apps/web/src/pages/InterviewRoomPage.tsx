@@ -27,7 +27,7 @@ import {
 } from "react";
 import { useParams } from "react-router-dom";
 import { api } from "../api/client";
-import { ApiError, errorMessage } from "../api/errors";
+import { ApiError, errorMessage, workflowErrorContext } from "../api/errors";
 import { ErrorNotice, QueryState } from "../components/QueryState";
 import { EditableScript } from "../components/EditableScript";
 import {
@@ -257,7 +257,7 @@ function InterviewWorkspace({ id }: { id: string }) {
     workflow?.status === "queued" || workflow?.status === "running";
   const workflowError =
     workflow?.status === "failed" && workflow.error_code
-      ? new ApiError(workflow.error_code, 500)
+      ? new ApiError(workflow.error_code, 500, workflowErrorContext(workflow.script_brief))
       : null;
   const retryAllowed = workflow?.retry_allowed !== false;
   const retryCooling = (workflow?.retry_after_seconds ?? 0) > 0;

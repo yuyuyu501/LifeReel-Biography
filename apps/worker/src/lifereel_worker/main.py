@@ -23,6 +23,12 @@ class Settings(BaseSettings):
     video_concurrency: int = Field(default=1, ge=1, le=4)
     worker_poll_seconds: float = Field(default=2, ge=0.1, le=30)
     worker_heartbeat_seconds: float = Field(default=20, ge=1, le=30)
+    worker_interview_timeout_seconds: float = Field(
+        default=3600, ge=60, le=14400, allow_inf_nan=False,
+    )
+    worker_video_timeout_seconds: float = Field(
+        default=7200, ge=60, le=14400, allow_inf_nan=False,
+    )
 
     @property
     def headers(self):
@@ -59,25 +65,40 @@ def process_claim(client: httpx.Client, settings: Settings, lane: str, claim: di
     done = Event()
     heartbeat = Thread(target=renew, args=(settings, claim, done), daemon=True)
     heartbeat.start()
+    release_lease = False
     try:
         response = client.post(
             f"{base}/execute",
             json={"token": claim["token"]},
-            timeout=httpx.Timeout(1800 if lane == "video" else 900, connect=10),
+            timeout=httpx.Timeout(
+                read=(settings.worker_video_timeout_seconds if lane == "video"
+                      else settings.worker_interview_timeout_seconds),
+                connect=10, write=30, pool=10,
+            ),
         )
         response.raise_for_status()
-        log.info("job.result", job_id=claim["job_id"], status=response.json()["status"])
+        status = response.json()["status"]
+        # "running" may mean another delivery still holds the execution lock.
+        release_lease = status in {"completed", "failed", "cancelled"}
+        log.info("job.result", job_id=claim["job_id"], status=status)
     except Exception as exc:
         # A lost HTTP response is not evidence of failure. Database state wins.
         log.warning("job.delivery_uncertain", job_id=claim["job_id"], error=type(exc).__name__)
     finally:
         done.set()
         heartbeat.join(timeout=12)
-        try:
-            response = client.post(f"{base}/release", json={"token": claim["token"]}, timeout=10)
-            response.raise_for_status()
-        except Exception as exc:
-            log.warning("job.release_pending", job_id=claim["job_id"], error=type(exc).__name__)
+        if release_lease:
+            try:
+                response = client.post(
+                    f"{base}/release", json={"token": claim["token"]}, timeout=10,
+                )
+                response.raise_for_status()
+            except Exception as exc:
+                log.warning("job.release_pending", job_id=claim["job_id"], error=type(exc).__name__)
+        else:
+            # Preserve the last renewed lease; never accelerate an uncertain delivery to 5s.
+            # On expiry, DB status + execution locks + pending receipts govern recovery.
+            log.warning("job.lease_retained", job_id=claim["job_id"])
 
 
 def consume(settings: Settings, lane: str, stopping: Event):

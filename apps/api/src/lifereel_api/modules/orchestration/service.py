@@ -700,6 +700,13 @@ def _execute_turn(
         workflow = _get_workflow(db, tenant_id, workflow_id)
         workflow.status = "failed"
         workflow.error_code = exc.code.value
+        from lifereel_api.core.provider_diagnostics import provider_error_context
+
+        # Persist only allowlisted metadata so a page refresh can distinguish gateway timeout.
+        context = provider_error_context(exc)
+        if context:
+            exc.context = {**exc.context, **context}
+            exc.diagnostic = {**getattr(exc, "diagnostic", {}), **context}
         memory_recovery.failure(db, workflow, exc)
         db.commit()
         if workflow.job_id:

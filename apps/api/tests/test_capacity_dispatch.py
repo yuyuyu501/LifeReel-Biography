@@ -124,6 +124,29 @@ def test_database_delivery_and_completed_replay_do_not_repeat_work(client, monke
         assert db.get(Job, UUID(claim["job_id"])).attempt_count == 1
 
 
+def test_expired_lease_cannot_repeat_work_while_first_delivery_holds_lock(client, monkeypatch):
+    from lifereel_api.modules.orchestration import service
+    from lifereel_api.modules.production.locking import execution_lock
+
+    _, first = queued_turn(client, monkeypatch)
+    job_id = UUID(first["job_id"])
+    with SessionLocal() as original, execution_lock(original, job_id) as acquired:
+        assert acquired
+        with SessionLocal() as db:
+            job = db.get(Job, job_id)
+            job.lease_expires_at = datetime.now(UTC) - timedelta(seconds=1)
+            db.commit()
+            second = dispatch.claim_job(db, "interview")
+            assert second["token"] != first["token"]
+            monkeypatch.setattr(
+                service, "execute_turn", lambda *a, **k: pytest.fail("duplicate AI"),
+            )
+            assert dispatch.execute_claim(db, job_id, UUID(second["token"])) == {
+                "status": "running",
+            }
+            assert job.attempt_count == 0
+
+
 def test_interrupted_paid_turn_does_not_resubmit_without_receipt(client, monkeypatch):
     from lifereel_api.modules.billing import service as billing
     from lifereel_api.modules.interview.models import InterviewTurnWorkflow

@@ -80,6 +80,9 @@ def test_unknown_graph_source_is_repaired_not_silently_dropped(monkeypatch):
     [
         (httpx.ConnectError("offline"), 2),
         (httpx.ReadTimeout("uncertain receipt"), 1),
+        (httpx.ConnectTimeout("uncertain receipt"), 1),
+        (httpx.WriteTimeout("uncertain receipt"), 1),
+        (httpx.PoolTimeout("uncertain receipt"), 1),
     ],
 )
 def test_transport_retry_is_bounded_and_avoids_uncertain_calls(monkeypatch, failure, expected):

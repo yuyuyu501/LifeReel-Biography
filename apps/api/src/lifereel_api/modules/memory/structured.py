@@ -81,6 +81,7 @@ def validate(stage, result, user):
 
 class MemoryClient(OpenAICompatibleClient):
     def __init__(self, *args, stage, **kwargs):
+        kwargs.setdefault("task", "memory")
         super().__init__(*args, **kwargs)
         self.stage = stage
 
@@ -93,11 +94,13 @@ class MemoryClient(OpenAICompatibleClient):
         correction = ""
         # Initial call plus ONE correction or safe transport retry, never nested retries.
         for attempt in range(2):
+            provider_diagnostic = {}
             try:
                 check_call_budget()
                 result = super().chat_json(instructions + correction, user)
                 return validate(self.stage, result, user)
             except (ValidationError, json.JSONDecodeError, ValueError) as exc:
+                provider_diagnostic = getattr(exc, "diagnostic", {})
                 if isinstance(exc, ValidationError):
                     reason = "; ".join(
                         f"{'.'.join(map(str, e['loc']))}: {e['type']}"
@@ -117,16 +120,20 @@ class MemoryClient(OpenAICompatibleClient):
             except ApiError:
                 raise
             except Exception as exc:
+                provider_diagnostic = getattr(exc, "diagnostic", {})
                 reason = type(exc).__name__
                 code = ErrorCode.MEMORY_LLM_REQUEST_FAILED
-                # Read timeouts have uncertain billing. Do not resubmit blindly.
-                retryable = isinstance(exc, (httpx.ConnectError, httpx.ConnectTimeout)) or (
+                # No timeout is retried automatically, including connect/write/pool timeouts.
+                retryable = isinstance(exc, httpx.ConnectError) or (
                     isinstance(exc, httpx.HTTPStatusError) and exc.response.status_code == 429
                 )
                 if retryable and attempt == 0:
                     time.sleep(1)
             context = current_context()
-            diagnostic = {"stage": self.stage, "attempt": attempt + 1, "reason": reason}
+            diagnostic = {
+                **provider_diagnostic, "stage": self.stage, "attempt": attempt + 1,
+                "reason": reason,
+            }
             logger.warning(
                 "memory.validation workflow=%s diagnostic=%s",
                 context[2] if context else None,

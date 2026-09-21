@@ -114,6 +114,10 @@ docker compose exec api python tests/oss_live_check.py
 
 ## Provider 配置
 
+LLM 分任务 connect/read/write/pool 等待、worker 整轮等待、租约与不确定消费处理见
+[LLM 等待配置与 R01 修复](llm-timeouts.md)。默认 LLM 读取等待为 180 秒，配置修改需重启 API；
+worker 等待配置修改需重新创建 worker。
+
 默认 `mock` Provider 可生成本地竖屏 MP4 验收样片。现有适配层支持 OpenAI-compatible LLM/ASR，以及具有提交、查询、取消和结果下载能力的通用异步媒体 API。可通过 `GET /v1/providers` 查看能力与配置状态，通过 `GET /system-status` 查看运行依赖。
 
 接入真实 ASR、LLM、图像、视频和语音服务时，应记录模型、输入版本、幂等键、费用、输出哈希、Webhook 和错误信息，并在上线前验证供应商的数据保留、训练使用和跨境传输条款。

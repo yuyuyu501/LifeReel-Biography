@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 from functools import lru_cache
-from typing import Literal
+from typing import Annotated, Literal
 from uuid import UUID
 
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+LLMTask = Literal["interview", "memory", "script", "vision", "video_plan"]
+TimeoutSeconds = Annotated[float, Field(gt=0, le=3600, allow_inf_nan=False)]
 
 
 class Settings(BaseSettings):
@@ -71,6 +74,9 @@ class Settings(BaseSettings):
     max_evidence_document_bytes: int = 50 * 1024 * 1024
     max_evidence_audio_bytes: int = 500 * 1024 * 1024
     max_evidence_video_bytes: int = 2 * 1024 * 1024 * 1024
+    document_extract_max_chars: int = Field(default=16_000, gt=0, le=200_000)
+    document_extract_max_pages: int = Field(default=200, gt=0, le=1000)
+    script_input_max_chars: int = Field(default=48_000, gt=0, le=200_000)
     execute_mock_jobs_inline: bool = True
     worker_queue: str = "lifereel:jobs"
     job_queue_backend: Literal["redis", "database"] = "database"
@@ -105,6 +111,37 @@ class Settings(BaseSettings):
     memory_llm_model: str | None = None
     script_llm_model: str | None = None
     vision_llm_model: str | None = None
+    llm_connect_timeout_seconds: TimeoutSeconds = 10
+    llm_read_timeout_seconds: TimeoutSeconds = 180
+    llm_write_timeout_seconds: TimeoutSeconds = 30
+    llm_pool_timeout_seconds: TimeoutSeconds = 10
+    llm_stream: bool = False
+    llm_stream_max_seconds: TimeoutSeconds = 600
+    interview_llm_stream: bool | None = None
+    memory_llm_stream: bool | None = None
+    script_llm_stream: bool | None = None
+    vision_llm_stream: bool | None = None
+    video_plan_llm_stream: bool | None = None
+    interview_llm_connect_timeout_seconds: TimeoutSeconds | None = None
+    interview_llm_read_timeout_seconds: TimeoutSeconds | None = None
+    interview_llm_write_timeout_seconds: TimeoutSeconds | None = None
+    interview_llm_pool_timeout_seconds: TimeoutSeconds | None = None
+    memory_llm_connect_timeout_seconds: TimeoutSeconds | None = None
+    memory_llm_read_timeout_seconds: TimeoutSeconds | None = None
+    memory_llm_write_timeout_seconds: TimeoutSeconds | None = None
+    memory_llm_pool_timeout_seconds: TimeoutSeconds | None = None
+    script_llm_connect_timeout_seconds: TimeoutSeconds | None = None
+    script_llm_read_timeout_seconds: TimeoutSeconds | None = None
+    script_llm_write_timeout_seconds: TimeoutSeconds | None = None
+    script_llm_pool_timeout_seconds: TimeoutSeconds | None = None
+    vision_llm_connect_timeout_seconds: TimeoutSeconds | None = None
+    vision_llm_read_timeout_seconds: TimeoutSeconds | None = None
+    vision_llm_write_timeout_seconds: TimeoutSeconds | None = None
+    vision_llm_pool_timeout_seconds: TimeoutSeconds | None = None
+    video_plan_llm_connect_timeout_seconds: TimeoutSeconds | None = None
+    video_plan_llm_read_timeout_seconds: TimeoutSeconds | None = None
+    video_plan_llm_write_timeout_seconds: TimeoutSeconds | None = None
+    video_plan_llm_pool_timeout_seconds: TimeoutSeconds | None = None
     asr_model: str | None = None
     whisper_model_path: str | None = None
     whisper_device: str = "cpu"
@@ -152,6 +189,17 @@ class Settings(BaseSettings):
             "asr": self.asr_model,
         }.get(capability)
         return configured or self.openai_compatible_model or ""
+
+    def llm_timeouts_for(self, task: LLMTask) -> dict[str, float]:
+        return {
+            phase: getattr(self, f"{task}_llm_{phase}_timeout_seconds")
+            or getattr(self, f"llm_{phase}_timeout_seconds")
+            for phase in ("connect", "read", "write", "pool")
+        }
+
+    def llm_stream_for(self, task: LLMTask) -> bool:
+        override = getattr(self, f"{task}_llm_stream")
+        return self.llm_stream if override is None else override
 
     @property
     def asr_runtime_model(self) -> str:
