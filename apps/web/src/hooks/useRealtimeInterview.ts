@@ -204,7 +204,7 @@ export function useRealtimeInterview(sessionId: string) {
           } else if (event.type === "update.started") {
             setUpdateStatus("正在更新知识和剧本…");
           } else if (event.type === "update.done") {
-            setUpdateStatus(event.script_updated ?
+            setUpdateStatus(event.pending ? "正在处理后续讲述…" : event.script_updated ?
               (event.memory_updated ? "知识和剧本已更新" : "剧本已更新") :
               event.memory_updated ? "知识已更新，继续讲述可完善剧本" : "可以继续讲述");
             refresh();

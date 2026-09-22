@@ -120,7 +120,7 @@ async def stream(socket: WebSocket, call_id: UUID):
                     if event.get("type") == "error":
                         raise ApiError(502, ErrorCode.VOICE_CONNECTION_FAILED)
             await send({"type": "ready", "call_id": str(call_id)})
-            updates = LiveUpdates(context.tenant_id, call_id, send)
+            updates = LiveUpdates(context.tenant_id, call_id, send, upstream.send)
             await upstream.send(
                 {"type": "speech_text_buffer.commit", "speech_id": str(uuid4()), "text": greeting}
             )
@@ -195,6 +195,9 @@ async def stream(socket: WebSocket, call_id: UUID):
                         return
                     if kind == "error":
                         raise ApiError(502, ErrorCode.VOICE_CONNECTION_FAILED)
+                    if kind == "response.function_call_arguments.done":
+                        await updates.submit_tools(event)
+                        continue
                     if kind in {provider.ASR_PREFIX + "started", "response.canceled"}:
                         await send({"type": "interrupted"})
                     elif kind in {provider.ASR_PREFIX + "delta", "response.output_text.delta"}:
@@ -291,6 +294,9 @@ async def stream(socket: WebSocket, call_id: UUID):
         if attached and context:
             try:
                 if updates:
+                    # The provider session has closed; finish local saves without
+                    # attempting to deliver FC replies to a closed transport.
+                    updates.send_provider = None
                     await run_in_threadpool(service.closing, context.tenant_id, call_id)
                     await updates.close()
                     if updates.failed:

@@ -138,6 +138,7 @@ def fingerprint(claims):
         json.dumps(
             [
                 VERSION,
+                "event-corrections-v1",
                 settings.model_for("memory"),
                 settings.openai_compatible_base_url,
                 source,

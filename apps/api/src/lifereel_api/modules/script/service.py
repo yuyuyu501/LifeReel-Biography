@@ -23,6 +23,7 @@ from lifereel_api.modules.interview.chapter_prompts import (
 from lifereel_api.modules.interview.models import Chapter, InterviewSession, InterviewTurnWorkflow
 from lifereel_api.modules.memory.models import MemoryClaim
 from lifereel_api.modules.production.locking import execution_lock
+from lifereel_api.modules.script.freshness import is_current
 from lifereel_api.modules.script.models import ScriptProject, ScriptScene, ScriptShot
 from lifereel_api.modules.script.schemas import (
     ScriptDialogue,
@@ -231,6 +232,10 @@ def _llm_scenes(
             "剧本分为四部分：plot是简洁的剧情概述（事情如何发生和发展，不是旁白复写）；"
             "shots是含景别、动作、运镜与时长的分镜；dialogues是按播放顺序排列的所有口播；"
             "visual_prompt是整体场景描述，说明有据可查的年代、地点、环境、人物外观与氛围。"
+            "姓名、职业、出生年份和阅读喜好不能作为性别依据；未明确说明性别时，"
+            "使用姓名或中性称谓，不得擅写男性、女性或相应外貌。"
+            "用户不露脸等画面限制必须落实到每个shot的visual_prompt，优先空镜、"
+            "背影或手部特写，不得安排可辨识正脸或侧脸。"
             "dialogues每项包含kind（narration或dialogue）、speaker、text。"
             "旁白用narration标记，人物原话只有证据中确实提供时才使用dialogue，禁止编造对话。"
             "只有旁白也必须用dialogues列表表达。不输出独立narration，程序会从dialogues顺序拼接。"
@@ -529,6 +534,9 @@ def _generate_draft(
     if payload.chapter_id:
         claim_statement = claim_statement.where(MemoryClaim.chapter_id == payload.chapter_id)
     claims = list(db.scalars(claim_statement.order_by(MemoryClaim.created_at)))
+    from lifereel_api.modules.memory.recovery import fingerprint
+
+    source_fingerprint = fingerprint(claims)
     if not claims:
         raise ApiError(status.HTTP_409_CONFLICT, ErrorCode.SCRIPT_MEMORIES_REQUIRED)
 
@@ -610,6 +618,12 @@ def _generate_draft(
         for scene_payload in generated:
             validated = _validate_generated_scene(scene_payload, {str(c.id) for c in selected})
             scene_payloads.append({**validated, "chapter_id": chapter_id})
+    # Re-read scalar values, bypassing cached ORM objects after a long model call.
+    current_claims = list(db.scalars(
+        claim_statement.order_by(MemoryClaim.created_at).execution_options(populate_existing=True),
+    ))
+    if not is_current.get()() or fingerprint(current_claims) != source_fingerprint:
+        raise ApiError(409, ErrorCode.SCRIPT_EDIT_CONFLICT)
     project = db.scalar(
         select(ScriptProject).where(
             ScriptProject.tenant_id == tenant_id,

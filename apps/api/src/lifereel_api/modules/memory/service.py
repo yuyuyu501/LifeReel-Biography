@@ -107,7 +107,9 @@ def _extract_claim(
         result = client.chat_json(
             "你是口述史证据整理员。只能根据输入原文整理一条可核对的记忆陈述，不得补充输入中"
             "没有的事实。问题只用于理解简短回答，不能把采访者的猜测当成事实。"
-            "保留不确定语气。只输出 JSON："
+            "保留不确定语气。用户明确更正时必须保留被否定的旧说法、正确说法及更正关系，"
+            "例如‘更正：不是1970年，而是1971年’，不能只摘录新年份导致更正意图丢失。"
+            "只输出 JSON："
             '{"claim_text":"...","claim_type":"recollection|event|relationship|place|time",'
             '"confidence":0.0}。',
             json.dumps(
@@ -148,6 +150,7 @@ def _extract_claim(
 
 def _extract_memory_structure(
     claims: list[MemoryClaim],
+    previous_conflicts: list[MemoryConflict] | None = None,
 ) -> tuple[list[dict], list[dict], list[dict], str]:
     """Ask the memory model for graph entities and timeline anchors.
 
@@ -177,9 +180,17 @@ def _extract_memory_structure(
             "claim_id": str(claim.id),
             "claim_text": claim.claim_text,
             "source_quote": claim.source_quote,
+            "chapter_id": str(claim.chapter_id) if claim.chapter_id else None,
         }
-        for claim in claims[-40:]
+        for claim in claims
     ]
+    serialized = json.dumps({"claims": payload, "previous_conflicts": [
+        {"conflict_key": conflict.conflict_key, "claim_ids": conflict.claim_ids,
+         "description": conflict.description, "status": conflict.status}
+        for conflict in previous_conflicts or []
+        if set(conflict.claim_ids) <= allowed_claim_ids
+    ]}, ensure_ascii=False)
+    require_memory_input(serialized)
     try:
         result = client.chat_json(
             "你是中文口述史知识图谱整理员。只根据输入的带来源记忆，抽取明确提到的人物、地点、"
@@ -187,6 +198,13 @@ def _extract_memory_structure(
             "每个实体和时间线都必须引用一个或多个真实 claim_id。实体 relationship 是原文明确表达的"
             "关系，如父亲、母亲、同事、故乡；没有明确关系时写相关人物、相关地点或相关组织。"
             "同时语义判断不同记忆之间是否存在事实冲突，不限于年份；不确定表达不算冲突。"
+            "输入按讲述时间排序。区分明确更正与尚未确定的矛盾。明确更正同一事件时，"
+            "在timeline暂列旧事件和更正事件，并在corrections中指定它们的零基数组下标"
+            "old_timeline_index/new_timeline_index，以及新来源中包含旧值、新值和更正意思的"
+            "完整原句evidence_quote；程序会移除旧事件并将对应冲突标为已解决。"
+            "conflict_keys只列出本次更正解决的具体conflict_key，不能关闭同一来源的其他冲突。"
+            "同一冲突沿用previous_conflicts中的conflict_key，保留已解决更正的处理结果。"
+            "不能把不同事件或不同章节合并。模糊回忆不能当成更正。其他事件仍须保留。"
             "严格输出 JSON："
             '{"entities":[{"name":"...","normalized_name":"...",'
             '"entity_type":"person|place|organization","relationship":"...",'
@@ -194,7 +212,7 @@ def _extract_memory_structure(
             '"time_text":"...","event_text":"...","precision":"year|relative|approximate",'
             '"source_claim_id":"..."}],"conflicts":[{"conflict_key":"...",'
             '"description":"...","claim_ids":["...","..."]}]}。',
-            json.dumps({"claims": payload}, ensure_ascii=False),
+            serialized,
         )
     except json.JSONDecodeError as exc:
         raise ApiError(
@@ -296,6 +314,7 @@ def _extract_memory_structure(
                 "conflict_key": conflict_key,
                 "description": description,
                 "claim_ids": claim_ids,
+                "status": item.get("status", "open"),
             }
         )
     return entities, timeline, conflicts, model
@@ -435,7 +454,6 @@ def _compile_entities_and_timeline_ai(
     tenant_id: UUID,
     claims: list[MemoryClaim],
 ) -> None:
-    entities, timeline, conflicts, _ = _extract_memory_structure(claims)
     subject_ids = {claim.subject_id for claim in claims}
     if len(subject_ids) != 1:
         raise ApiError(
@@ -444,6 +462,10 @@ def _compile_entities_and_timeline_ai(
         )
     subject_id = next(iter(subject_ids))
     claims_by_id = {str(claim.id): claim for claim in claims}
+    existing_conflicts = list(db.scalars(select(MemoryConflict).where(
+        MemoryConflict.tenant_id == tenant_id, MemoryConflict.subject_id == subject_id,
+    )))
+    entities, timeline, conflicts, _ = _extract_memory_structure(claims, existing_conflicts)
 
     # The model returns a complete snapshot for one person. Replacing the old snapshot
     # also removes stale entities and events when later interview turns correct a memory.
@@ -457,12 +479,6 @@ def _compile_entities_and_timeline_ai(
         delete(TimelineAnchor).where(
             TimelineAnchor.tenant_id == tenant_id,
             TimelineAnchor.subject_id == subject_id,
-        )
-    )
-    db.execute(
-        delete(MemoryConflict).where(
-            MemoryConflict.tenant_id == tenant_id,
-            MemoryConflict.subject_id == subject_id,
         )
     )
     merged_entities: dict[tuple[str, str], dict] = {}
@@ -523,6 +539,13 @@ def _compile_entities_and_timeline_ai(
                 status.HTTP_502_BAD_GATEWAY,
                 ErrorCode.MEMORY_LLM_RESPONSE_INVALID,
             )
+        matching = [c for c in existing_conflicts if set(c.claim_ids) == set(item["claim_ids"])
+                    and c.conflict_key == item["conflict_key"]]
+        if matching:
+            for conflict in matching:
+                conflict.description = item["description"]
+                conflict.status = item["status"]
+            continue
         db.add(
             MemoryConflict(
                 tenant_id=tenant_id,
@@ -530,6 +553,7 @@ def _compile_entities_and_timeline_ai(
                 claim_ids=item["claim_ids"],
                 conflict_key=item["conflict_key"],
                 description=item["description"],
+                status=item["status"],
             )
         )
 
@@ -752,7 +776,8 @@ def compile_memories(
     compiled = list(db.scalars(claim_statement.order_by(MemoryClaim.created_at)))
     settings = get_settings()
     claims_by_subject = {
-        subject_id: [claim for claim in compiled if claim.subject_id == subject_id]
+        subject_id: [claim for claim in compiled if claim.subject_id == subject_id
+                     and claim.review_status not in {"private", "disputed"}]
         for subject_id in {claim.subject_id for claim in compiled}
     }
     if settings.llm_provider == "mock":
@@ -760,6 +785,15 @@ def compile_memories(
         _detect_year_conflicts(db, tenant_id, {item.subject_id for item in compiled})
     elif settings.llm_provider == "openai-compatible":
         for subject_id, subject_claims in claims_by_subject.items():
+            if not subject_claims:
+                for model in (MemoryEntity, TimelineAnchor):
+                    db.execute(delete(model).where(
+                        model.tenant_id == tenant_id, model.subject_id == subject_id,
+                    ))
+                subject = db.get(Person, subject_id)
+                if subject is not None and subject.tenant_id == tenant_id:
+                    subject.biography_note = ""
+                continue
             digest = recovery.fingerprint(subject_claims)
             if not recovery.completed(workflow, subject_id, "graph", digest):
                 _compile_entities_and_timeline_ai(db, tenant_id, subject_claims)

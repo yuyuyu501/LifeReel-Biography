@@ -122,6 +122,9 @@ it("handles interruption, mute, transcript roles and graceful end", async () => 
   expect(result.current.updateStatus).toContain("正在更新");
   act(() => socket.event({ type: "update.done", memory_updated: true, script_updated: true }));
   expect(result.current.updateStatus).toBe("知识和剧本已更新");
+  act(() => socket.event({ type: "update.done", memory_updated: true,
+    script_updated: false, pending: true }));
+  expect(result.current.updateStatus).toBe("正在处理后续讲述…");
   expect(result.current.active).toBe(true);
   act(() => result.current.end());
   expect(audio.stopMicrophone).toHaveBeenCalledOnce();

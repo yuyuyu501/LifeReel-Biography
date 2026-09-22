@@ -13,6 +13,8 @@ from lifereel_api.modules.interview import voice_service, voice_updates
 from lifereel_api.modules.interview.models import InterviewVoiceCall
 from lifereel_api.modules.memory import service as memory
 from lifereel_api.modules.memory.models import MemoryClaim
+from lifereel_api.modules.orchestration import skills
+from lifereel_api.modules.script.freshness import is_current
 
 __all__ = ["voice"]
 
@@ -53,6 +55,7 @@ async def test_sequential_updates_dedupe_and_clear_pending_text(monkeypatch):
 @pytest.mark.asyncio
 async def test_failure_is_reported_without_retry_and_next_utterance_can_continue(monkeypatch):
     calls, events = [], []
+    failed = asyncio.Event()
 
     def process(_call, _tenant, utterances):
         calls.append(utterances[0][0])
@@ -62,11 +65,14 @@ async def test_failure_is_reported_without_retry_and_next_utterance_can_continue
 
     async def send(event):
         events.append(event)
+        if event["type"] == "update.failed":
+            failed.set()
 
     monkeypatch.setattr(voice_updates, "process", process)
     updates = voice_updates.LiveUpdates(uuid4(), uuid4(), send)
     updates.submit("one", "临时原文一")
     updates.submit("one", "临时原文一")
+    await asyncio.wait_for(failed.wait(), 5)
     updates.submit("two", "临时原文二")
     await updates.close()
     assert calls == ["one", "two"]
@@ -84,13 +90,13 @@ def test_voice_rewrite_uses_existing_knowledge_without_creating_source_text(
     voice_service.attach(tenant, None, call_id)
     voice_updates.process(call_id, tenant, [("fact", "我和母亲在家乡生活。", "")])
     briefs = []
-    original = voice_updates.scripts.generate_draft
+    original = skills.script.generate_draft
 
     def generate(db, tenant, payload, update_brief):
         briefs.append(update_brief)
         return original(db, tenant, payload, update_brief)
 
-    monkeypatch.setattr(voice_updates.scripts, "generate_draft", generate)
+    monkeypatch.setattr(skills.script, "generate_draft", generate)
     result = voice_updates.process(call_id, tenant, [("rewrite", "重写剧本，改成第一人称。", "")])
     assert result == {"memory_updated": False, "script_updated": True}
     assert briefs[0]["script_instructions"] == "重写剧本，改成第一人称。"
@@ -147,3 +153,40 @@ def test_slow_updates_do_not_block_audio_or_control_messages(client, voice, monk
         ws.send_json({"type": "end"})
         result, _ = receive_until(ws, "ended")
         assert result["call"]["messages"] == []
+
+
+def test_deferred_script_retains_directions_but_smalltalk_does_not_regenerate(
+    client, voice, monkeypatch,
+):
+    _, call = voice
+    tenant, call_id = get_settings().default_tenant_id, UUID(call["id"])
+    voice_service.attach(tenant, None, call_id)
+    voice_updates.process(call_id, tenant, [("fact", "我和母亲在家乡生活。", "")])
+    briefs = []
+    original = skills.script.generate_draft
+
+    def generate(db, tenant, payload, update_brief):
+        briefs.append(update_brief)
+        return original(db, tenant, payload, update_brief)
+
+    monkeypatch.setattr(skills.script, "generate_draft", generate)
+    retained = voice_updates._instructions.set([])
+    guard = is_current.set(lambda: False)
+    try:
+        pending = voice_updates.process(call_id, tenant, [
+            ("rewrite", "重写剧本，不要出现具体人脸。", ""),
+        ])
+        assert pending["pending"] and not pending["script_updated"]
+    finally:
+        is_current.reset(guard)
+    try:
+        voice_updates.process(call_id, tenant, [("more", "母亲每天在门口缝补衣服。", "")])
+        assert len(briefs) == 1
+        assert "不要出现具体人脸" in briefs[0]["script_instructions"]
+        monkeypatch.setattr(voice_updates, "classify_turn", lambda _: {
+            "action": "interview", "has_new_facts": False, "instructions": "",
+        })
+        result = voice_updates.process(call_id, tenant, [("ack", "好的", "")])
+        assert not result["script_updated"] and len(briefs) == 1
+    finally:
+        voice_updates._instructions.reset(retained)

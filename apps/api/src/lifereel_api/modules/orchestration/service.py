@@ -27,9 +27,7 @@ from lifereel_api.modules.interview.models import (
 from lifereel_api.modules.interview.schemas import InterviewRoundCreate, InterviewTurnCreate
 from lifereel_api.modules.jobs import service as job_service
 from lifereel_api.modules.memory import recovery as memory_recovery
-from lifereel_api.modules.memory import service as memory_service
 from lifereel_api.modules.memory.models import MemoryClaim
-from lifereel_api.modules.memory.schemas import MemoryCompileRequest
 from lifereel_api.modules.script import service as script_service
 from lifereel_api.modules.script.models import ScriptProject
 from lifereel_api.modules.script.schemas import (
@@ -621,6 +619,7 @@ def _execute_turn(
                 db.commit()
 
         from lifereel_api.modules.orchestration.intent import classify_turn
+        from lifereel_api.modules.orchestration.skills import MemorySkill, ScriptSkill
 
         intent = workflow.script_brief.get("turn_intent")
         if intent is None:
@@ -633,11 +632,7 @@ def _execute_turn(
                 source_round.question_source = "script_request"
             db.commit()
 
-        memory_service.compile_memories(
-            db,
-            tenant_id,
-            MemoryCompileRequest(interview_session_id=session.id),
-        )
+        MemorySkill.compile(db, tenant_id, session.id)
         chapter_claims = list(
             db.scalars(
                 select(MemoryClaim)
@@ -661,7 +656,7 @@ def _execute_turn(
         if saved_assessment.get("key") == assessment_key:
             assessment = saved_assessment["result"]
         else:
-            assessment = _assess_chapter(db, tenant_id, chapter_claims, session.rounds, chapter)
+            assessment = ScriptSkill.assess(db, tenant_id, chapter_claims, session.rounds, chapter)
             workflow.script_brief = {**workflow.script_brief, "assessment_checkpoint": {
                 "key": assessment_key, "result": assessment,
             }}
@@ -693,7 +688,7 @@ def _execute_turn(
         project = None
         scenes = []
         if chapter_claims and assessment["ready_for_script"]:
-            project, scenes, _ = script_service.generate_draft(
+            project, scenes, _ = ScriptSkill.generate(
                 db,
                 tenant_id,
                 script_request,

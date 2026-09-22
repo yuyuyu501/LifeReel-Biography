@@ -13,6 +13,13 @@ from lifereel_api.modules.script import queries
 from lifereel_api.modules.script.models import ScriptProject, ScriptScene, ScriptShot
 
 
+@pytest.fixture(autouse=True)
+def isolate_request_query_counts(monkeypatch):
+    # The lifespan recovery task runs on the same engine and can race this
+    # module's SQL recorder. Recovery is tested separately in test_interview_voice.
+    monkeypatch.setattr("lifereel_api.main.recover_stale", lambda: None)
+
+
 @contextmanager
 def statements():
     executed = []

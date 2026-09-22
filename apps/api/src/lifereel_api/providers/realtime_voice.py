@@ -11,6 +11,7 @@ from uuid import uuid4
 from websockets.asyncio.client import connect
 
 from lifereel_api.core.config import get_settings
+from lifereel_api.modules.orchestration.skills import voice_tools
 
 ENDPOINT = "wss://openspeech.bytedance.com/api/v3/duplex/realtime/dialogue"
 MODEL = "1.2.6.1"
@@ -32,13 +33,23 @@ def session_event(call_id: str, instructions: str) -> dict:
                     "voice": get_settings().doubao_realtime_voice,
                 },
             },
-            "tools": [],
+            "tools": voice_tools(),
         },
         "extension": {
             "asr": {"extra": {}},
             "tts": {"extra": {}},
             "dialog": {"extra": {"enable_music": False, "enable_loudness_norm": True}},
         },
+    }
+
+
+def tool_result_event(results: list[tuple[str, dict]]) -> dict:
+    """Seeduplex FC result format (not OpenAI's function_call_output format)."""
+    return {
+        "type": "conversation.item.create", "event_id": str(uuid4()),
+        "items": [{"call_id": call_id, "role": "tool", "content": [
+            {"type": "input_text", "text": json.dumps(result, ensure_ascii=False)},
+        ]} for call_id, result in results],
     }
 
 
