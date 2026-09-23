@@ -9,7 +9,8 @@ connect/read/write/pool = **10 / 180 / 30 / 10 秒**；实际分镜曾在 108.55
 
 ## 可选 SSE 流式接收
 
-默认 `LLM_STREAM=false`；可设置 `INTERVIEW_LLM_STREAM=true` 仅对采访/章节评估开启，
+本地开发默认 `LLM_STREAM=false`；生产 Compose 默认开启 `LLM_STREAM=true`，也可在生产
+`.env` 中显式覆盖。可设置 `INTERVIEW_LLM_STREAM=true` 仅对采访/章节评估开启，
 也支持 `MEMORY_LLM_STREAM`、`SCRIPT_LLM_STREAM`、`VISION_LLM_STREAM`、
 `VIDEO_PLAN_LLM_STREAM`。未设置的任务继承全局开关，显式 false 可覆盖全局 true。
 这是后端接收供应商 SSE，不改变浏览器 API 的响应格式。
