@@ -7,16 +7,9 @@ import { QueryState } from "../components/QueryState";
 import { WalletRecharge } from "../components/WalletRecharge";
 
 export const money = (cents: number) => `¥${(cents / 100).toFixed(2)}`;
-const events: Record<string, string> = {
-  recharge: "充值",
-  bonus: "赠送",
-  reserve: "冻结",
-  consume: "消费",
-  release: "解冻",
-};
+const events: Record<string, string> = { consume: "消费" };
 
 export function WalletPage() {
-  const [event, setEvent] = useState("");
   const [page, setPage] = useState(1);
   const wallet = useQuery({
     queryKey: ["wallet"],
@@ -24,8 +17,8 @@ export function WalletPage() {
     refetchInterval: 10000,
   });
   const ledger = useQuery({
-    queryKey: ["wallet-ledger", page, event],
-    queryFn: () => api.walletLedger(page, event),
+    queryKey: ["wallet-ledger", page, "consume"],
+    queryFn: () => api.walletLedger(page, "consume"),
   });
   const w = wallet.data;
   return (
@@ -110,23 +103,6 @@ export function WalletPage() {
       <section className="wallet-history" aria-label="钱包明细">
         <div className="wallet-history-bar">
           <strong>消费明细</strong>
-          <label>
-            类型
-            <select
-              value={event}
-              onChange={(e) => {
-                setEvent(e.target.value);
-                setPage(1);
-              }}
-            >
-              <option value="">全部</option>
-              {Object.entries(events).map(([key, label]) => (
-                <option key={key} value={key}>
-                  {label}
-                </option>
-              ))}
-            </select>
-          </label>
         </div>
         <QueryState queries={[ledger]} />
         {ledger.isSuccess && (
@@ -152,9 +128,7 @@ export function WalletPage() {
                     <td className="wallet-number">
                       {row.event === "consume"
                         ? "−"
-                        : ["bonus", "recharge"].includes(row.event)
-                          ? "+"
-                          : ""}
+                        : ""}
                       {money(row.amount_cents)}
                     </td>
                     <td className="wallet-number">
