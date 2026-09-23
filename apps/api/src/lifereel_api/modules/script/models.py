@@ -75,6 +75,8 @@ class ScriptScene(UUIDPrimaryKeyMixin, Base):
     visual_prompt: Mapped[str] = mapped_column(Text)
     duration_seconds: Mapped[int] = mapped_column(Integer, default=12)
     source_claim_ids: Mapped[list[str]] = mapped_column(JSON, default=list)
+    visual_constraints: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    story_skeleton: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     review_status: Mapped[str] = mapped_column(String(32), default="needs_review")
     locked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
@@ -96,3 +98,4 @@ class ScriptShot(UUIDPrimaryKeyMixin, Base):
     visual_prompt: Mapped[str] = mapped_column(Text)
     duration_seconds: Mapped[int] = mapped_column(Integer, default=6)
     source_claim_ids: Mapped[list[str]] = mapped_column(JSON, default=list)
+    visual_constraints: Mapped[dict | None] = mapped_column(JSON, nullable=True)

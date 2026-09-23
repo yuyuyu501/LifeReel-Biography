@@ -23,6 +23,11 @@ from lifereel_api.modules.interview.chapter_prompts import (
 from lifereel_api.modules.interview.models import Chapter, InterviewSession, InterviewTurnWorkflow
 from lifereel_api.modules.memory.models import MemoryClaim
 from lifereel_api.modules.production.locking import execution_lock
+from lifereel_api.modules.script.constraints import (
+    merge_constraints,
+    normalize_constraints,
+    user_visual_constraints,
+)
 from lifereel_api.modules.script.freshness import is_current
 from lifereel_api.modules.script.models import ScriptProject, ScriptScene, ScriptShot
 from lifereel_api.modules.script.schemas import (
@@ -30,10 +35,23 @@ from lifereel_api.modules.script.schemas import (
     ScriptGenerateRequest,
     ScriptSceneUpdate,
     ScriptShotUpdate,
+    StorySkeleton,
 )
 from lifereel_api.providers.openai_compatible import OpenAICompatibleClient
 
 logger = logging.getLogger(__name__)
+
+
+def _story_skeleton(plot: str, dialogues: list[dict]) -> dict:
+    lines = [line["text"].strip() for line in dialogues if line.get("text", "").strip()]
+    opening = lines[0] if lines else plot.strip()
+    ending = lines[-1] if lines else plot.strip()
+    beats = [line for line in lines[1:-1][:4]] or [plot.strip()]
+    return StorySkeleton(
+        opening=opening[:600], beats=[item[:600] for item in beats],
+        turning_point=beats[0][:600] if len(beats) > 1 else None,
+        ending=ending[:600],
+    ).model_dump()
 
 
 def _script_input(request: dict) -> str:
@@ -68,14 +86,25 @@ def _script_input(request: dict) -> str:
 def _validate_generated_scene(scene: dict, allowed_ids: set[str]) -> dict:
     """Validate both providers against the editable/output contract before any DB mutation."""
     try:
+        scene_constraints = normalize_constraints(scene.get("visual_constraints"))
+        skeleton = scene.get("story_skeleton") or _story_skeleton(
+            scene.get("plot") or "本章经历", scene.get("dialogues") or [],
+        )
         edited = ScriptSceneUpdate.model_validate({
             "expected_version": 1,
             **{key: scene[key] for key in (
                 "heading", "plot", "dialogues", "visual_prompt", "duration_seconds",
             )},
-            "shots": [{key: shot[key] for key in (
-                "shot_type", "visual_prompt", "duration_seconds",
-            )} for shot in scene["shots"]],
+            "visual_constraints": scene_constraints,
+            "story_skeleton": skeleton,
+            "shots": [{
+                **{key: shot[key] for key in (
+                    "shot_type", "visual_prompt", "duration_seconds",
+                )},
+                "visual_constraints": normalize_constraints(
+                    shot.get("visual_constraints"), inherited=scene_constraints,
+                ),
+            } for shot in scene["shots"]],
         })
         if not edited.plot or not edited.shots or not 15 <= edited.duration_seconds <= 30:
             raise ValueError("invalid generated chapter")
@@ -104,8 +133,8 @@ def _validate_generated_scene(scene: dict, allowed_ids: set[str]) -> dict:
 def _fit_shot_durations(shots: list[dict], scene_duration: int) -> list[dict]:
     if not shots:
         return shots
-    shots = shots[: max(1, scene_duration // 2)]
-    base_seconds = 2
+    shots = shots[: max(1, scene_duration // 4)]
+    base_seconds = 4
     remaining = scene_duration - base_seconds * len(shots)
     weights = [max(1, int(shot["duration_seconds"])) for shot in shots]
     total_weight = sum(weights)
@@ -122,6 +151,7 @@ def _rule_scenes(
     subject_name: str,
     claims: list[MemoryClaim],
     profile: ChapterPromptProfile | None = None,
+    visual_constraints: dict | None = None,
 ) -> list[dict]:
     source_ids = [str(claim.id) for claim in claims]
     chapter_title = profile["title"] if profile else "岁月片段"
@@ -136,6 +166,7 @@ def _rule_scenes(
             code=ErrorCode.SCRIPT_MOCK_OUTPUT_TOO_LARGE,
         )
     memories = "\n\n".join(claim.claim_text.rstrip("。") + "。" for claim in claims)
+    constraints = normalize_constraints(visual_constraints)
     visual_prompt = (
         f"围绕“{chapter_title}”的纪实电影画面，符合人物年代与地域；"
         "只呈现来源记忆中已有的细节，不得擅自生成未经授权的真实人脸。"
@@ -151,18 +182,24 @@ def _rule_scenes(
             "visual_prompt": visual_prompt,
             "duration_seconds": duration,
             "source_claim_ids": source_ids,
+            "visual_constraints": constraints,
+            "story_skeleton": _story_skeleton(memories, [{
+                "text": f"{introduction}{memories}",
+            }]),
             "shots": [
                 {
                     "shot_type": "wide",
                     "visual_prompt": f"本章环境建立镜头。{visual_prompt}",
                     "duration_seconds": duration // 2,
                     "source_claim_ids": source_ids,
+                    "visual_constraints": constraints,
                 },
                 {
                     "shot_type": "detail",
                     "visual_prompt": f"本章关键生活细节特写。{visual_prompt}",
                     "duration_seconds": duration - duration // 2,
                     "source_claim_ids": source_ids,
+                    "visual_constraints": constraints,
                 },
             ],
         }
@@ -209,6 +246,11 @@ def _llm_scenes(
         "chapter_profile": profile,
         "evidence_pack": evidence_pack,
         "update_brief": update_brief,
+        "visual_constraints": user_visual_constraints(
+            (update_brief or {}).get("script_instructions"),
+            ((update_brief or {}).get("turn_intent") or {}).get("instructions")
+            if isinstance((update_brief or {}).get("turn_intent"), dict) else None,
+        ),
         "duration_range_seconds": {"min": 15, "max": 30},
     }
     serialized_request = _script_input(request)
@@ -232,6 +274,11 @@ def _llm_scenes(
             "剧本分为四部分：plot是简洁的剧情概述（事情如何发生和发展，不是旁白复写）；"
             "shots是含景别、动作、运镜与时长的分镜；dialogues是按播放顺序排列的所有口播；"
             "visual_prompt是整体场景描述，说明有据可查的年代、地点、环境、人物外观与氛围。"
+            "story_skeleton是先于分镜的叙事骨架，包含opening、beats、turning_point、ending，"
+            "只总结输入事实，不新增人物经历；分镜和口播必须能回溯到骨架。"
+            "visual_constraints是结构化视觉约束；scene的约束适用于全章，每个shot都必须复制或收紧它。"
+            "用户明确提出的视觉限制优先级最高，不得在shot中放宽。没有用户限制时，face_policy必须保持unspecified，"
+            "不能凭空把人物设为禁止露脸或指定真实肖像。"
             "姓名、职业、出生年份和阅读喜好不能作为性别依据；未明确说明性别时，"
             "使用姓名或中性称谓，不得擅写男性、女性或相应外貌。"
             "用户不露脸等画面限制必须落实到每个shot的visual_prompt，优先空镜、"
@@ -243,11 +290,16 @@ def _llm_scenes(
             "输出严格 JSON，以下结构中的22秒仅为格式示例，实际时长须独立估算："
             '{"title":"整本书名（可选）","chapter":{"heading":"本章标题",'
             '"plot":"本章剧情概述",'
+            '"story_skeleton":{"opening":"开场", "beats":["关键节点"],'
+            '"turning_point":null,"ending":"收束"},'
             '"dialogues":[{"kind":"narration","speaker":"主人公","text":"本章旁白"}],'
             '"visual_prompt":"本章场景描述",'
+            '"visual_constraints":{"face_policy":"unspecified|no_identifiable_faces|faces_allowed",'
+            '"required_elements":[],"forbidden_elements":[],"notes":null},'
             '"duration_seconds":22,"source_claim_ids":["..."],'
             '"shots":[{"shot_type":"wide|medium|closeup|detail|archive",'
-            '"visual_prompt":"...","duration_seconds":6,"source_claim_ids":["..."]}]}}。',
+            '"visual_prompt":"...","duration_seconds":6,"source_claim_ids":["..."],'
+            '"visual_constraints":{"face_policy":"unspecified","required_elements":[],"forbidden_elements":[],"notes":null}}]}}。',
             serialized_request,
         )
     except json.JSONDecodeError as exc:
@@ -287,7 +339,7 @@ def _llm_scenes(
             raise ValueError("chapter duration must be an integer between 15 and 30")
         shots = []
         raw_shots = raw_chapter.get("shots")
-        if not isinstance(raw_shots, list) or not 1 <= len(raw_shots) <= min(12, duration // 2):
+        if not isinstance(raw_shots, list) or not 1 <= len(raw_shots) <= min(12, duration // 4):
             raise ValueError("invalid chapter shots")
         for raw_shot in raw_shots:
             if not isinstance(raw_shot, dict):
@@ -313,6 +365,9 @@ def _llm_scenes(
                 {
                     **validated_shot.model_dump(),
                     "source_claim_ids": shot_source_ids,
+                    "visual_constraints": normalize_constraints(
+                        raw_shot.get("visual_constraints"),
+                    ),
                 }
             )
         if not shots:
@@ -332,16 +387,33 @@ def _llm_scenes(
         visual_prompt = raw_chapter["visual_prompt"]
         if not heading or not narration or not visual_prompt:
             raise ValueError("chapter text is empty")
+        user_constraints = user_visual_constraints(
+            (update_brief or {}).get("script_instructions"),
+            ((update_brief or {}).get("turn_intent") or {}).get("instructions")
+            if isinstance((update_brief or {}).get("turn_intent"), dict) else None,
+        )
         scene = {
             "heading": heading,
             "plot": plot.strip(),
+            "story_skeleton": StorySkeleton.model_validate(
+                raw_chapter.get("story_skeleton") or _story_skeleton(plot, dialogues)
+            ).model_dump(),
             "dialogues": dialogues,
             "narration": narration,
             "visual_prompt": visual_prompt,
             "duration_seconds": duration,
             "source_claim_ids": source_ids,
+            "visual_constraints": merge_constraints(
+                user_constraints, raw_chapter.get("visual_constraints"),
+            ),
             "shots": shots,
         }
+        scene["shots"] = [
+            {**shot, "visual_constraints": merge_constraints(
+                scene["visual_constraints"], shot.get("visual_constraints"),
+            )}
+            for shot in scene["shots"]
+        ]
         scene = _validate_generated_scene(scene, allowed_ids)
         title = result.get("title")
         if title is not None and (not isinstance(title, str) or len(title) > 180):
@@ -583,8 +655,14 @@ def _generate_draft(
                 "heading": current_scene.heading, "plot": current_scene.plot,
                 "dialogues": current_scene.dialogues, "narration": current_scene.narration,
                 "visual_prompt": current_scene.visual_prompt,
-                "shots": [{"visual_prompt": shot.visual_prompt, "shot_type": shot.shot_type,
-                           "duration_seconds": shot.duration_seconds} for shot in current_shots],
+                "visual_constraints": current_scene.visual_constraints,
+                "story_skeleton": current_scene.story_skeleton,
+                "shots": [
+                    {"visual_prompt": shot.visual_prompt, "shot_type": shot.shot_type,
+                     "duration_seconds": shot.duration_seconds,
+                     "visual_constraints": shot.visual_constraints}
+                    for shot in current_shots
+                ],
             }
         chapter_payload = payload.model_copy(
             update={"chapter_id": chapter_id, "mode": "single_chapter"}
@@ -607,7 +685,16 @@ def _generate_draft(
             generated_title = generated_title or title
             generation_provider = "openai-compatible"
         elif settings.llm_provider == "mock":
-            generated = _rule_scenes(subject_name, selected, profile)
+            generated = _rule_scenes(
+                subject_name,
+                selected,
+                profile,
+                user_visual_constraints(
+                    chapter_brief.get("script_instructions"),
+                    (chapter_brief.get("turn_intent") or {}).get("instructions")
+                    if isinstance(chapter_brief.get("turn_intent"), dict) else None,
+                ),
+            )
         else:
             raise ApiError(
                 status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -691,6 +778,8 @@ def _generate_draft(
             visual_prompt=scene_payload["visual_prompt"],
             duration_seconds=scene_payload["duration_seconds"],
             source_claim_ids=scene_payload["source_claim_ids"],
+            visual_constraints=scene_payload.get("visual_constraints"),
+            story_skeleton=scene_payload.get("story_skeleton"),
             review_status="needs_review",
         )
         db.add(scene)
@@ -706,6 +795,7 @@ def _generate_draft(
                     visual_prompt=shot["visual_prompt"],
                     duration_seconds=shot["duration_seconds"],
                     source_claim_ids=shot["source_claim_ids"],
+                    visual_constraints=shot.get("visual_constraints"),
                 )
                 for shot_index, shot in enumerate(scene_payload["shots"], start=1)
             ]
@@ -763,6 +853,10 @@ def update_scene(db, tenant_id, project_id, scene_id, payload: ScriptSceneUpdate
         scene.dialogues = [line.model_dump() for line in payload.dialogues]
         scene.narration = "\n".join(line.text for line in payload.dialogues)
         scene.visual_prompt = payload.visual_prompt
+        scene.visual_constraints = payload.visual_constraints.model_dump()
+        scene.story_skeleton = (
+            payload.story_skeleton.model_dump() if payload.story_skeleton else None
+        )
         scene.duration_seconds = payload.duration_seconds
         old_shots = list(db.scalars(select(ScriptShot).where(ScriptShot.scene_id == scene.id)
                                    .order_by(ScriptShot.order_index)))

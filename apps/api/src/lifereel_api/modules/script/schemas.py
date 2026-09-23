@@ -14,6 +14,22 @@ class ScriptDialogue(BaseModel):
     text: str = Field(min_length=1, max_length=2000)
 
 
+class VisualConstraints(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    face_policy: Literal["unspecified", "no_identifiable_faces", "faces_allowed"] = "unspecified"
+    required_elements: list[str] = Field(default_factory=list, max_length=16)
+    forbidden_elements: list[str] = Field(default_factory=list, max_length=16)
+    notes: str | None = Field(default=None, max_length=500)
+
+
+class StorySkeleton(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    opening: str = Field(min_length=1, max_length=600)
+    beats: list[str] = Field(min_length=1, max_length=6)
+    turning_point: str | None = Field(default=None, max_length=600)
+    ending: str = Field(min_length=1, max_length=600)
+
+
 class ScriptGenerateRequest(BaseModel):
     subject_id: UUID
     title: str | None = Field(default=None, max_length=180)
@@ -28,6 +44,7 @@ class ScriptShotUpdate(BaseModel):
     shot_type: Literal["wide", "medium", "closeup", "detail", "archive"]
     visual_prompt: str = Field(min_length=1, max_length=4000)
     duration_seconds: int = Field(ge=1, le=300, strict=True)
+    visual_constraints: VisualConstraints = Field(default_factory=VisualConstraints)
 
 
 class ScriptSceneUpdate(BaseModel):
@@ -38,6 +55,8 @@ class ScriptSceneUpdate(BaseModel):
     dialogues: list[ScriptDialogue] = Field(min_length=1, max_length=40)
     visual_prompt: str = Field(min_length=1, max_length=4000)
     duration_seconds: int = Field(ge=4, le=300, strict=True)
+    visual_constraints: VisualConstraints = Field(default_factory=VisualConstraints)
+    story_skeleton: StorySkeleton | None = None
     shots: list[ScriptShotUpdate] = Field(max_length=40)
 
 
@@ -55,6 +74,8 @@ class ScriptSceneRead(BaseModel):
     duration_seconds: int
     source_claim_ids: list[str]
     reference_asset_ids: list[UUID] | None = None
+    visual_constraints: VisualConstraints | None = None
+    story_skeleton: StorySkeleton | None = None
 
 
 class ScriptReferencesUpdate(BaseModel):
@@ -73,6 +94,7 @@ class ScriptShotRead(BaseModel):
     visual_prompt: str
     duration_seconds: int
     source_claim_ids: list[str]
+    visual_constraints: VisualConstraints | None = None
 
 
 class ScriptProjectRead(BaseModel):

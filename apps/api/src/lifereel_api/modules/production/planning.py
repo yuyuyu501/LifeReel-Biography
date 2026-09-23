@@ -8,6 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from lifereel_api.core.config import get_settings
 from lifereel_api.modules.production.providers import VideoProviderError
+from lifereel_api.modules.script.constraints import constraint_prompt, merge_constraints
 from lifereel_api.providers.openai_compatible import OpenAICompatibleClient
 
 
@@ -17,6 +18,11 @@ class Segment(BaseModel):
     duration_seconds: int = Field(ge=4, le=15)
     narration: str = Field(max_length=2000)
     visual_prompt: str = Field(min_length=1, max_length=1500)
+    shot_id: str | None = None
+    shot_part: int | None = None
+    dialogues: list[dict] | None = None
+    visual_constraints: dict | None = None
+    story_skeleton: dict | None = None
 
 
 class VideoPlan(BaseModel):
@@ -153,7 +159,210 @@ def segment_durations(duration: int) -> list[int]:
     return [base + (index < extra) for index in range(count)]
 
 
+def _shot_chunks(scene: dict) -> list[dict]:
+    """Normalize editable script shots to the provider's 4–15 second range."""
+    shots = scene.get("shots") or []
+    if not shots:
+        raise PlanValidationError("SCRIPT_SHOTS_REQUIRED", f"scenes.{scene.get('id')}.shots")
+    expanded: list[dict] = []
+    for shot in shots:
+        duration = int(shot["duration_seconds"])
+        if duration < 1:
+            raise PlanValidationError("SHOT_DURATION_INVALID", "shot.duration_seconds")
+        if duration < 4:
+            expanded.append({**shot, "shot_part": None})
+            continue
+        for index, part_duration in enumerate(segment_durations(duration)):
+            expanded.append({
+                **shot,
+                "duration_seconds": part_duration,
+                "shot_part": index + 1 if duration > 15 else None,
+            })
+    # A very short editable shot is folded into the next shot. This preserves
+    # the next shot's provider-safe duration without creating a 1–3 second job.
+    normalized: list[dict] = []
+    pending: dict | None = None
+    for shot in expanded:
+        if shot["duration_seconds"] < 4:
+            if pending is None:
+                pending = shot
+            else:
+                pending["duration_seconds"] += shot["duration_seconds"]
+                pending["visual_prompt"] += "；随后：" + shot["visual_prompt"]
+                pending["visual_constraints"] = merge_constraints(
+                    pending.get("visual_constraints"), shot.get("visual_constraints"),
+                )
+            continue
+        if pending is not None:
+            shot = {
+                **shot,
+                "duration_seconds": shot["duration_seconds"] + pending["duration_seconds"],
+                "visual_prompt": pending["visual_prompt"] + "；随后：" + shot["visual_prompt"],
+                "visual_constraints": merge_constraints(
+                    pending.get("visual_constraints"), shot.get("visual_constraints"),
+                ),
+            }
+            pending = None
+        if shot["duration_seconds"] <= 15:
+            normalized.append(shot)
+        else:
+            normalized.extend({
+                **shot,
+                "duration_seconds": duration,
+                "shot_part": index + 1,
+            } for index, duration in enumerate(segment_durations(shot["duration_seconds"])))
+    if pending is not None:
+        if pending["duration_seconds"] >= 4:
+            normalized.append(pending)
+        elif normalized:
+            normalized[-1] = {
+                **normalized[-1],
+                "duration_seconds": (
+                    normalized[-1]["duration_seconds"] + pending["duration_seconds"]
+                ),
+                "visual_prompt": (
+                    normalized[-1]["visual_prompt"] + "；随后：" + pending["visual_prompt"]
+                ),
+                "visual_constraints": merge_constraints(
+                    normalized[-1].get("visual_constraints"), pending.get("visual_constraints"),
+                ),
+            }
+        else:
+            raise PlanValidationError("SHOT_DURATION_INVALID", "shots")
+    if any(item["duration_seconds"] > 15 for item in normalized):
+        raise PlanValidationError("SHOT_DURATION_INVALID", "shots")
+    return normalized
+
+
+def _narration_parts(narration: str, durations: list[int]) -> list[str]:
+    if not narration.strip():
+        raise PlanValidationError("PLAN_NARRATION_EMPTY", "narration")
+    total = sum(durations)
+    boundaries = [0]
+    for index, _duration in enumerate(durations[:-1]):
+        target = round(len(narration) * (sum(durations[:index + 1]) / total))
+        lower = boundaries[-1] + 1
+        upper = len(narration) - sum(durations[index + 1:]) * len(narration) // total
+        candidates = [
+            position for position in range(lower, max(lower, upper) + 1)
+            if position == len(narration)
+            or narration[position - 1] in "，。！？；、,.!?;：:\n\r\t "
+        ]
+        if not candidates:
+            candidates = list(range(lower, max(lower, upper) + 1))
+        boundaries.append(min(candidates, key=lambda position: abs(position - target)))
+    boundaries.append(len(narration))
+    return [narration[start:end] for start, end in zip(boundaries, boundaries[1:], strict=False)]
+
+
+def _dialogue_parts(scene: dict, parts: list[str]) -> list[list[dict]]:
+    lines = scene.get("dialogues") or []
+    if not lines or "\n".join(line["text"] for line in lines) != scene["narration"]:
+        return [[] for _ in parts]
+    result: list[list[dict]] = []
+    cursor = 0
+    for part in parts:
+        end = cursor + len(part)
+        line_cursor = 0
+        selected = []
+        for line in lines:
+            line_end = line_cursor + len(line["text"])
+            left, right = max(cursor, line_cursor), min(end, line_end)
+            if left < right:
+                selected.append({**line, "text": scene["narration"][left:right]})
+            line_cursor = line_end + 1
+        result.append(selected)
+        cursor = end
+    return result
+
+
+def shot_aligned_plan(scenes: list[dict], subject: dict) -> dict:
+    units: list[tuple[dict, dict]] = []
+    for scene in scenes:
+        chunks = _shot_chunks(scene)
+        if sum(item["duration_seconds"] for item in chunks) != scene["duration_seconds"]:
+            raise PlanValidationError("SHOT_DURATION_TOTAL_MISMATCH", f"scenes.{scene['id']}.shots")
+        units.extend((scene, item) for item in chunks)
+    if not units or len(units) > 24:
+        raise VideoProviderError("VIDEO_DURATION_UNSUPPORTED")
+    by_scene: dict[str, list[tuple[dict, dict]]] = {}
+    for scene, shot in units:
+        by_scene.setdefault(scene["id"], []).append((scene, shot))
+    segments = []
+    for scene in scenes:
+        scene_units = by_scene[scene["id"]]
+        durations = [shot["duration_seconds"] for _, shot in scene_units]
+        narration_parts = _narration_parts(scene["narration"], durations)
+        dialogue_parts = _dialogue_parts(scene, narration_parts)
+        for part, ((_, shot), narration, dialogues) in enumerate(
+            zip(scene_units, narration_parts, dialogue_parts, strict=True), start=1
+        ):
+            constraints = merge_constraints(
+                scene.get("visual_constraints"), shot.get("visual_constraints"),
+            )
+            suffix = constraint_prompt(constraints)
+            prompt = shot["visual_prompt"]
+            if suffix:
+                prompt += "。" + suffix
+            segments.append({
+                "scene_id": scene["id"],
+                "shot_id": shot.get("id"),
+                "shot_part": shot.get("shot_part") or part,
+                "duration_seconds": shot["duration_seconds"],
+                "narration": narration,
+                "dialogues": dialogues,
+                "visual_prompt": prompt,
+                "visual_constraints": constraints,
+                "story_skeleton": scene.get("story_skeleton"),
+            })
+    name = subject.get("preferred_name") or subject.get("display_name") or "本章人物"
+    continuity = (
+        f"{name}的身份、年代、地域和服装只依据剧本明确内容；"
+        "未提供的性别、年龄、容貌不作推断；每个镜头遵守自身视觉约束。"
+    )
+    result = {
+        "continuity": continuity,
+        "voice": "普通话旁白，语气自然清晰，低音量环境声，无背景音乐。",
+        "segments": segments,
+    }
+    return validate_shot_plan(result, scenes)
+
+
+def shot_segment_count(scenes: list[dict]) -> int:
+    return sum(len(_shot_chunks(scene)) for scene in scenes)
+
+
+def validate_shot_plan(raw: dict, scenes: list[dict]) -> dict:
+    plan = VideoPlan.model_validate(raw)
+    expected: list[dict] = []
+    for scene in scenes:
+        expected.extend(_shot_chunks(scene))
+    if len(plan.segments) != len(expected):
+        raise PlanValidationError("PLAN_SEGMENT_COUNT_MISMATCH", "segments")
+    cursor = 0
+    for scene in scenes:
+        scene_count = len(_shot_chunks(scene))
+        parts = plan.segments[cursor:cursor + scene_count]
+        expected_parts = expected[cursor:cursor + scene_count]
+        if [part.scene_id for part in parts] != [scene["id"]] * scene_count:
+            raise PlanValidationError("PLAN_CHAPTER_MISMATCH", f"segments.{cursor}.scene_id")
+        if [part.duration_seconds for part in parts] != [
+            item["duration_seconds"] for item in expected_parts
+        ]:
+            raise PlanValidationError(
+                "PLAN_DURATION_MISMATCH", f"segments.{cursor}.duration_seconds"
+            )
+        if "".join("".join(part.narration.split()) for part in parts) != "".join(
+            scene["narration"].split()
+        ):
+            raise PlanValidationError("PLAN_NARRATION_MISMATCH", f"segments.{cursor}.narration")
+        cursor += scene_count
+    return plan.model_dump(exclude_none=True)
+
+
 def validate_plan(raw: dict, scenes: list[dict]) -> dict:
+    if all(scene.get("shots") for scene in scenes):
+        return validate_shot_plan(raw, scenes)
     plan = VideoPlan.model_validate(raw)
     expected_ids = [scene["id"] for scene in scenes]
     actual_ids = list(dict.fromkeys(segment.scene_id for segment in plan.segments))
@@ -194,13 +403,17 @@ def validate_plan(raw: dict, scenes: list[dict]) -> dict:
         cursor += len(parts)
     if cursor != len(plan.segments):
         raise PlanValidationError("PLAN_SEGMENT_COUNT_MISMATCH", "segments")
-    return plan.model_dump()
+    return plan.model_dump(exclude_none=True)
 
 
 def plan_video(
     scenes: list[dict], subject: dict,
     *, on_failure: Callable[[dict, object], None] | None = None, has_portrait: bool = False,
 ) -> dict:
+    if all(scene.get("shots") for scene in scenes):
+        # Script shots are the source of truth. Do not ask another model to
+        # repartition narration or rewrite the shot prompt before generation.
+        return shot_aligned_plan(scenes, subject)
     settings = get_settings()
     allocations = [
         {"scene_id": scene["id"], "durations": segment_durations(scene["duration_seconds"])}

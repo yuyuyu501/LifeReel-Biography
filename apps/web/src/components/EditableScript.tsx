@@ -43,13 +43,16 @@ function draftFrom(
       : [{ kind: "narration", speaker: "旁白", text: scene.narration }],
     visual_prompt: scene.visual_prompt,
     duration_seconds: scene.duration_seconds,
+    visual_constraints: scene.visual_constraints,
+    story_skeleton: scene.story_skeleton,
     shots: (project.shots ?? [])
       .filter((shot) => shot.scene_id === scene.id)
       .sort((a, b) => a.order_index - b.order_index)
-      .map(({ shot_type, visual_prompt, duration_seconds }) => ({
+      .map(({ shot_type, visual_prompt, duration_seconds, visual_constraints }) => ({
         shot_type,
         visual_prompt,
         duration_seconds,
+        visual_constraints,
       })),
   };
 }
@@ -302,6 +305,32 @@ export function EditableScript({
                         })
                       }
                     />
+                  </label>
+                  <label className="checkbox-field">
+                    <input
+                      type="checkbox"
+                      checked={shot.visual_constraints?.face_policy === "no_identifiable_faces"}
+                      onChange={(event) =>
+                        patch({
+                          shots: draft.shots.map((item, i) =>
+                            i === index
+                              ? {
+                                  ...item,
+                                  visual_constraints: {
+                                    face_policy: event.target.checked
+                                      ? "no_identifiable_faces"
+                                      : "unspecified",
+                                    required_elements: item.visual_constraints?.required_elements ?? [],
+                                    forbidden_elements: item.visual_constraints?.forbidden_elements ?? [],
+                                    notes: item.visual_constraints?.notes ?? null,
+                                  },
+                                }
+                              : item,
+                          ),
+                        })
+                      }
+                    />
+                    本镜头禁止出现可辨识正脸或侧脸
                   </label>
                 </div>
               ))}

@@ -13,6 +13,7 @@ from lifereel_api.modules.billing.models import UsageEvent
 from lifereel_api.modules.billing.usage import record, track_usage
 from lifereel_api.modules.jobs import service as jobs
 from lifereel_api.modules.production.models import ProductionRun
+from lifereel_api.modules.script.models import ScriptShot
 from lifereel_api.providers.openai_compatible import OpenAICompatibleClient
 
 
@@ -26,6 +27,19 @@ def video_case(client, monkeypatch):
     monkeypatch.setattr(settings, "volcengine_video_resolution", "720p")
     monkeypatch.setattr(jobs, "enqueue", lambda _: None)
     project, scenes = make_script(client)
+    with SessionLocal() as db:
+        db.add_all([
+            ScriptShot(
+                tenant_id=project.tenant_id,
+                scene_id=scene.id,
+                order_index=1,
+                shot_type="wide",
+                visual_prompt=f"Metering shot {scene.order_index}",
+                duration_seconds=30,
+            )
+            for scene in scenes
+        ])
+        db.commit()
     payload = {"project_id": str(project.id), "scene_id": str(scenes[0].id),
                "provider": "volcengine-seedance", "quoted_amount_cents": 2400}
     return client, payload, scenes

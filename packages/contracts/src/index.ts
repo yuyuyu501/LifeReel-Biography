@@ -269,6 +269,20 @@ export interface ScriptDialogue {
   text: string;
 }
 
+export interface VisualConstraints {
+  face_policy: "unspecified" | "no_identifiable_faces" | "faces_allowed";
+  required_elements: string[];
+  forbidden_elements: string[];
+  notes: string | null;
+}
+
+export interface StorySkeleton {
+  opening: string;
+  beats: string[];
+  turning_point: string | null;
+  ending: string;
+}
+
 export interface ScriptSceneUpdate {
   expected_version: number;
   heading: string;
@@ -276,7 +290,14 @@ export interface ScriptSceneUpdate {
   dialogues: ScriptDialogue[];
   visual_prompt: string;
   duration_seconds: number;
-  shots: Array<{ shot_type: string; visual_prompt: string; duration_seconds: number }>;
+  visual_constraints?: VisualConstraints | null;
+  story_skeleton?: StorySkeleton | null;
+  shots: Array<{
+    shot_type: string;
+    visual_prompt: string;
+    duration_seconds: number;
+    visual_constraints?: VisualConstraints | null;
+  }>;
 }
 
 export interface ScriptScene {
@@ -292,6 +313,8 @@ export interface ScriptScene {
   visual_prompt: string;
   duration_seconds: number;
   source_claim_ids: UUID[];
+  visual_constraints?: VisualConstraints | null;
+  story_skeleton?: StorySkeleton | null;
 }
 
 export interface ScriptShot {
@@ -302,6 +325,7 @@ export interface ScriptShot {
   visual_prompt: string;
   duration_seconds: number;
   source_claim_ids: UUID[];
+  visual_constraints?: VisualConstraints | null;
 }
 
 export interface ScriptProject {

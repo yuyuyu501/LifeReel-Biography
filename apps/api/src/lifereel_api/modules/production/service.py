@@ -21,7 +21,7 @@ from lifereel_api.modules.jobs.models import Job
 from lifereel_api.modules.production import segmented
 from lifereel_api.modules.production.locking import execution_lock
 from lifereel_api.modules.production.models import GeneratedAsset, ProductionRun
-from lifereel_api.modules.production.planning import segment_durations
+from lifereel_api.modules.production.planning import shot_segment_count
 from lifereel_api.modules.production.providers import VideoProviderError, get_video_provider
 from lifereel_api.modules.production.reference_models import ChapterReferencePackage
 from lifereel_api.modules.production.references import build_reference_package
@@ -68,13 +68,6 @@ def start_production(db: Session, tenant_id: UUID, payload: ProductionStart) -> 
                 else "single_clip"
             ),
         }
-        if config["mode"] == "segmented":
-            try:
-                counts = [len(segment_durations(scene.duration_seconds)) for scene in scenes]
-                if sum(counts) > 24:
-                    raise VideoProviderError("VIDEO_DURATION_UNSUPPORTED")
-            except VideoProviderError as exc:
-                raise ApiError(422, ErrorCode.VIDEO_DURATION_UNSUPPORTED) from exc
     shot_rows = list(
         db.scalars(
             select(ScriptShot)
@@ -89,11 +82,13 @@ def start_production(db: Session, tenant_id: UUID, payload: ProductionStart) -> 
             "order_index": scene.order_index,
             "heading": scene.heading,
             "plot": scene.plot,
+            "story_skeleton": scene.story_skeleton,
             "dialogues": scene.dialogues,
             "narration": scene.narration,
             "visual_prompt": scene.visual_prompt,
             "duration_seconds": scene.duration_seconds,
             "source_claim_ids": scene.source_claim_ids,
+            "visual_constraints": scene.visual_constraints or {},
             "shots": [
                 {
                     "id": str(shot.id),
@@ -103,6 +98,7 @@ def start_production(db: Session, tenant_id: UUID, payload: ProductionStart) -> 
                     "visual_prompt": shot.visual_prompt,
                     "duration_seconds": shot.duration_seconds,
                     "source_claim_ids": shot.source_claim_ids,
+                    "visual_constraints": shot.visual_constraints or {},
                 }
                 for shot in shot_rows
                 if shot.scene_id == scene.id
@@ -110,6 +106,12 @@ def start_production(db: Session, tenant_id: UUID, payload: ProductionStart) -> 
         }
         for scene in scenes
     ]
+    if config and config["mode"] == "segmented":
+        try:
+            if shot_segment_count(snapshot) > 24:
+                raise VideoProviderError("VIDEO_DURATION_UNSUPPORTED")
+        except (VideoProviderError, ValueError) as exc:
+            raise ApiError(422, ErrorCode.VIDEO_DURATION_UNSUPPORTED) from exc
     try:
         get_video_provider(provider_name)
     except VideoProviderError as exc:

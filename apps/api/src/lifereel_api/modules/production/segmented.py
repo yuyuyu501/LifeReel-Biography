@@ -136,6 +136,8 @@ def advance(db: Session, run: ProductionRun) -> ProviderOutput | None:
                         f"这是本章第{index + 1}/{len(segments)}段，"
                         f"时长{segment['duration_seconds']}秒。"
                         f"统一人物和视觉：{manifest['plan']['continuity']}。"
+                        "本章叙事骨架："
+                        f"{json.dumps(segment.get('story_skeleton') or {}, ensure_ascii=False)}。"
                         "保持同一人物身份、性别、年龄、服装；参考帧存在时延续其场景和外貌。"
                         f"本段画面：{segment['visual_prompt']}。"
                         f"统一旁白声线：{manifest['plan']['voice']}。"

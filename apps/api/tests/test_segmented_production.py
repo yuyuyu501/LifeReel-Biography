@@ -13,6 +13,7 @@ from lifereel_api.modules.production.media import assemble_videos, probe_video
 from lifereel_api.modules.production.models import ProductionRun
 from lifereel_api.modules.production.planning import segment_durations, validate_plan
 from lifereel_api.modules.production.providers import ProviderOutput, VideoProviderError
+from lifereel_api.modules.script.models import ScriptShot
 
 
 @pytest.mark.parametrize(
@@ -48,6 +49,13 @@ def test_plan_preserves_narration_and_duration():
 
 def setup_pipeline(client, monkeypatch):
     project, scenes = make_script(client)
+    with SessionLocal() as db:
+        for scene in scenes:
+            db.add(ScriptShot(
+                tenant_id=project.tenant_id, scene_id=scene.id, order_index=1,
+                shot_type="wide", visual_prompt="测试分镜", duration_seconds=30,
+            ))
+        db.commit()
     settings = get_settings()
     monkeypatch.setattr(settings, "volcengine_api_key", "test-key")
     monkeypatch.setattr(settings, "volcengine_video_model", "doubao-seedance-2-0-mini-260615")
