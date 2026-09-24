@@ -106,6 +106,7 @@ def create_account(
     phone: str | None = None,
     email: str | None = None,
     actor_id: UUID | None = None,
+    commit: bool = True,
 ) -> AuthUserRead:
     from lifereel_api.core.seed import DEFAULT_CHAPTERS
 
@@ -135,7 +136,10 @@ def create_account(
             )
         lock_wallet(db, tenant.id)
         audit(db, actor_id or user.id, user.id, "account.created")
-        db.commit()
+        if commit:
+            db.commit()
+        else:
+            db.flush()
     except IntegrityError as exc:
         db.rollback()
         raise ApiError(409, ErrorCode.AUTH_ACCOUNT_UNAVAILABLE) from exc

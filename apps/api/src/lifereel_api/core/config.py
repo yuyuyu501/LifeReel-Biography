@@ -49,6 +49,18 @@ class Settings(BaseSettings):
     bootstrap_owner_password: str | None = None
     bootstrap_owner_name: str = "家庭管理员"
     registration_enabled: bool = False
+    mini_program_registration_enabled: bool = False
+    wechat_mini_app_id: str | None = None
+    wechat_mini_app_secret: str | None = None
+    douyin_mini_app_id: str | None = None
+    douyin_mini_app_secret: str | None = None
+    wechat_mini_login_url: str = "https://api.weixin.qq.com/sns/jscode2session"
+    douyin_mini_login_url: str = (
+        "https://developer.toutiao.com/api/apps/v2/jscode2session"
+    )
+    mini_program_http_timeout_seconds: float = Field(default=8, gt=0, le=30)
+    mini_program_enabled: bool = False
+    mini_refresh_days: int = Field(default=30, ge=1, le=90)
     sms_enabled: bool = False
     sms_access_key_id: str | None = None
     sms_access_key_secret: str | None = None

@@ -1,0 +1,41 @@
+{
+  "name": "@lifereel/mini-program",
+  "version": "0.1.0",
+  "private": true,
+  "license": "Apache-2.0",
+  "scripts": {
+    "dev:weapp": "taro build --type weapp --watch",
+    "dev:tt": "taro build --type tt --watch",
+    "build": "taro build --type weapp",
+    "build:weapp": "taro build --type weapp",
+    "build:tt": "taro build --type tt",
+    "lint": "tsc --noEmit",
+    "test": "tsc --noEmit",
+    "format": "prettier --check src config"
+  },
+  "dependencies": {
+    "@lifereel/contracts": "workspace:*",
+    "@tarojs/components": "^4.2.1",
+    "@tarojs/helper": "^4.2.1",
+    "@tarojs/react": "^4.2.1",
+    "@tarojs/runtime": "^4.2.1",
+    "@tarojs/shared": "^4.2.1",
+    "@tarojs/taro": "^4.2.1",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@babel/core": "^7.29.7",
+    "@babel/preset-react": "^7.29.7",
+    "@tarojs/cli": "^4.2.1",
+    "@tarojs/plugin-framework-react": "^4.2.1",
+    "@tarojs/plugin-platform-tt": "^4.2.1",
+    "@tarojs/plugin-platform-weapp": "^4.2.1",
+    "@tarojs/webpack5-runner": "^4.2.1",
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.5",
+    "babel-preset-taro": "4.2.1",
+    "prettier": "^3.6.2",
+    "typescript": "~5.9.2"
+  }
+}

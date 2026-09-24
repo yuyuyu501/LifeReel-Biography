@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 from lifereel_api.core.config import get_settings
 from lifereel_api.core.database import get_db
 from lifereel_api.core.errors import ApiError, ErrorCode
-from lifereel_api.modules.auth import service, sms
+from lifereel_api.modules.auth import mini_program, service, sms
 from lifereel_api.modules.auth.dependencies import AuthContext, auth_context
 from lifereel_api.modules.auth.schemas import (
     AccountDelete,
@@ -21,9 +21,14 @@ from lifereel_api.modules.auth.schemas import (
     AuthUserRead,
     LoginRequest,
     LoginResponse,
+    MiniProgramAuthResponse,
+    MiniProgramIdentityResponse,
+    MiniProgramLoginRequest,
+    MiniProgramRefreshRequest,
     PasswordChange,
     PasswordReset,
     PhoneChange,
+    PlatformIdentityRead,
     ProfileUpdate,
     RegisterRequest,
     SmsRequest,
@@ -68,6 +73,53 @@ def login(payload: LoginRequest, db: Db, response: Response, request: Request) -
         path="/",
     )
     return result
+
+
+def _mini_auth_response(db: Db, user, identity, pair) -> MiniProgramAuthResponse:
+    return MiniProgramAuthResponse(
+        access_token=pair.access_token,
+        refresh_token=pair.refresh_token,
+        expires_in=pair.expires_in,
+        user=service.user_context(db, user.id, identity.tenant_id),
+        identity=PlatformIdentityRead(
+            id=identity.id,
+            platform=identity.platform,
+            app_id=identity.app_id,
+            created_at=identity.created_at,
+        ),
+    )
+
+
+@router.post("/mini-program/login", response_model=MiniProgramAuthResponse)
+async def mini_program_login(payload: MiniProgramLoginRequest, db: Db):
+    code_identity = await mini_program.exchange_code(payload.platform, payload.code)
+    user, identity, pair, _created = mini_program.login_or_register(
+        db, code_identity, display_name=payload.display_name
+    )
+    return _mini_auth_response(db, user, identity, pair)
+
+
+@router.post("/mini-program/refresh", response_model=MiniProgramAuthResponse)
+def mini_program_refresh(payload: MiniProgramRefreshRequest, db: Db):
+    user, identity, pair = mini_program.refresh(db, payload.refresh_token)
+    return _mini_auth_response(db, user, identity, pair)
+
+
+@router.post("/mini-program/link", response_model=MiniProgramIdentityResponse)
+async def mini_program_link(payload: MiniProgramLoginRequest, db: Db, context: Context):
+    user_id = authenticated_id(context)
+    code_identity = await mini_program.exchange_code(payload.platform, payload.code)
+    identity, pair = mini_program.link(db, user_id, context.tenant_id, code_identity)
+    user = service.require_user(db, user_id, lock=False)
+    return MiniProgramIdentityResponse(
+        identity=PlatformIdentityRead(
+            id=identity.id,
+            platform=identity.platform,
+            app_id=identity.app_id,
+            created_at=identity.created_at,
+        ),
+        auth=_mini_auth_response(db, user, identity, pair),
+    )
 
 
 @router.post("/logout", status_code=204)

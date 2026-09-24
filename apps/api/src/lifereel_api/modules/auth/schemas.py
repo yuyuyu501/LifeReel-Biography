@@ -121,3 +121,34 @@ class AccountPage(BaseModel):
 class LoginResponse(BaseModel):
     expires_in: int
     user: AuthUserRead
+
+
+class MiniProgramLoginRequest(BaseModel):
+    platform: Literal["wechat", "douyin"]
+    code: str = Field(min_length=1, max_length=512)
+    display_name: Name | None = None
+
+
+class MiniProgramRefreshRequest(BaseModel):
+    refresh_token: str = Field(min_length=32, max_length=256)
+
+
+class PlatformIdentityRead(BaseModel):
+    id: UUID
+    platform: Literal["wechat", "douyin"]
+    app_id: str
+    created_at: datetime
+
+
+class MiniProgramAuthResponse(BaseModel):
+    access_token: str
+    refresh_token: str
+    token_type: Literal["bearer"] = "bearer"
+    expires_in: int
+    user: AuthUserRead
+    identity: PlatformIdentityRead
+
+
+class MiniProgramIdentityResponse(BaseModel):
+    identity: PlatformIdentityRead
+    auth: MiniProgramAuthResponse

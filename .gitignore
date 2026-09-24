@@ -27,6 +27,7 @@ node_modules/
 dist/
 coverage/
 *.tsbuildinfo
+.swc/
 
 # IDE / OS
 .idea/

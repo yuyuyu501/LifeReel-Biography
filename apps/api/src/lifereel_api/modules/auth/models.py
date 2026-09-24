@@ -71,3 +71,31 @@ class TenantMembership(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         Uuid, ForeignKey("user_accounts.id", ondelete="CASCADE"), index=True
     )
     role: Mapped[str] = mapped_column(String(32), default="owner")
+
+
+class PlatformIdentity(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    __tablename__ = "platform_identities"
+    __table_args__ = (
+        UniqueConstraint("platform", "app_id", "open_id", name="uq_platform_identity"),
+    )
+    user_id: Mapped[UUID] = mapped_column(
+        Uuid, ForeignKey("user_accounts.id", ondelete="CASCADE"), index=True
+    )
+    tenant_id: Mapped[UUID] = mapped_column(
+        Uuid, ForeignKey("tenants.id", ondelete="CASCADE"), index=True
+    )
+    platform: Mapped[str] = mapped_column(String(16))
+    app_id: Mapped[str] = mapped_column(String(128))
+    open_id: Mapped[str] = mapped_column(String(128))
+    union_id: Mapped[str | None] = mapped_column(String(128))
+
+
+class MiniSession(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    __tablename__ = "mini_sessions"
+    identity_id: Mapped[UUID] = mapped_column(
+        Uuid, ForeignKey("platform_identities.id", ondelete="CASCADE"), index=True
+    )
+    refresh_hash: Mapped[str] = mapped_column(String(64), unique=True)
+    session_version: Mapped[int] = mapped_column(Integer)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

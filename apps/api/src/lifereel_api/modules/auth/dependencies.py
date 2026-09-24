@@ -22,6 +22,8 @@ PUBLIC_AUTH_PATHS = {
     "/v1/auth/registration",
     "/v1/auth/sms",
     "/v1/auth/password/reset",
+    "/v1/auth/mini-program/login",
+    "/v1/auth/mini-program/refresh",
 }
 
 
@@ -44,9 +46,9 @@ def auth_context(
         return AuthContext(None, settings.default_tenant_id, "public")
     bearer_token = None
     if (
-        request.state.internal_access
-        and authorization
+        authorization
         and authorization.lower().startswith("bearer ")
+        and (request.state.internal_access or settings.app_env in {"development", "test"})
     ):
         bearer_token = authorization.split(" ", 1)[1]
     session_token = lifereel_session or bearer_token
