@@ -20,7 +20,7 @@ def test_chapter_asset_foreign_keys_preserve_rows_and_enforce_references():
     assert engine.dialect.name == "postgresql"
     path = (
         Path(__file__).parents[1]
-        / "alembic/versions/20260921_0031_chapter_asset_foreign_keys.py"
+        / "alembic/versions/20260924_0034_chapter_asset_foreign_keys.py"
     )
     spec = importlib.util.spec_from_file_location("chapter_asset_migration", path)
     migration = importlib.util.module_from_spec(spec)
@@ -49,15 +49,16 @@ def test_chapter_asset_foreign_keys_preserve_rows_and_enforce_references():
             """), [
                 {"id": parent, "chapter": chapter, "parent": None, "filename": "parent.jpg"},
                 {"id": child, "chapter": chapter, "parent": parent, "filename": "child.jpg"},
-                {"id": orphan, "chapter": missing, "parent": missing, "filename": "orphan.jpg"},
+                {"id": orphan, "chapter": None, "parent": None, "filename": "orphan.jpg"},
             ])
             connection.execute(text("""
                 INSERT INTO evidence_uploads VALUES (:id, :chapter, :filename)
             """), [
                 {"id": upload, "chapter": chapter, "filename": "upload.jpg"},
-                {"id": orphan_upload, "chapter": missing, "filename": "orphan-upload.jpg"},
+                {"id": orphan_upload, "chapter": None, "filename": "orphan-upload.jpg"},
             ])
             with Operations.context(MigrationContext.configure(connection)):
+                migration.upgrade()
                 migration.upgrade()
 
                 assert connection.execute(text("""
