@@ -7,7 +7,7 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from threading import Event, Thread
-from typing import Any
+from typing import Any, Literal
 
 import httpx
 import structlog
@@ -19,6 +19,7 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=(".env", "../../.env"), extra="ignore")
     api_internal_url: str = "http://api:8000"
     api_access_key: str
+    worker_role: Literal["all", "interview", "media"] = "all"
     interview_concurrency: int = Field(default=3, ge=1, le=8)
     video_concurrency: int = Field(default=1, ge=1, le=4)
     worker_poll_seconds: float = Field(default=2, ge=0.1, le=30)
@@ -128,9 +129,16 @@ def run() -> None:
 
     signal.signal(signal.SIGINT, stop)
     signal.signal(signal.SIGTERM, stop)
-    lanes = ["interview"] * settings.interview_concurrency + ["video"] * settings.video_concurrency
+    lanes = []
+    if settings.worker_role in {"all", "interview"}:
+        lanes.extend(["interview"] * settings.interview_concurrency)
+    if settings.worker_role in {"all", "media"}:
+        lanes.extend(["video"] * settings.video_concurrency)
+    if not lanes:
+        raise RuntimeError("WORKER_ROLE_HAS_NO_LANES")
     log.info(
-        "worker.started", interview=settings.interview_concurrency, video=settings.video_concurrency
+        "worker.started", role=settings.worker_role,
+        interview=lanes.count("interview"), video=lanes.count("video")
     )
     with ThreadPoolExecutor(max_workers=len(lanes), thread_name_prefix="lifereel") as pool:
         futures = [pool.submit(consume, settings, lane, stopping) for lane in lanes]

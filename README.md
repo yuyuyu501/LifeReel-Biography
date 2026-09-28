@@ -23,7 +23,7 @@
 apps/
   api/          FastAPI 模块化后端
   web/          React + TypeScript PWA
-  worker/       异步任务 Worker
+  worker/       分角色异步任务 Worker
 packages/
   contracts/    跨前后端共享的数据契约
 docs/
@@ -57,7 +57,7 @@ docker compose -f compose.production.yaml exec api alembic upgrade head
 
 API 文档：`http://localhost:8000/docs`
 
-生产 Compose 已包含 API、Web、Worker、PostgreSQL 和 Redis。生产模式只创建 `.env` 中 `BOOTSTRAP_OWNER_EMAIL` / `BOOTSTRAP_OWNER_PASSWORD` 指定的首位管理员。
+生产 Compose 已包含 API、Web、`worker-interview`、`worker-media`、PostgreSQL 和 Redis。两个 Worker 共用任务账本，但分别处理采访任务与媒体任务；生产模式只创建 `.env` 中 `BOOTSTRAP_OWNER_EMAIL` / `BOOTSTRAP_OWNER_PASSWORD` 指定的首位管理员。
 
 ### 3. 验证
 

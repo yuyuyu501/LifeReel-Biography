@@ -276,6 +276,8 @@ class Regression:
             "-e",
             "NGINX_CLIENT_MAX_BODY_SIZE=2m",
             "-e",
+            "API_UPSTREAM=api:8000",
+            "-e",
             "NGINX_ENVSUBST_FILTER=" + self.report["envsubst_filter"],
             "--mount",
             f"type=bind,src={self.args.template},dst=/etc/nginx/templates/default.conf.template,readonly",

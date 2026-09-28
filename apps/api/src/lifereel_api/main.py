@@ -22,6 +22,7 @@ from lifereel_api.modules.identity import models as identity_models  # noqa: F40
 from lifereel_api.modules.interview import models as interview_models  # noqa: F401
 from lifereel_api.modules.interview.voice_router import socket_router
 from lifereel_api.modules.interview.voice_service import recover_stale
+from lifereel_api.modules.jobs import events as job_events  # noqa: F401
 from lifereel_api.modules.jobs import models as job_models  # noqa: F401
 from lifereel_api.modules.jobs.dispatch import router as worker_router
 from lifereel_api.modules.memory import models as memory_models  # noqa: F401

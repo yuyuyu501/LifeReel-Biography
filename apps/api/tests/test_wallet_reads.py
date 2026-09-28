@@ -8,6 +8,7 @@ from sqlalchemy.dialects import postgresql
 from lifereel_api.core.config import get_settings
 from lifereel_api.core.database import SessionLocal
 from lifereel_api.core.errors import ApiError, ErrorCode
+from lifereel_api.modules.billing import recharge as payments
 from lifereel_api.modules.billing import router, service
 from lifereel_api.modules.billing.models import LedgerEntry, Wallet
 from lifereel_api.modules.identity.models import Tenant
@@ -64,7 +65,7 @@ def test_existing_wallet_read_has_one_select_no_locks_writes_or_commit():
             "paid_cents": -120, "bonus_cents": 100, "frozen_cents": 70,
             "available_cents": -90, "debt_cents": 20, "token_remainder_nano": 123456,
             "prices": service.prices(),
-            "recharge": {"mode": "disabled", "min_cents": 1, "max_cents": 20000},
+            "recharge": payments.configuration(),
         }
         assert row.updated_at == before
         assert not db.new and not db.dirty and not db.deleted

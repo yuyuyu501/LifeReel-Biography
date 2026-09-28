@@ -8,9 +8,11 @@ from fastapi import status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from lifereel_api.architecture.events import EventEnvelope, event_type_for_job
 from lifereel_api.core.config import get_settings
 from lifereel_api.core.errors import ApiError, ErrorCode
 from lifereel_api.modules.billing import service as billing
+from lifereel_api.modules.jobs.events import OutboxEvent
 from lifereel_api.modules.jobs.models import Job
 
 
@@ -35,6 +37,25 @@ def create_job(
     )
     db.add(job)
     db.flush()
+    event = EventEnvelope(
+        event_type=event_type_for_job(kind),
+        tenant_id=tenant_id,
+        aggregate_id=job.id,
+        idempotency_key=idempotency_key,
+        payload={"job_id": str(job.id), "kind": kind, "payload": payload},
+    )
+    db.add(
+        OutboxEvent(
+            id=event.event_id,
+            tenant_id=event.tenant_id,
+            event_type=event.event_type,
+            schema_version=event.schema_version,
+            aggregate_id=event.aggregate_id,
+            idempotency_key=event.idempotency_key,
+            payload=event.payload,
+            occurred_at=event.occurred_at,
+        )
+    )
     return job, True
 
 

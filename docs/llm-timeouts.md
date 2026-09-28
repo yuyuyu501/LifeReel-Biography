@@ -82,7 +82,7 @@ Worker 等待 execute 响应的配置为：
 | `WORKER_INTERVIEW_TIMEOUT_SECONDS` | 3600 | 60–14400，有限数 |
 | `WORKER_VIDEO_TIMEOUT_SECONDS` | 7200 | 60–14400，有限数 |
 
-两份 Compose 都透传 worker 配置。调高任务 read timeout 时，应同时核对预期串行调用数、
+生产 Compose 的两个 Worker 角色都会透传 worker 配置。调高任务 read timeout 时，应同时核对预期串行调用数、
 素材处理、格式纠正次数、并发等待和 worker 的等待窗口，不能只调 API。
 Worker execute 是单个非流式响应，这个读取窗口限制 worker 等待结果的时间；
 HTTP 分阶段等待不是精确的端到端总 deadline，也不会在到期时取消 API 中的执行。

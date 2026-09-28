@@ -218,7 +218,7 @@ LifeReel-Biography/
 │  │     ├─ components/           # 应用壳和公共组件
 │  │     ├─ hooks/                # 录音 Hook
 │  │     └─ pages/                # 人物、采访、素材、记忆、影传等页面
-│  └─ worker/                     # Redis 消费者与任务回写
+│  └─ worker/                     # 分角色任务消费者与任务回写
 ├─ packages/contracts/            # 前端共享 TypeScript 契约
 ├─ docs/                          # 架构、API、部署、ADR 与本说明书
 ├─ .github/workflows/ci.yml       # 持续集成
@@ -363,7 +363,7 @@ python -m compileall -q src
 
 ## 14. 部署与运维
 
-生产单机版本由 Docker Compose 提供 PostgreSQL、Redis、API、Worker 和 Web，媒体存储连接外部私有 OSS/S3。首次启动执行迁移和幂等种子，创建 11 个章节及配置指定的首位 Owner。
+生产单机版本由 Docker Compose 提供 PostgreSQL、Redis、API、两个分角色 Worker 和 Web，媒体存储连接外部私有 OSS/S3。首次启动执行迁移和幂等种子，创建 11 个章节及配置指定的首位 Owner。
 
 上线必须完成：
 

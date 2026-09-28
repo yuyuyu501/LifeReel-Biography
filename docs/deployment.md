@@ -42,6 +42,8 @@ S3_BUCKET=replace-with-private-bucket
 docker compose -f compose.production.yaml up -d --build
 ```
 
+生产 Compose 将异步执行拆成两个角色：`worker-interview` 只处理采访任务，`worker-media` 只处理视频、图片和清理任务。两者共享 PostgreSQL 任务账本和内部执行协议，可以分别调整并发、资源和超时；当前仍属于单机模块化部署，不要求引入微服务消息集群。
+
 API 容器启动时会依次执行 Alembic 迁移和幂等基础数据初始化，创建默认租户、首位 owner 账号及 11 个生命章节。
 
 4. 检查：
@@ -66,7 +68,7 @@ Web 的运行镜像来自 `apps/web/Dockerfile` 的 `nginx:1.27-alpine`。该标
 
 `/v1/`、精确匹配的 `/v1/evidence/assets` 和 `/health` 均在请求期间解析 `api:8000`，
 并显式追加 `$request_uri`，保留编码路径、重复查询参数和上传 URL。
-生产 Compose 的 `NGINX_ENVSUBST_FILTER` 为 `API_ACCESS_KEY|NGINX_CLIENT_MAX_BODY_SIZE`；
+生产 Compose 的 `NGINX_ENVSUBST_FILTER` 为 `API_ACCESS_KEY|API_UPSTREAM|NGINX_CLIENT_MAX_BODY_SIZE`；
 镜像入口脚本只替换这些环境变量，必须保留 `$api_upstream`、`$request_uri`、`$http_upgrade` 等 Nginx 变量。
 继续保留 WebSocket Upgrade、900 秒会话超时、上传大小限制与流式转发、内部 Worker 路由 404 和 SPA 回退。
 上传 location 与 `/v1/` 使用相同的 HTTP/1.1、30 秒 connect、900 秒 read/send 超时和代理头，

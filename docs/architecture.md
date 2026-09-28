@@ -2,7 +2,7 @@
 
 ## 1. 目标形态
 
-当前采用“Core API + 明确服务边界 + 独立 Workflow Worker”的渐进式微服务架构。身份、采访、证据、记忆、剧本、授权和发布在过渡期共享 PostgreSQL 实例，但各自拥有明确的表与服务函数；实时采访编排和长耗时媒体生产通过 Redis 交给 Worker。达到明确的并发或组织边界后，优先把 Interview Orchestrator、Evidence、Script 与 Production 拆成独立进程和数据库。
+当前采用“模块化 Core API + 明确服务边界 + 分角色异步 Worker”的渐进式拆分架构。它仍是模块化单体，不把当前部署误称为微服务：身份、采访、证据、记忆、剧本、授权和发布共享 PostgreSQL 事务边界；长耗时任务通过数据库任务账本交给 `worker-interview` 或 `worker-media`。完成事件总线和数据迁移后，再按流量把领域模块拆成独立服务。
 
 ```mermaid
 flowchart TB
@@ -10,7 +10,7 @@ flowchart TB
     API[Core API / Gateway]
     ORCHESTRATOR[Interview Orchestrator]
     SERVICES[Evidence / Memory / Script Services]
-    WORKER[Workflow Worker]
+    WORKER[Interview Worker + Media Worker]
     PG[(PostgreSQL + pgvector)]
     REDIS[(Redis)]
     S3[(S3 / MinIO 私有对象存储)]

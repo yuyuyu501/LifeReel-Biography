@@ -48,6 +48,7 @@ services:
     env_file: .env
     environment:
       APP_ENV: production
+      API_ACCESS_KEY: ${API_ACCESS_KEY:?Set API_ACCESS_KEY}
       DATABASE_URL: ${DATABASE_URL:?Set DATABASE_URL with a URL-encoded password}
       REDIS_URL: redis://redis:6379/0
       AUTO_CREATE_SCHEMA: "false"
@@ -90,7 +91,7 @@ services:
       start_period: 45s
       retries: 20
 
-  worker:
+  worker-interview:
     <<: *runtime
     build:
       context: .
@@ -99,6 +100,32 @@ services:
       REDIS_URL: redis://redis:6379/0
       API_INTERNAL_URL: http://api:8000
       API_ACCESS_KEY: ${API_ACCESS_KEY:?Set API_ACCESS_KEY}
+      WORKER_ROLE: interview
+      WORKER_INTERVIEW_TIMEOUT_SECONDS: ${WORKER_INTERVIEW_TIMEOUT_SECONDS:-3600}
+      WORKER_VIDEO_TIMEOUT_SECONDS: ${WORKER_VIDEO_TIMEOUT_SECONDS:-7200}
+      INTERVIEW_CONCURRENCY: ${INTERVIEW_CONCURRENCY:-3}
+      VIDEO_CONCURRENCY: ${VIDEO_CONCURRENCY:-1}
+    mem_limit: 192m
+    stop_grace_period: 60s
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import time; from pathlib import Path; assert time.time()-float(Path('/tmp/lifereel-worker-heartbeat').read_text()) < 15"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+  worker-media:
+    <<: *runtime
+    build:
+      context: .
+      dockerfile: apps/worker/Dockerfile
+    environment:
+      REDIS_URL: redis://redis:6379/0
+      API_INTERNAL_URL: http://api:8000
+      API_ACCESS_KEY: ${API_ACCESS_KEY:?Set API_ACCESS_KEY}
+      WORKER_ROLE: media
       WORKER_INTERVIEW_TIMEOUT_SECONDS: ${WORKER_INTERVIEW_TIMEOUT_SECONDS:-3600}
       WORKER_VIDEO_TIMEOUT_SECONDS: ${WORKER_VIDEO_TIMEOUT_SECONDS:-7200}
       INTERVIEW_CONCURRENCY: ${INTERVIEW_CONCURRENCY:-3}
@@ -120,11 +147,12 @@ services:
       context: .
       dockerfile: apps/web/Dockerfile
     ports:
-      - "127.0.0.1:5173:80"
+      - "${WEB_BIND_HOST:-127.0.0.1}:${WEB_PORT:-5173}:80"
     environment:
       API_ACCESS_KEY: ${API_ACCESS_KEY:?Set API_ACCESS_KEY}
+      API_UPSTREAM: ${API_UPSTREAM:-api:8000}
       NGINX_CLIENT_MAX_BODY_SIZE: ${NGINX_CLIENT_MAX_BODY_SIZE:-2050m}
-      NGINX_ENVSUBST_FILTER: API_ACCESS_KEY|NGINX_CLIENT_MAX_BODY_SIZE
+      NGINX_ENVSUBST_FILTER: API_ACCESS_KEY|API_UPSTREAM|NGINX_CLIENT_MAX_BODY_SIZE
     mem_limit: 128m
     depends_on:
       api:
