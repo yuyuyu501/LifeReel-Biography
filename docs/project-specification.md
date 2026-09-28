@@ -81,7 +81,7 @@
 - 浏览器通过 MediaRecorder 录制音频并作为私密证据上传。
 - 支持音频、照片、视频、PDF 和文本。
 - 上传时限制 MIME 类型和大小，使用 SHA-256 在租户内去重。
-- 原始文件存入本地私有目录或 S3/MinIO，不通过静态目录公开。
+- 原始文件存入私有 S3/OSS，不通过静态目录公开。
 - 支持人工逐字稿和 OpenAI-compatible ASR 转写。
 - 每次人工修订创建新的 TranscriptVersion，旧版本保持不变。
 - 每次素材分析创建新的 EvidenceObservation，记录素材、逐字稿版本、定位信息、置信度、Provider 与模型，不覆盖历史分析。
@@ -167,7 +167,7 @@
 | PostgreSQL 16 + pgvector 镜像 | 生产事务库与未来向量扩展 |
 | SQLite | 快速测试和无容器开发 |
 | Redis | 异步任务队列 |
-| S3 / MinIO | 私有证据与生成资产 |
+| S3 / OSS | 私有证据与生成资产 |
 | FFmpeg | 本地 9:16 MP4 合成 |
 | httpx | 外部 Provider 和内部 Worker 请求 |
 | Pytest + Ruff | 后端测试和静态检查 |
@@ -175,7 +175,7 @@
 ### 6.3 工程与部署
 
 - pnpm workspace 管理 Web 与共享契约。
-- Docker Compose 编排 API、Web、Worker、PostgreSQL、Redis 和 MinIO。
+- 生产 Docker Compose 编排 API、Web、Worker、PostgreSQL 和 Redis，媒体存储使用外部私有 OSS/S3。
 - 三个独立 Dockerfile 控制服务镜像边界。
 - GitHub Actions 验证 Ruff、Pytest、迁移、前端 lint/test/build、Worker 编译和 Compose 配置。
 
@@ -187,7 +187,7 @@ flowchart LR
     P[分享访问者] --> W
     W --> A[FastAPI]
     A --> DB[(PostgreSQL)]
-    A --> OBJ[(MinIO / S3)]
+    A --> OBJ[(Private OSS / S3)]
     A --> R[(Redis)]
     R --> WK[Worker]
     WK --> A
@@ -222,7 +222,7 @@ LifeReel-Biography/
 ├─ packages/contracts/            # 前端共享 TypeScript 契约
 ├─ docs/                          # 架构、API、部署、ADR 与本说明书
 ├─ .github/workflows/ci.yml       # 持续集成
-├─ compose.yaml                   # 本地/单机部署
+├─ compose.production.yaml        # 唯一生产部署入口
 └─ .env.example                   # 配置模板
 ```
 
@@ -322,7 +322,7 @@ stateDiagram-v2
 - 生产 Cookie 应启用 Secure；本机 HTTP Compose 可显式关闭用于验收。
 - 所有业务查询显式带 tenant_id 条件。
 - 文件名经 Path.name 处理，存储键由 UUID 与哈希组成并校验目录穿越。
-- MinIO Bucket 禁止匿名访问；目标对象存储支持 SSE/KMS 时可显式开启服务端加密标志。
+- OSS/S3 Bucket 禁止匿名访问；目标对象存储支持 SSE/KMS 时可显式开启服务端加密标志。
 - 分享令牌使用 `secrets.token_urlsafe`，撤回后立即失效。
 - 第三方 Provider 的输出下载仅在同主机时携带 Provider Authorization，避免凭据泄漏到外部 URL。
 - 日志和公开响应不返回原始证据、密码哈希、会话 Token 或对象存储键。
@@ -363,12 +363,12 @@ python -m compileall -q src
 
 ## 14. 部署与运维
 
-单机版本由 Docker Compose 提供 PostgreSQL、Redis、MinIO、API、Worker 和 Web。首次启动执行迁移和幂等种子，创建 11 个章节及配置指定的首位 Owner。
+生产单机版本由 Docker Compose 提供 PostgreSQL、Redis、API、Worker 和 Web，媒体存储连接外部私有 OSS/S3。首次启动执行迁移和幂等种子，创建 11 个章节及配置指定的首位 Owner。
 
 上线必须完成：
 
 1. HTTPS 与 `AUTH_COOKIE_SECURE=true`。
-2. 独立随机的 API Key、会话密钥、管理员密码和 MinIO 密码。
+2. 独立随机的 API Key、会话密钥、管理员密码、数据库密码和 OSS 密钥。
 3. PostgreSQL 与对象存储备份及恢复演练。
 4. `/health`、`/ready`、`/system-status`、队列积压和 Provider 失败率监控。
 5. 容量、费用、频率、文件大小和公开发布策略。

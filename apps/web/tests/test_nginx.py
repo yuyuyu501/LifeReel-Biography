@@ -187,14 +187,13 @@ class Regression:
             "Id"
         ]
         docker("image", "inspect", self.args.mock_image)
-        filters = [
-            re.search(r"NGINX_ENVSUBST_FILTER:\s*(.+)", (ROOT / name).read_text())
-            .group(1)
-            .strip()
-            for name in ("compose.yaml", "compose.production.yaml")
-        ]
-        require(filters[0] == filters[1], "Compose envsubst filters differ")
-        self.report["envsubst_filter"] = filters[0]
+        production_compose = ROOT / "compose.production.yaml"
+        require(production_compose.exists(), "Production Compose file is missing")
+        filter_match = re.search(
+            r"NGINX_ENVSUBST_FILTER:\s*(.+)", production_compose.read_text()
+        )
+        require(filter_match is not None, "Production Compose envsubst filter is missing")
+        self.report["envsubst_filter"] = filter_match.group(1).strip()
         self.report["template_sha256"] = hashlib.sha256(
             self.args.template.read_bytes()
         ).hexdigest()
@@ -277,7 +276,7 @@ class Regression:
             "-e",
             "NGINX_CLIENT_MAX_BODY_SIZE=2m",
             "-e",
-            "NGINX_ENVSUBST_FILTER=" + filters[0],
+            "NGINX_ENVSUBST_FILTER=" + self.report["envsubst_filter"],
             "--mount",
             f"type=bind,src={self.args.template},dst=/etc/nginx/templates/default.conf.template,readonly",
             "--mount",
@@ -685,7 +684,7 @@ class Regression:
             except Exception as exc:
                 self.report["result"] = "failed"
                 self.report["error"] = str(exc)
-                if hasattr(self, "web"):
+                if getattr(self, "web", None) in self.containers:
                     self.report["nginx_logs"] = docker("logs", self.web)
                 raise
             finally:

@@ -32,65 +32,38 @@ docs/
   roadmap.md
 ```
 
-## 本地开发
+## 生产 Compose 运行
 
-### 1. 准备配置并启动基础设施
+### 1. 准备生产配置并启动
 
-复制 `.env.example` 为 `.env`，至少替换认证密钥、初始管理员密码和 MinIO 密码。生产 Compose 会拒绝缺失这些值的配置。
+复制 `.env.example` 为 `.env`，填写认证密钥、初始管理员密码、PostgreSQL 密码和外部 OSS/S3 配置。生产 Compose 不包含本地 MinIO，必须先准备可用的对象存储。
 
 ```powershell
 Copy-Item .env.example .env
-docker compose up -d
+docker compose -f compose.production.yaml up -d --build
 ```
 
 服务地址：
 
 - PostgreSQL: `localhost:5432`
-- Redis: `localhost:6379`
-- MinIO API: `http://localhost:9000`
-- MinIO Console: `http://localhost:9001`
+- Web: `http://localhost:5173`
+- API: `http://localhost:8000`
 
-### 2. 启动 API
+### 2. 初始化数据库
 
 ```powershell
-cd apps/api
-python -m venv .venv
-.\.venv\Scripts\Activate.ps1
-pip install -e ".[dev]"
-Copy-Item ../../.env.example .env
-alembic upgrade head
-uvicorn lifereel_api.main:app --reload
+docker compose -f compose.production.yaml exec api alembic upgrade head
 ```
 
 API 文档：`http://localhost:8000/docs`
 
-### 3. 启动 Web
+生产 Compose 已包含 API、Web、Worker、PostgreSQL 和 Redis。生产模式只创建 `.env` 中 `BOOTSTRAP_OWNER_EMAIL` / `BOOTSTRAP_OWNER_PASSWORD` 指定的首位管理员。
+
+### 3. 验证
 
 ```powershell
-pnpm install
-pnpm --filter @lifereel/web dev
-```
-
-Web：`http://localhost:5173`
-
-开发模式自动创建演示账号 `demo@lifereel.local`，密码 `LifeReelDemo2026!`。生产模式只创建 `.env` 中 `BOOTSTRAP_OWNER_EMAIL` / `BOOTSTRAP_OWNER_PASSWORD` 指定的首位管理员。
-
-### 4. 启动 Worker（可选）
-
-```powershell
-cd apps/worker
-python -m venv .venv
-.\.venv\Scripts\Activate.ps1
-pip install -e .
-lifereel-worker
-```
-
-### 5. 验证
-
-```powershell
-cd apps/api
-pytest
-cd ../..
+docker compose -f compose.production.yaml ps
+docker compose -f compose.production.yaml exec api python -m pytest
 pnpm --filter @lifereel/web test
 pnpm --filter @lifereel/web build
 ```
@@ -115,7 +88,7 @@ pnpm --filter @lifereel/web build
 - 有内容的剧本在制作与肖像授权齐全后可以进入视频生产
 - API 测试、Ruff、TypeScript、ESLint、Vitest 和 Vite 生产构建
 
-如果 Docker Desktop 尚未启动，可以不启动基础设施，临时使用 API 默认的 SQLite 开发库；正式联调 PostgreSQL、Redis 和 MinIO 前请启动 Docker Desktop。
+生产 Compose 依赖 Docker Engine、PostgreSQL、Redis 和外部 OSS/S3；这些服务未就绪时不要启动生产容器。
 
 ## 安全注意事项
 

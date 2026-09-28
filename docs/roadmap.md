@@ -3,7 +3,7 @@
 ## Phase 0：Foundation（已完成）
 
 - Monorepo、CI、Docker Compose
-- FastAPI、PostgreSQL、Redis、MinIO
+- FastAPI、PostgreSQL、Redis、外部 OSS/S3
 - 人物、关系、章节、采访会话与轮次
 - React PWA 首页、人物和采访入口
 - Mock Provider 与 Worker 框架

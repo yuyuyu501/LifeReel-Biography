@@ -14,25 +14,32 @@
 
 若服务器无法直连 GitHub，可从已推送的同一提交生成 Git bundle，通过 SSH 上传后由服务器 `git fetch <bundle>`，再快进到相同 SHA。该方式保留原始 Git 历史，不另写或覆盖一份服务器源码。发布前保留上一版镜像用于回滚；依赖未变化时可复用现有镜像依赖层，但业务源码必须来自已验证的提交。
 
-## 单机 Docker Compose
+## 生产 Docker Compose
 
 1. 启动 Docker Desktop 或 Linux Docker Engine。
-2. 在仓库根目录创建 `.env`，至少设置以下值。所有密码和密钥都应使用独立的强随机值：
+2. 在仓库根目录创建 `.env`，填写生产数据库、OSS、认证和管理员配置。所有密码和密钥都应使用独立的强随机值：
 
 ```env
 API_ACCESS_KEY=replace-with-a-long-random-secret
 AUTH_TOKEN_SECRET=replace-with-a-different-long-random-secret
-AUTH_COOKIE_SECURE=false
+AUTH_COOKIE_SECURE=true
 BOOTSTRAP_OWNER_EMAIL=owner@example.com
 BOOTSTRAP_OWNER_PASSWORD=replace-with-a-strong-initial-password
 BOOTSTRAP_OWNER_NAME=家庭管理员
-MINIO_ROOT_PASSWORD=replace-with-a-long-random-secret
+POSTGRES_PASSWORD=replace-with-a-private-database-password
+DATABASE_URL=postgresql+psycopg://lifereel:URL_ENCODED_PASSWORD@postgres:5432/lifereel
+STORAGE_BACKEND=s3
+S3_ENDPOINT_URL=https://oss.example.com
+S3_REGION_NAME=your-region
+S3_ACCESS_KEY=replace-with-oss-access-key
+S3_SECRET_KEY=replace-with-oss-secret-key
+S3_BUCKET=replace-with-private-bucket
 ```
 
 3. 启动：
 
 ```bash
-docker compose up -d --build
+docker compose -f compose.production.yaml up -d --build
 ```
 
 API 容器启动时会依次执行 Alembic 迁移和幂等基础数据初始化，创建默认租户、首位 owner 账号及 11 个生命章节。
@@ -40,14 +47,14 @@ API 容器启动时会依次执行 Alembic 迁移和幂等基础数据初始化�
 4. 检查：
 
 ```bash
-docker compose ps
+docker compose -f compose.production.yaml ps
 curl http://localhost:8000/health
 curl -H "X-API-Key: replace-with-a-long-random-secret" http://localhost:8000/v1/chapters
 ```
 
 Web 默认在 `http://localhost:5173`，API 在 `http://localhost:8000`。用户通过 Web 登录，身份保存在 `Secure`、`HttpOnly`、`SameSite=Lax` Cookie 中。发布成功后的家庭访问地址为 `http://localhost:5173/watch/{token}`。
 
-本机使用 `http://localhost:5173` 验收时保留 `AUTH_COOKIE_SECURE=false`。对外上线必须先启用 HTTPS，再改为 `AUTH_COOKIE_SECURE=true`，否则会话 Cookie 可能经明文连接发送。还应使用外部密钥管理、定期备份、日志/告警和受控对象存储。`X-API-Key` 仅供 Nginx 和 Worker 内部调用，不应交给浏览器用户。
+对外上线必须使用 HTTPS 并启用 `AUTH_COOKIE_SECURE=true`，否则会话 Cookie 可能经明文连接发送。还应使用外部密钥管理、定期备份、日志/告警和受控对象存储。`X-API-Key` 仅供 Nginx 和 Worker 内部调用，不应交给浏览器用户。
 
 ### Web 网关动态解析与私有缓存（D02）
 
@@ -59,7 +66,7 @@ Web 的运行镜像来自 `apps/web/Dockerfile` 的 `nginx:1.27-alpine`。该标
 
 `/v1/`、精确匹配的 `/v1/evidence/assets` 和 `/health` 均在请求期间解析 `api:8000`，
 并显式追加 `$request_uri`，保留编码路径、重复查询参数和上传 URL。
-两份 Compose 的 `NGINX_ENVSUBST_FILTER` 均为 `API_ACCESS_KEY|NGINX_CLIENT_MAX_BODY_SIZE`；
+生产 Compose 的 `NGINX_ENVSUBST_FILTER` 为 `API_ACCESS_KEY|NGINX_CLIENT_MAX_BODY_SIZE`；
 镜像入口脚本只替换这些环境变量，必须保留 `$api_upstream`、`$request_uri`、`$http_upgrade` 等 Nginx 变量。
 继续保留 WebSocket Upgrade、900 秒会话超时、上传大小限制与流式转发、内部 Worker 路由 404 和 SPA 回退。
 上传 location 与 `/v1/` 使用相同的 HTTP/1.1、30 秒 connect、900 秒 read/send 超时和代理头，
@@ -117,7 +124,7 @@ JSON 证据写入被 Git 忽略的 `tmp/`；正常或异常退出都会清理本
 - PostgreSQL：人物、采访、记忆、剧本、授权、任务、发布与审计。
 - `private-data`：本地存储模式下的原始证据与生成资产，不能公开挂载。
 - Redis：异步任务队列，可重建但应开启持久化。
-- MinIO：Compose 默认启用的 S3 兼容私有对象存储，Bucket 禁止匿名读取。若目标 S3 已配置 SSE/KMS，可设置 `S3_SERVER_SIDE_ENCRYPTION=AES256` 或服务端支持的算法；默认 MinIO 未配置 KMS，因此该项留空。
+- 外部 OSS/S3：生产 Compose 使用外部私有对象存储，Bucket 禁止匿名读取。若目标 S3 已配置 SSE/KMS，可设置 `S3_SERVER_SIDE_ENCRYPTION=AES256` 或服务端支持的算法。
 
 ### 阿里云 OSS（S3 兼容接口）
 
@@ -142,9 +149,9 @@ Compose 会把这些值传给 API。OSS Bucket 必须属于该 AccessKey，且�
 在上述 OSS 配置基础上增加 `OSS_DIRECT_UPLOAD_ENABLED=true`，执行迁移并重建 Web/API：
 
 ```bash
-docker compose up -d --build api web
-docker compose exec api python -m lifereel_api.modules.evidence.oss_admin configure-cors --origin http://localhost:5173 --origin http://127.0.0.1:5173
-docker compose exec api python -m lifereel_api.modules.evidence.oss_admin configure-lifecycle
+docker compose -f compose.production.yaml up -d --build api web
+docker compose -f compose.production.yaml exec api python -m lifereel_api.modules.evidence.oss_admin configure-cors --origin https://your-domain.example
+docker compose -f compose.production.yaml exec api python -m lifereel_api.modules.evidence.oss_admin configure-lifecycle
 ```
 
 生产环境的 `--origin` 应使用真实 HTTPS 域名，不要包含路径或通配符。配置命令保留 Bucket 既有规则；如果之前已有 `AllowedOrigins=*`，需要先核对其他应用用途，再手动收紧。CORS 不是权限控制：Bucket 和对象必须保持私有。运行时应用只需指定 Bucket 范围的读、写、删除权限；CORS 和生命周期管理权限只在上述初始化命令执行时需要。
@@ -161,12 +168,12 @@ docker compose exec api python -m lifereel_api.modules.evidence.oss_admin config
 
 上传文件不再经过 Web/API 转发给 OSS，但完成校验仍会从 OSS 下载一遍文件，分析/转写也会读取素材；预览和发布播放暂时仍经 API 中转。深圳同地域服务器部署时应规划服务端内网读写，后续再将预览改为鉴权签名下载；不能把本次改动理解为媒体流量已完全绕过服务器。超大文件确认受网速及当前 Nginx 900 秒超时影响，上线前需验证实际最大文件和并发负载，必要时把完整校验迁移至异步任务。
 
-将存储从 MinIO 切换为 OSS 不会迁移旧文件；正式切换前应迁移原始素材和生成资产并校验哈希。迁移完成前旧数据的预览可能不可用。
+更换 OSS/S3 Bucket 不会自动迁移旧文件；正式切换前应迁移原始素材和生成资产并校验哈希。迁移完成前旧数据的预览可能不可用。
 
 可选的真实云端连通测试（会创建独立合成人物和少量测试对象，并在结束时删除，仅用于上传验证，不调用 AI）：
 
 ```bash
-docker compose exec api python tests/oss_live_check.py
+docker compose -f compose.production.yaml exec api python tests/oss_live_check.py
 ```
 
 该测试覆盖四类文件、POST Policy 大小约束、禁止覆盖、匿名拒绝、内容哈希、Range 读取及重复确认。测试文件包含合成格式头，不代替真实音视频解码测试。若发生中断，先核对测试人物 ID，再用 `--cleanup-person <UUID>` 清理本次测试数据，不清空 Bucket。
@@ -232,7 +239,7 @@ WHISPER_COMPUTE_TYPE=int8
 
 - 执行 `alembic upgrade head` 并确认数据库位于最新迁移。
 - 登录首位管理员，立即验证角色与租户范围。
-- 验证 MinIO/S3 Bucket 无匿名权限，并完成一次备份恢复演练。
+- 验证 OSS/S3 Bucket 无匿名权限，并完成一次备份恢复演练。
 - 完成采访、剧本持续更新、授权、生产、发布、公开观看和撤回的端到端演练。
 - 为 `/health`、`/ready`、`/system-status`、Worker 队列积压和 Provider 失败率配置监控。
 - 明确录音、肖像、声音克隆、未成年人信息和公开发布的隐私政策与删除流程。

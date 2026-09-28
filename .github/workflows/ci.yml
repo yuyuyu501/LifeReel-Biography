@@ -116,7 +116,6 @@ jobs:
       AUTH_TOKEN_SECRET: ci-auth-token-secret
       BOOTSTRAP_OWNER_EMAIL: ci@example.com
       BOOTSTRAP_OWNER_PASSWORD: ci-strong-password
-      MINIO_ROOT_PASSWORD: ci-minio-password
     steps:
       - uses: actions/checkout@v4
-      - run: docker compose config
+      - run: docker compose -f compose.production.yaml config

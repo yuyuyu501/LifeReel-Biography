@@ -23,13 +23,13 @@
 列出最近 50 条待处理记录（pending 或 submitted），包括内部订单号和家庭账户标识：
 
 ```powershell
-docker compose exec api python -m lifereel_api.modules.billing.recharge_admin list
+docker compose -f compose.production.yaml exec api python -m lifereel_api.modules.billing.recharge_admin list
 ```
 
 在**收款人的微信账单**查验实际到账，核对收款金额、交易单号、付款时间、付款人和家庭账户归属。页面不采集交易单号，因此当前仅适合受控测试，需要线下确认付款人与账户的对应关系，不能仅凭相同金额或相近时间猜测匹配。无法核实归属时不要入账。将以下占位符换成核实后的实际值（金额单位为分）：
 
 ```powershell
-docker compose exec api python -m lifereel_api.modules.billing.recharge_admin confirm --order-id <订单UUID> --operator <操作人> --amount-cents 1 --wechat-transaction <真实微信交易单号> --received
+docker compose -f compose.production.yaml exec api python -m lifereel_api.modules.billing.recharge_admin confirm --order-id <订单UUID> --operator <操作人> --amount-cents 1 --wechat-transaction <真实微信交易单号> --received
 ```
 
 `--received` 表示操作者已经查验真实到账。金额必须完全匹配订单；同一个真实交易单号全局只能用于一次充值；同一订单同一金额同一单号重复确认不重复入账。订单变更、钱包余额和流水在同一数据库事务内提交。
@@ -37,7 +37,7 @@ docker compose exec api python -m lifereel_api.modules.billing.recharge_admin co
 核实未通过：
 
 ```powershell
-docker compose exec api python -m lifereel_api.modules.billing.recharge_admin reject --order-id <订单UUID> --operator <操作人> --reason "未找到对应收款，请联系收款方核对"
+docker compose -f compose.production.yaml exec api python -m lifereel_api.modules.billing.recharge_admin reject --order-id <订单UUID> --operator <操作人> --reason "未找到对应收款，请联系收款方核对"
 ```
 
 拒绝操作**不会退款**。实际已经付款但信息不匹配时，先人工核对，不应直接拒绝并忽略款项。核实终态不支持用户自行重新提交。
