@@ -1,0 +1,13 @@
+[Unit]
+Description=LifeReel PostgreSQL administrator access rules
+Requires=docker.service
+After=docker.service network-online.target
+PartOf=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/lifereel-postgres-access
+RemainAfterExit=yes
+
+[Install]
+WantedBy=docker.service

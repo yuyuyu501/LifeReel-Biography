@@ -40,6 +40,8 @@ jobs:
       - run: pip install -e ".[dev]"
       - run: ruff check .
       - run: pytest
+      - name: Verify production database credentials and port configuration
+        run: pytest ../../deploy/tests/test_database_configuration.py
       - name: Verify migrations from empty PostgreSQL database
         env:
           APP_ENV: test

@@ -6,6 +6,7 @@ import argparse
 import os
 import secrets
 from pathlib import Path
+from urllib.parse import quote
 
 from dotenv import dotenv_values, set_key
 
@@ -33,7 +34,11 @@ def main():
         "API_ACCESS_KEY": secrets.token_hex(32),
         "AUTH_TOKEN_SECRET": secrets.token_hex(48),
         "POSTGRES_PASSWORD": password,
-        "DATABASE_URL": f"postgresql+psycopg://lifereel:{password}@postgres:5432/lifereel",
+        "DATABASE_URL": (
+            f"postgresql+psycopg://lifereel:{quote(password, safe='')}@postgres:5432/lifereel"
+        ),
+        "POSTGRES_BIND_HOST": "127.0.0.1",
+        "POSTGRES_PORT": "5432",
         "REDIS_URL": "redis://redis:6379/0",
         "STORAGE_BACKEND": "s3",
         "OSS_DIRECT_UPLOAD_ENABLED": "true",

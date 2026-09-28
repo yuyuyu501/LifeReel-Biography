@@ -12,6 +12,8 @@ services:
   postgres:
     <<: *runtime
     image: pgvector/pgvector:pg16
+    ports:
+      - "${POSTGRES_BIND_HOST:-127.0.0.1}:${POSTGRES_PORT:-5432}:5432"
     environment:
       POSTGRES_DB: lifereel
       POSTGRES_USER: lifereel
@@ -46,7 +48,7 @@ services:
     env_file: .env
     environment:
       APP_ENV: production
-      DATABASE_URL: postgresql+psycopg://lifereel:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}@postgres:5432/lifereel
+      DATABASE_URL: ${DATABASE_URL:?Set DATABASE_URL with a URL-encoded password}
       REDIS_URL: redis://redis:6379/0
       AUTO_CREATE_SCHEMA: "false"
       EXECUTE_MOCK_JOBS_INLINE: "false"
