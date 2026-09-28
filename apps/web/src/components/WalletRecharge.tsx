@@ -21,7 +21,7 @@ export function parseRechargeAmount(value: string): number | null {
 
 export function WalletRecharge({ wallet }: { wallet: WalletSummary }) {
   const client = useQueryClient();
-  const enabled = wallet.recharge?.mode === "manual_wechat";
+  const enabled = wallet.recharge?.mode === "manual_alipay";
   const [amount, setAmount] = useState(10);
   const [customAmount, setCustomAmount] = useState("");
   const [page, setPage] = useState(1);
@@ -91,14 +91,22 @@ export function WalletRecharge({ wallet }: { wallet: WalletSummary }) {
     setSuccess("");
     setImageFailed(false);
     setModalOpen(true);
-    if (order?.status === "pending" && order.amount_cents === cents) {
+    if (
+      order?.status === "pending" &&
+      order.payment_method === "alipay" &&
+      order.amount_cents === cents
+    ) {
       void detail.refetch();
       return;
     }
     setSelected(null);
     if (request.current?.amount !== cents)
       request.current = { amount: cents, id: crypto.randomUUID() };
-    create.mutate({ request_id: request.current.id, amount_cents: cents });
+    create.mutate({
+      request_id: request.current.id,
+      amount_cents: cents,
+      payment_method: "alipay",
+    });
   }
 
   return (
@@ -108,7 +116,7 @@ export function WalletRecharge({ wallet }: { wallet: WalletSummary }) {
           <h2 id="recharge-title">在线充值</h2>
           <p className="wallet-note">
             {enabled
-              ? "个人收款码测试 · 人工核实后入账，单笔 0.01–200 元。"
+              ? "支付宝扫码收款 · 人工核实后入账，非即时到账，单笔 0.01–200 元。"
               : "充值暂未开通，请勿付款。"}
           </p>
         </div>
@@ -156,7 +164,10 @@ export function WalletRecharge({ wallet }: { wallet: WalletSummary }) {
         <fieldset>
           <legend>支付方式</legend>
           <div className="wallet-pay-methods">
-            <div className="selected">微信支付</div>
+            <div className={enabled ? "selected" : ""}>支付宝</div>
+            <button type="button" disabled>
+              微信支付（暂未开通）
+            </button>
           </div>
         </fieldset>
         <div className="wallet-actions">
@@ -199,27 +210,35 @@ export function WalletRecharge({ wallet }: { wallet: WalletSummary }) {
           )}
           {order && (
             <div className="recharge-checkout">
-              {order.status === "pending" && enabled && (
-                <>
-                  <div className="recharge-qr">
-                    <img
-                      src={`${API_BASE_URL}/v1/wallet/recharge/qr?attempt=${imageAttempt}`}
-                      alt="微信收款码"
-                      onLoad={() => setImageFailed(false)}
-                      onError={() => setImageFailed(true)}
-                    />
-                  </div>
-                  <p className="recharge-payment-hint">
-                    请使用微信扫码支付 {money(order.amount_cents)}
-                    ，收款核实后到账。
+              {order.status === "pending" &&
+                enabled &&
+                order.payment_method === "alipay" && (
+                  <>
+                    <div className="recharge-qr">
+                      <img
+                        src={`${API_BASE_URL}/v1/wallet/recharge/qr?order_id=${order.id}&attempt=${imageAttempt}`}
+                        alt="支付宝收款码"
+                        onLoad={() => setImageFailed(false)}
+                        onError={() => setImageFailed(true)}
+                      />
+                    </div>
+                    <p className="recharge-payment-hint">
+                      请使用支付宝扫码，填写金额 {money(order.amount_cents)}
+                      ，人工核实后到账，请勿重复付款。
+                    </p>
+                    <p className="recharge-recipient">
+                      收款方：{wallet.recharge?.recipient_name}
+                      <br />
+                      支付宝账号：{wallet.recharge?.recipient_account}
+                    </p>
+                  </>
+                )}
+              {order.status === "pending" &&
+                (!enabled || order.payment_method !== "alipay") && (
+                  <p role="alert" className="form-error">
+                    支付暂不可用，请勿付款。
                   </p>
-                </>
-              )}
-              {order.status === "pending" && !enabled && (
-                <p role="alert" className="form-error">
-                  支付暂不可用，请勿付款。
-                </p>
-              )}
+                )}
               {order.status === "submitted" && (
                 <p className="recharge-payment-hint">
                   收款核实中，请勿重复付款。

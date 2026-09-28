@@ -15,8 +15,10 @@ from lifereel_api.modules.identity.models import Tenant
 def payments(client, monkeypatch, tmp_path):
     image = tmp_path / "qr.png"
     image.write_bytes(b"test-image")
-    monkeypatch.setattr(get_settings(), "manual_wechat_enabled", True)
-    monkeypatch.setattr(get_settings(), "manual_wechat_qr_path", str(image))
+    monkeypatch.setattr(get_settings(), "manual_alipay_enabled", True)
+    monkeypatch.setattr(get_settings(), "manual_alipay_qr_path", str(image))
+    monkeypatch.setattr(get_settings(), "manual_alipay_recipient_name", "测试收款企业")
+    monkeypatch.setattr(get_settings(), "manual_alipay_recipient_account", "test-recipient")
     return client
 
 
@@ -55,6 +57,8 @@ def test_manual_reports_never_credit_and_confirm_is_idempotent(payments):
     ledger = payments.get("/v1/wallet/ledger?event=recharge").json()
     assert ledger["total"] == 1
     assert ledger["items"][0]["paid_delta"] == 1
+    assert ledger["items"][0]["title"] == "支付宝充值（人工核实）"
+    assert order["payment_method"] == "alipay"
 
 
 def test_create_idempotency_amount_validation_and_limits(payments):
@@ -121,9 +125,9 @@ def test_cancel_reject_mismatch_and_report_replay(payments, monkeypatch):
     with SessionLocal() as db:
         review(db, UUID(order["id"]), "operator", None, None, "未找到对应收款")
         db.commit()
-    monkeypatch.setattr(get_settings(), "manual_wechat_enabled", False)
+    monkeypatch.setattr(get_settings(), "manual_alipay_enabled", False)
     assert create(payments).status_code == 503
-    assert payments.get("/v1/wallet/recharge/qr").status_code == 503
+    assert payments.get(f"/v1/wallet/recharge/qr?order_id={order['id']}").status_code == 503
     assert payments.get("/v1/wallet").json()["available_cents"] == 2000
     with SessionLocal() as db:
         assert (
@@ -170,7 +174,7 @@ def test_reports_work_when_new_payments_paused_and_details_are_isolated(payments
         ).status_code
         == 404
     )
-    monkeypatch.setattr(get_settings(), "manual_wechat_enabled", False)
+    monkeypatch.setattr(get_settings(), "manual_alipay_enabled", False)
     response = payments.post(
         f"/v1/wallet/recharge/{order['id']}/report", json={"payer_reference": "PAID123456"}
     )
@@ -201,3 +205,67 @@ def test_customer_history_contains_only_credited_payments(payments):
     assert payments.get("/v1/wallet").json()["paid_cents"] == 1
     with SessionLocal() as db:
         assert db.get(RechargeOrder, UUID(submitted_order["id"])).status == "submitted"
+
+
+def test_alipay_configuration_and_wechat_disabled_even_with_legacy_flag(payments, monkeypatch):
+    monkeypatch.setattr(get_settings(), "manual_wechat_enabled", True)
+    config = payments.get("/v1/wallet").json()["recharge"]
+    assert config["mode"] == "manual_alipay"
+    assert config["recipient_name"] == "测试收款企业"
+    assert config["recipient_account"] == "test-recipient"
+    assert config["channels"]["wechat"]["enabled"] is False
+    assert config["mini_program_payments"] == {"wechat": False, "douyin": False}
+    response = payments.post("/v1/wallet/recharge", json={
+        "request_id": str(uuid4()), "amount_cents": 1, "payment_method": "wechat",
+    })
+    assert response.status_code == 503
+    assert response.json()["error"]["code"] == "PAYMENT_NOT_ENABLED"
+
+
+@pytest.mark.parametrize("field,value", [
+    ("manual_alipay_enabled", False),
+    ("manual_alipay_qr_path", "/missing-alipay-qr.png"),
+    ("manual_alipay_recipient_name", " "),
+    ("manual_alipay_recipient_account", ""),
+])
+def test_alipay_incomplete_config_disables_new_payments(payments, monkeypatch, field, value):
+    monkeypatch.setattr(get_settings(), field, value)
+    assert payments.get("/v1/wallet").json()["recharge"]["mode"] == "disabled"
+    assert create(payments).status_code == 503
+
+
+def test_qr_is_bound_to_owned_pending_alipay_order(payments):
+    order = create(payments).json()
+    path = f"/v1/wallet/recharge/qr?order_id={order['id']}"
+    response = payments.get(path)
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "image/png"
+    assert response.headers["cache-control"] == "no-store"
+    assert response.content == b"test-image"
+    assert payments.get("/v1/wallet/recharge/qr").status_code == 422
+    other = uuid4()
+    with SessionLocal() as db:
+        db.add(Tenant(id=other, name="Other", slug=str(other)))
+        db.commit()
+    assert payments.get(path, headers={"X-Tenant-ID": str(other)}).status_code == 404
+    payments.post(f"/v1/wallet/recharge/{order['id']}/cancel")
+    assert payments.get(path).status_code == 409
+
+
+def test_historical_wechat_order_never_shows_alipay_qr_or_changes_channel(payments):
+    key = uuid4()
+    order = create(payments, key=key).json()
+    with SessionLocal() as db:
+        db.get(RechargeOrder, UUID(order["id"])).payment_method = "wechat"
+        db.commit()
+    assert create(payments, key=key).status_code == 409
+    assert payments.get(f"/v1/wallet/recharge/qr?order_id={order['id']}").status_code == 503
+    # Disabling a channel must not prevent reconciliation of money already received.
+    with SessionLocal() as db:
+        review(db, UUID(order["id"]), "operator", "OLDWECHAT123", 1)
+        db.commit()
+    history = payments.get("/v1/wallet/recharge/orders").json()["items"]
+    assert history[0]["payment_method"] == "wechat"
+    assert payments.get("/v1/wallet/ledger?event=recharge").json()["items"][0]["title"] == (
+        "微信充值（人工核实）"
+    )

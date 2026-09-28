@@ -99,12 +99,19 @@ class RechargeOrder(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         UniqueConstraint("verified_reference"),
         CheckConstraint("amount_cents BETWEEN 1 AND 20000", name="recharge_amount"),
         CheckConstraint(
+            "payment_method IN ('wechat', 'alipay')", name="recharge_payment_method"
+        ),
+        CheckConstraint(
             "status IN ('pending', 'submitted', 'credited', 'rejected', 'cancelled')",
             name="recharge_status",
         ),
     )
     tenant_id: Mapped[UUID] = mapped_column(Uuid, ForeignKey("wallets.tenant_id"), index=True)
     request_id: Mapped[UUID] = mapped_column(Uuid)
+    # Existing rows predate Alipay; the migration preserves their WeChat origin.
+    payment_method: Mapped[str] = mapped_column(
+        String(16), default="alipay", server_default="wechat"
+    )
     amount_cents: Mapped[int] = mapped_column(Integer)
     status: Mapped[str] = mapped_column(String(20), default="pending")
     payer_reference: Mapped[str | None] = mapped_column(String(64))

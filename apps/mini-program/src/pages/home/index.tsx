@@ -3,6 +3,7 @@ import { Button, Input, Text, View } from "@tarojs/components";
 import Taro from "@tarojs/taro";
 import type { Chapter, Person } from "@lifereel/contracts";
 import { miniApi } from "../../shared/api";
+import { miniPlatform } from "../../shared/platform";
 
 export default function HomePage() {
   const [user, setUser] = useState<{ display_name: string } | null>(null);
@@ -152,6 +153,13 @@ export default function HomePage() {
         >
           查看视频任务
         </Button>
+      </View>
+      <View className="section">
+        <Text className="section-title">账户充值</Text>
+        <Button className="secondary-button" disabled>
+          {miniPlatform === "wechat" ? "微信支付" : "抖音支付"}（暂未开通）
+        </Button>
+        <Text className="list-meta">小程序内支付暂未开放。</Text>
       </View>
     </View>
   );

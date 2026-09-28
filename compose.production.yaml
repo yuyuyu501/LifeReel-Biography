@@ -69,6 +69,7 @@ services:
       WHISPER_MODEL_PATH: /models/whisper-small
       LOCAL_STORAGE_PATH: /data/private
       MANUAL_WECHAT_QR_PATH: /data/payments/wechat-qr.png
+      MANUAL_ALIPAY_QR_PATH: /data/payments/alipay-qr.png
       OMP_NUM_THREADS: "2"
       OPENBLAS_NUM_THREADS: "2"
     volumes:

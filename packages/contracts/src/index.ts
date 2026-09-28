@@ -422,7 +422,18 @@ export interface Publication {
   created_at: string;
 }
 export interface WalletSummary {
-  recharge?: { mode: "disabled" | "manual_wechat"; min_cents: number; max_cents: number };
+  recharge?: {
+    mode: "disabled" | "manual_wechat" | "manual_alipay";
+    min_cents: number;
+    max_cents: number;
+    recipient_name?: string | null;
+    recipient_account?: string | null;
+    channels?: {
+      alipay: { enabled: boolean; settlement: "manual_review" };
+      wechat: { enabled: false };
+    };
+    mini_program_payments?: { wechat: false; douyin: false };
+  };
   paid_cents: number;
   bonus_cents: number;
   frozen_cents: number;
@@ -447,6 +458,7 @@ export interface ProviderUsage {
 export interface WalletPage<T> { total: number; page: number; page_size: number; items: T[] }
 export interface RechargeOrder {
   id: string;
+  payment_method: "alipay" | "wechat";
   amount_cents: number;
   status: "pending" | "submitted" | "credited" | "rejected" | "cancelled";
   payer_reference: string | null;

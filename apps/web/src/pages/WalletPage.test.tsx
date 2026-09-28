@@ -49,7 +49,8 @@ test("shows available balance and disables unconfigured payments", async () => {
   expect(await screen.findByText("AI 实际用量")).toBeVisible();
   fireEvent.click(screen.getByRole("button", { name: "¥50.00" }));
   expect(screen.getByRole("button", { name: "¥50.00" })).toHaveAttribute("aria-pressed", "true");
-  expect(screen.getByText("微信支付")).toBeVisible();
+  expect(screen.getByRole("button", { name: "微信支付（暂未开通）" })).toBeDisabled();
+  expect(screen.getByText("支付宝")).toBeVisible();
   await waitFor(() => expect(fetch).toHaveBeenCalledWith(expect.stringContaining("event=consume"), expect.anything()));
   expect(screen.queryByText("冻结")).not.toBeInTheDocument();
   expect(screen.queryByText("解冻")).not.toBeInTheDocument();

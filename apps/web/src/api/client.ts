@@ -124,7 +124,7 @@ export const api = {
     }),
   rechargeOrders: (page = 1) => request<WalletPage<RechargeOrder>>(`/v1/wallet/recharge/orders?page=${page}`),
   rechargeOrder: (id: string) => request<RechargeOrder>(`/v1/wallet/recharge/${id}`),
-  createRecharge: (payload: { request_id: string; amount_cents: number }) => request<RechargeOrder>("/v1/wallet/recharge", { method: "POST", body: JSON.stringify(payload) }),
+  createRecharge: (payload: { request_id: string; amount_cents: number; payment_method: "alipay" }) => request<RechargeOrder>("/v1/wallet/recharge", { method: "POST", body: JSON.stringify(payload) }),
   reportRecharge: (id: string, payer_reference: string) => request<RechargeOrder>(`/v1/wallet/recharge/${id}/report`, { method: "POST", body: JSON.stringify({ payer_reference }) }),
   cancelRecharge: (id: string) => request<RechargeOrder>(`/v1/wallet/recharge/${id}/cancel`, { method: "POST" }),
   wallet: () => request<WalletSummary>("/v1/wallet"),

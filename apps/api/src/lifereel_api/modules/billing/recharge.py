@@ -1,5 +1,6 @@
 from datetime import timedelta
 from pathlib import Path
+from typing import Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
@@ -18,6 +19,7 @@ class CreateRecharge(BaseModel):
     model_config = ConfigDict(extra="forbid")
     request_id: UUID
     amount_cents: int = Field(strict=True, ge=1, le=20000)
+    payment_method: Literal["alipay", "wechat"] = "alipay"
 
 
 class PaymentReport(BaseModel):
@@ -25,14 +27,38 @@ class PaymentReport(BaseModel):
     payer_reference: str = Field(pattern=r"^[A-Za-z0-9_-]{6,64}$")
 
 
-def enabled() -> bool:
+def enabled(payment_method: str = "alipay") -> bool:
     settings = get_settings()
-    return settings.manual_wechat_enabled and Path(settings.manual_wechat_qr_path).is_file()
+    # WeChat is a placeholder only, even if a legacy environment flag is still set.
+    return (
+        payment_method == "alipay"
+        and settings.manual_alipay_enabled
+        and bool(settings.manual_alipay_recipient_name.strip())
+        and bool(settings.manual_alipay_recipient_account.strip())
+        and Path(settings.manual_alipay_qr_path).is_file()
+    )
 
 
-def require_enabled() -> None:
-    if not enabled():
+def require_enabled(payment_method: str = "alipay") -> None:
+    if not enabled(payment_method):
         raise ApiError(503, ErrorCode.PAYMENT_NOT_ENABLED)
+
+
+def configuration() -> dict:
+    settings = get_settings()
+    available = enabled()
+    return {
+        "mode": "manual_alipay" if available else "disabled",
+        "min_cents": 1,
+        "max_cents": 20000,
+        "recipient_name": settings.manual_alipay_recipient_name if available else None,
+        "recipient_account": settings.manual_alipay_recipient_account if available else None,
+        "channels": {
+            "alipay": {"enabled": available, "settlement": "manual_review"},
+            "wechat": {"enabled": False},
+        },
+        "mini_program_payments": {"wechat": False, "douyin": False},
+    }
 
 
 def serialize(order: RechargeOrder) -> dict:
@@ -40,6 +66,7 @@ def serialize(order: RechargeOrder) -> dict:
         key: getattr(order, key)
         for key in (
             "id",
+            "payment_method",
             "amount_cents",
             "status",
             "payer_reference",
@@ -66,7 +93,7 @@ def get_order(db: Session, tenant_id: UUID, order_id: UUID) -> RechargeOrder:
 
 
 def create(db: Session, tenant_id: UUID, payload: CreateRecharge) -> RechargeOrder:
-    require_enabled()
+    require_enabled(payload.payment_method)
     service.lock_wallet(db, tenant_id)
     existing = db.scalar(
         select(RechargeOrder).where(
@@ -75,7 +102,10 @@ def create(db: Session, tenant_id: UUID, payload: CreateRecharge) -> RechargeOrd
         )
     )
     if existing:
-        if existing.amount_cents != payload.amount_cents:
+        if (
+            existing.amount_cents != payload.amount_cents
+            or existing.payment_method != payload.payment_method
+        ):
             raise ApiError(409, ErrorCode.RECHARGE_REQUEST_CONFLICT)
         return existing
     query = (
@@ -85,7 +115,8 @@ def create(db: Session, tenant_id: UUID, payload: CreateRecharge) -> RechargeOrd
     if recent_count >= 10:
         raise ApiError(429, ErrorCode.RECHARGE_LIMIT_REACHED)
     row = RechargeOrder(
-        tenant_id=tenant_id, request_id=payload.request_id, amount_cents=payload.amount_cents
+        tenant_id=tenant_id, request_id=payload.request_id, amount_cents=payload.amount_cents,
+        payment_method=payload.payment_method,
     )
     db.add(row)
     db.flush()
@@ -171,7 +202,10 @@ def review(
                 tenant_id=tenant_id,
                 event_key=f"recharge:{row.id}",
                 event="recharge",
-                title="微信充值（人工核实）",
+                title=(
+                    "支付宝充值（人工核实）"
+                    if row.payment_method == "alipay" else "微信充值（人工核实）"
+                ),
                 amount_cents=row.amount_cents,
                 paid_delta=row.amount_cents,
                 available_after_cents=service.available(wallet),

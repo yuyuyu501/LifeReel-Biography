@@ -27,7 +27,7 @@ export function RechargeDialog({
         }}
       >
         <DialogHeader className="flex-row items-center justify-between text-left">
-          <DialogTitle>微信扫码支付</DialogTitle>
+          <DialogTitle>支付宝扫码支付</DialogTitle>
           <Button
             type="button"
             variant="ghost"

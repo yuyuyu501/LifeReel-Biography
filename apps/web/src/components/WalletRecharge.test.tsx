@@ -21,7 +21,13 @@ const wallet: WalletSummary = {
   bonus_cents: 2000,
   frozen_cents: 0,
   available_cents: 2000,
-  recharge: { mode: "manual_wechat", min_cents: 1, max_cents: 20000 },
+  recharge: {
+    mode: "manual_alipay",
+    min_cents: 1,
+    max_cents: 20000,
+    recipient_name: "测试收款企业",
+    recipient_account: "test-recipient",
+  },
   prices: {
     version: "test",
     video_cents_per_second: 80,
@@ -35,6 +41,7 @@ let rows: RechargeOrder[];
 const pending = (): RechargeOrder => ({
   id: "10000000-0000-4000-8000-000000000001",
   amount_cents: 1,
+  payment_method: "alipay",
   status: "pending",
   payer_reference: null,
   review_note: null,
@@ -102,14 +109,14 @@ function BalanceObserver() {
   return <span data-testid="available-balance">{data?.available_cents}</span>;
 }
 
-function mount() {
+function mount(summary: WalletSummary = wallet) {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
   render(
     <QueryClientProvider client={client}>
       <BalanceObserver />
-      <WalletRecharge wallet={wallet} />
+      <WalletRecharge wallet={summary} />
     </QueryClientProvider>,
   );
   return client;
@@ -141,23 +148,54 @@ test("shows only the QR, one hint and close control without crediting", async ()
     target: { value: "0.01" },
   });
   fireEvent.click(submit);
-  const dialog = await screen.findByRole("dialog", { name: "微信扫码支付" });
+  const dialog = await screen.findByRole("dialog", { name: "支付宝扫码支付" });
   expect(dialog).toBeVisible();
   expect(
-    await screen.findByRole("img", { name: /微信收款码/ }),
+    await screen.findByRole("img", { name: /支付宝收款码/ }),
   ).toHaveAttribute("src", expect.stringContaining("/v1/wallet/recharge/qr"));
   expect(api.createRecharge).toHaveBeenCalledWith(
-    expect.objectContaining({ amount_cents: 1 }),
+    expect.objectContaining({ amount_cents: 1, payment_method: "alipay" }),
     expect.anything(),
   );
   expect(within(dialog).getAllByRole("button")).toHaveLength(1);
   expect(within(dialog).queryByRole("textbox")).not.toBeInTheDocument();
   expect(dialog).not.toHaveTextContent(pending().id);
+  expect(dialog).toHaveTextContent("测试收款企业");
+  expect(dialog).toHaveTextContent("test-recipient");
+  expect(
+    screen.getByRole("button", { name: "微信支付（暂未开通）", hidden: true }),
+  ).toBeDisabled();
   expect(dialog).toHaveTextContent(
-    "请使用微信扫码支付 ¥0.01，收款核实后到账。",
+    "请使用支付宝扫码，填写金额 ¥0.01，人工核实后到账，请勿重复付款。",
   );
   expect(screen.getByTestId("available-balance")).toHaveTextContent("2000");
   expect(api.reportRecharge).not.toHaveBeenCalled();
+});
+
+test.each(["disabled", "manual_wechat"] as const)(
+  "does not enable payments for %s configuration",
+  (mode) => {
+    mount({ ...wallet, recharge: { ...wallet.recharge!, mode } });
+    expect(screen.getByRole("button", { name: "确认支付" })).toBeDisabled();
+    expect(
+      screen.getByRole("button", { name: "微信支付（暂未开通）" }),
+    ).toBeDisabled();
+    expect(api.createRecharge).not.toHaveBeenCalled();
+  },
+);
+
+test("does not display the Alipay QR for an old WeChat order", async () => {
+  vi.mocked(api.createRecharge).mockImplementationOnce(async () => {
+    const row = { ...pending(), payment_method: "wechat" as const };
+    rows = [row];
+    return row;
+  });
+  mount();
+  fireEvent.click(screen.getByRole("button", { name: "确认支付" }));
+  expect(await screen.findByRole("alert")).toHaveTextContent("支付暂不可用");
+  expect(
+    screen.queryByRole("img", { name: "支付宝收款码" }),
+  ).not.toBeInTheDocument();
 });
 
 test("network retries reuse the order key and closing leaves no visible record", async () => {
@@ -170,7 +208,7 @@ test("network retries reuse the order key and closing leaves no visible record",
   await waitFor(() => expect(api.createRecharge).toHaveBeenCalledTimes(1));
   await waitFor(() => expect(button).toBeEnabled());
   fireEvent.click(screen.getByRole("button", { name: "重新加载" }));
-  await screen.findByRole("img", { name: /微信收款码/ });
+  await screen.findByRole("img", { name: /支付宝收款码/ });
   expect(vi.mocked(api.createRecharge).mock.calls[0][0]).toEqual(
     vi.mocked(api.createRecharge).mock.calls[1][0],
   );
@@ -217,7 +255,7 @@ test("history only renders credited payments without internal order numbers", as
 test("verified credit refreshes the balance and closes the payment dialog", async () => {
   const client = mount();
   fireEvent.click(screen.getByRole("button", { name: "确认支付" }));
-  await screen.findByRole("img", { name: /微信收款码/ });
+  await screen.findByRole("img", { name: /支付宝收款码/ });
   expect(screen.getByTestId("available-balance")).toHaveTextContent("2000");
   await act(async () => {
     rows = [{ ...rows[0], status: "credited" }];
@@ -237,7 +275,7 @@ test("closing or escaping preserves the order, restores focus and allows reopeni
   const trigger = screen.getByRole("button", { name: "确认支付" });
   trigger.focus();
   fireEvent.click(trigger);
-  await screen.findByRole("img", { name: /微信收款码/ });
+  await screen.findByRole("img", { name: /支付宝收款码/ });
   await waitFor(() => expect(trigger).toBeEnabled());
   fireEvent.click(screen.getByRole("button", { name: "关闭支付窗口" }));
   expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
@@ -254,7 +292,7 @@ test("closing or escaping preserves the order, restores focus and allows reopeni
 test("rejection stays visible and never credits the wallet", async () => {
   const client = mount();
   fireEvent.click(screen.getByRole("button", { name: "确认支付" }));
-  await screen.findByRole("img", { name: /微信收款码/ });
+  await screen.findByRole("img", { name: /支付宝收款码/ });
   await act(async () => {
     rows = [{ ...rows[0], status: "rejected", review_note: "金额不符" }];
     await client.invalidateQueries({ queryKey: ["recharge-order"] });
@@ -268,7 +306,7 @@ test("rejection stays visible and never credits the wallet", async () => {
 test("QR and status network failures offer retries without declaring payment failure", async () => {
   const client = mount();
   fireEvent.click(screen.getByRole("button", { name: "确认支付" }));
-  const qr = await screen.findByRole("img", { name: /微信收款码/ });
+  const qr = await screen.findByRole("img", { name: /支付宝收款码/ });
   await waitFor(() =>
     expect(
       screen.getByRole("button", { name: "确认支付", hidden: true }),

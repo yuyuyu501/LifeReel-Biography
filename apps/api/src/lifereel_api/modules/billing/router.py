@@ -30,11 +30,7 @@ def wallet(db: Db, tenant_id: Tenant):
         "debt_cents": max(0, -row.paid_cents - row.bonus_cents),
         "token_remainder_nano": row.token_remainder_nano,
         "prices": service.prices(),
-        "recharge": {
-            "mode": "manual_wechat" if payments.enabled() else "disabled",
-            "min_cents": 1,
-            "max_cents": 20000,
-        },
+        "recharge": payments.configuration(),
     }
     return result
 
@@ -119,10 +115,13 @@ def recharge(db: Db, tenant_id: Tenant, payload: payments.CreateRecharge | None 
 
 
 @router.get("/recharge/qr")
-def recharge_qr(tenant_id: Tenant):
-    payments.require_enabled()
+def recharge_qr(db: Db, tenant_id: Tenant, order_id: UUID):
+    row = payments.get_order(db, tenant_id, order_id)
+    payments.require_enabled(row.payment_method)
+    if row.status != "pending":
+        raise ApiError(409, ErrorCode.RECHARGE_STATE_INVALID)
     return FileResponse(
-        get_settings().manual_wechat_qr_path,
+        get_settings().manual_alipay_qr_path,
         media_type="image/png",
         headers={"Cache-Control": "no-store"},
     )

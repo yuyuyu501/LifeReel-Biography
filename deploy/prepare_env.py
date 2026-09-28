@@ -50,6 +50,9 @@ def main():
         "WHISPER_DEVICE": "cpu",
         "WHISPER_COMPUTE_TYPE": "int8",
         "MANUAL_WECHAT_QR_PATH": "/data/payments/wechat-qr.png",
+        "MANUAL_WECHAT_ENABLED": "false",
+        "MANUAL_ALIPAY_ENABLED": "false",
+        "MANUAL_ALIPAY_QR_PATH": "/data/payments/alipay-qr.png",
         "VITE_DEV_API_TARGET": "http://127.0.0.1:8000",
     })
     if args.domain:

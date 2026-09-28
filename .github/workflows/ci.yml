@@ -61,6 +61,10 @@ jobs:
           EVIDENCE_TEST_DATABASE_URL: postgresql+psycopg://lifereel:ci-migration-password@localhost:5432/lifereel_migration_test
           EVIDENCE_REQUIRE_POSTGRES: "1"
         run: pytest tests/test_asset_upload_concurrency.py -k postgresql -v
+      - name: Verify recharge channels preserve historical payments
+        env:
+          MIGRATION_TEST_DATABASE_URL: postgresql+psycopg://lifereel:ci-migration-password@localhost:5432/lifereel_migration_test
+        run: pytest tests/test_recharge_migration.py
 
   web:
     runs-on: ubuntu-latest

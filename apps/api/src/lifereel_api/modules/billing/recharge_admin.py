@@ -23,12 +23,15 @@ def main():
         command.add_argument("--operator", required=True)
         if name == "confirm":
             command.add_argument("--amount-cents", type=int, required=True)
-            command.add_argument("--wechat-transaction", required=True)
+            command.add_argument(
+                "--payment-transaction", "--wechat-transaction",
+                dest="payment_transaction", required=True,
+            )
             command.add_argument(
                 "--received",
                 action="store_true",
                 required=True,
-                help="I verified this payment in the recipient's WeChat ledger",
+                help="I verified the channel, recipient and receipt in the recipient's ledger",
             )
         else:
             command.add_argument("--reason", required=True)
@@ -56,7 +59,7 @@ def main():
             parser.error("reason must contain 1-300 characters")
         reference = None
         if args.action == "confirm":
-            reference = args.wechat_transaction
+            reference = args.payment_transaction
         try:
             row = review(
                 db,
