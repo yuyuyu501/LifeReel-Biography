@@ -28,6 +28,9 @@ dist/
 coverage/
 *.tsbuildinfo
 .swc/
+apps/mini-program/project.config.json
+apps/mini-program/project.tt.json
+**/project.private.config.json
 
 # IDE / OS
 .idea/

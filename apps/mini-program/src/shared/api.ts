@@ -80,6 +80,15 @@ async function request<T>(
     }
   }
   if (response.statusCode < 200 || response.statusCode >= 300) {
+    if (response.statusCode === 401) {
+      miniApi.clearAuth();
+      if (
+        Taro.getCurrentInstance().router?.path?.replace(/^\//, "") !==
+        "pages/login/index"
+      ) {
+        void Taro.reLaunch({ url: "/pages/login/index" });
+      }
+    }
     const error = response.data as {
       error?: { code?: string; message?: string };
     };

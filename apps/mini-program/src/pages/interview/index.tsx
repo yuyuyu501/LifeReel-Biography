@@ -6,6 +6,7 @@ import type {
   InterviewTurnWorkflow,
 } from "@lifereel/contracts";
 import { miniApi } from "../../shared/api";
+import { PreviewNotice } from "../../shared/PreviewNotice";
 
 export default function InterviewPage() {
   const params = getCurrentInstance().router?.params || {};
@@ -19,7 +20,7 @@ export default function InterviewPage() {
   const [recording, setRecording] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const recorder = useRef(Taro.getRecorderManager());
+  const recorder = useRef<Taro.RecorderManager | null>(null);
 
   useEffect(() => {
     if (!subjectId) {
@@ -54,6 +55,11 @@ export default function InterviewPage() {
   }, [subjectId, chapterId]);
 
   const startRecording = () => {
+    if (process.env.TARO_ENV === "h5") {
+      setError("浏览器预览不录音，请在开发者工具或真机验证录音上传");
+      return;
+    }
+    recorder.current ??= Taro.getRecorderManager();
     recorder.current.start({ duration: 600000, format: "mp3" });
     setRecording(true);
     recorder.current.onStop(async (result) => {
@@ -73,7 +79,7 @@ export default function InterviewPage() {
     });
   };
 
-  const stopRecording = () => recorder.current.stop();
+  const stopRecording = () => recorder.current?.stop();
 
   const submit = async () => {
     if (!session || !question || !answer.trim()) return;
@@ -108,6 +114,7 @@ export default function InterviewPage() {
 
   return (
     <View className="page">
+      <PreviewNotice />
       <Text className="eyebrow">INTERVIEW</Text>
       <Text className="title">把记忆说清楚</Text>
       {loading && !session ? <Text className="hint">正在准备采访…</Text> : null}

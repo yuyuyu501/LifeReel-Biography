@@ -3,6 +3,7 @@ import { Button, Text, View } from "@tarojs/components";
 import Taro, { getCurrentInstance } from "@tarojs/taro";
 import type { ScriptProject } from "@lifereel/contracts";
 import { miniApi } from "../../shared/api";
+import { PreviewNotice } from "../../shared/PreviewNotice";
 
 export default function ScriptsPage() {
   const subjectId = getCurrentInstance().router?.params?.subjectId || "";
@@ -45,6 +46,7 @@ export default function ScriptsPage() {
 
   return (
     <View className="page">
+      <PreviewNotice />
       <Text className="eyebrow">SCRIPT STUDIO</Text>
       <Text className="title">剧本与分镜</Text>
       {error ? <Text className="error">{error}</Text> : null}

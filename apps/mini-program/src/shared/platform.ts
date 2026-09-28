@@ -6,6 +6,8 @@ export const miniPlatform: MiniPlatform =
   process.env.TARO_ENV === "tt" ? "douyin" : "wechat";
 
 export function loginCode(): Promise<string> {
+  if (process.env.TARO_ENV === "h5")
+    return Promise.resolve("local-preview-code");
   return new Promise((resolve, reject) => {
     Taro.login({
       success: (result) => resolve(result.code),

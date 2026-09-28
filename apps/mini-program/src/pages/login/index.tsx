@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Button, Input, Text, View } from "@tarojs/components";
 import Taro from "@tarojs/taro";
 import { miniApi } from "../../shared/api";
+import { PreviewNotice } from "../../shared/PreviewNotice";
 import { loginCode, miniPlatform } from "../../shared/platform";
 
 export default function LoginPage() {
@@ -32,6 +33,7 @@ export default function LoginPage() {
 
   return (
     <View className="page login-page">
+      <PreviewNotice />
       <View className="hero">
         <Text className="eyebrow">LIFEREEL BIOGRAPHY</Text>
         <Text className="title">把人生故事，留给家人</Text>
@@ -57,7 +59,9 @@ export default function LoginPage() {
         >
           {loading
             ? "正在登录"
-            : `使用${miniPlatform === "wechat" ? "微信" : "抖音"}登录`}
+            : process.env.TARO_ENV === "h5"
+              ? "进入本地预览"
+              : `使用${miniPlatform === "wechat" ? "微信" : "抖音"}登录`}
         </Button>
         <Text className="hint">
           登录失败时，请确认小程序已配置到服务器白名单。

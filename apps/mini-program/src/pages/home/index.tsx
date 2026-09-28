@@ -3,6 +3,7 @@ import { Button, Input, Text, View } from "@tarojs/components";
 import Taro from "@tarojs/taro";
 import type { Chapter, Person } from "@lifereel/contracts";
 import { miniApi } from "../../shared/api";
+import { PreviewNotice } from "../../shared/PreviewNotice";
 import { miniPlatform } from "../../shared/platform";
 
 export default function HomePage() {
@@ -48,6 +49,7 @@ export default function HomePage() {
 
   return (
     <View className="page home-page">
+      <PreviewNotice />
       <View className="home-header">
         <View>
           <Text className="eyebrow">LIFEREEL BIOGRAPHY</Text>

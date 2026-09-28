@@ -10,7 +10,7 @@ const config: UserConfigExport = defineConfig({
     828: 1.81 / 2,
   },
   sourceRoot: "src",
-  outputRoot: "dist",
+  outputRoot: `dist/${process.env.TARO_ENV === "h5" ? "preview" : process.env.TARO_ENV || "weapp"}`,
   framework: "react",
   compiler: {
     type: "webpack5",
@@ -25,7 +25,21 @@ const config: UserConfigExport = defineConfig({
       },
     },
   },
-  h5: {},
+  h5: {
+    publicPath: "/",
+    router: { mode: "hash" },
+    postcss: {
+      pxtransform: {
+        enable: true,
+        config: {
+          baseFontSize: 20,
+          minRootSize: 1,
+          maxRootSize: 22.9333333333,
+        },
+      },
+    },
+    devServer: { host: "127.0.0.1", port: 5175, hot: false },
+  },
 });
 
 export default config;

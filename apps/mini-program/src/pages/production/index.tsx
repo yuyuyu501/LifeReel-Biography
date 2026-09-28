@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Button, Text, View } from "@tarojs/components";
 import type { ProductionRun, ScriptProject } from "@lifereel/contracts";
 import { miniApi } from "../../shared/api";
+import { PreviewNotice } from "../../shared/PreviewNotice";
 
 export default function ProductionPage() {
   const [runs, setRuns] = useState<ProductionRun[]>([]);
@@ -42,6 +43,7 @@ export default function ProductionPage() {
 
   return (
     <View className="page">
+      <PreviewNotice />
       <Text className="eyebrow">PRODUCTION</Text>
       <Text className="title">视频任务</Text>
       {error ? <Text className="error">{error}</Text> : null}

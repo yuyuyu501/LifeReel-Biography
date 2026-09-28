@@ -13,6 +13,21 @@ page {
 .hero {
   margin: 120px 0 72px;
 }
+.preview-notice {
+  padding: 20px;
+  margin-bottom: 32px;
+  border: 1px solid #c9b29a;
+  border-radius: 14px;
+  background: #fff8e9;
+  color: #6a5139;
+  font-size: 24px;
+  line-height: 1.5;
+}
+.preview-detail {
+  display: block;
+  margin-top: 8px;
+  font-size: 21px;
+}
 .eyebrow {
   display: block;
   color: #9b6f43;
@@ -80,6 +95,7 @@ page {
   font-size: 30px;
 }
 .secondary-button {
+  width: auto;
   display: inline-block;
   margin: 12px 12px 0 0;
   padding: 0 20px;
@@ -108,13 +124,23 @@ page {
   justify-content: space-between;
   margin: 40px 0 72px;
 }
+.home-header > view,
+.home-header > taro-view-core {
+  min-width: 0;
+  flex: 1;
+}
 .text-button {
+  width: auto;
+  flex-shrink: 0;
   margin: 0;
   padding: 0 18px;
   border: 0;
   background: transparent;
   color: #9b6f43;
   font-size: 24px;
+}
+.text-button::after {
+  border: 0;
 }
 .section {
   margin-bottom: 52px;

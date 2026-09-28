@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover"
+    />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="connect-src 'self' ws://127.0.0.1:5175; form-action 'none'"
+    />
+    <title>岁忆影传 · 小程序本地预览</title>
+    <script>
+      <%= htmlWebpackPlugin.options.script %>
+    </script>
+    <style>
+      body {
+        margin: 0;
+        background: #e8e3dc;
+      }
+      #app {
+        max-width: 430px;
+        margin: 0 auto;
+        min-height: 100vh;
+        background: #f7f4ee;
+      }
+      #app .taro_page {
+        background: #f7f4ee;
+        color: #27231f;
+        font-family:
+          -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei",
+          sans-serif;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="app"></div>
+  </body>
+</html>

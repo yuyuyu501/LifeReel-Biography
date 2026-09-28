@@ -9,6 +9,7 @@ import type {
   TimelineAnchor,
 } from "@lifereel/contracts";
 import { miniApi } from "../../shared/api";
+import { PreviewNotice } from "../../shared/PreviewNotice";
 
 export default function MemoryPage() {
   const subjectId = getCurrentInstance().router?.params?.subjectId || "";
@@ -42,6 +43,7 @@ export default function MemoryPage() {
 
   return (
     <View className="page">
+      <PreviewNotice />
       <Text className="eyebrow">MEMORY GRAPH</Text>
       <Text className="title">记忆与时间线</Text>
       {error ? <Text className="error">{error}</Text> : null}
