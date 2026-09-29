@@ -149,12 +149,12 @@ Compose 会把这些值传给 API。OSS Bucket 必须属于该 AccessKey，且�
 
 ### 浏览器直传 OSS
 
-在上述 OSS 配置基础上增加 `OSS_DIRECT_UPLOAD_ENABLED=true`，执行迁移并重建 Web/API：
+在上述 OSS 配置基础上增加 `OSS_DIRECT_UPLOAD_ENABLED=true`，按独立服务发布流程构建并更新服务：
 
 ```bash
-docker compose -f compose.production.yaml up -d --build api web
-docker compose -f compose.production.yaml exec api python -m lifereel_api.modules.evidence.oss_admin configure-cors --origin https://your-domain.example
-docker compose -f compose.production.yaml exec api python -m lifereel_api.modules.evidence.oss_admin configure-lifecycle
+docker compose -f compose.production.yaml up -d --build
+docker compose -f compose.production.yaml exec media python -m lifereel_api.modules.evidence.oss_admin configure-cors --origin https://your-domain.example
+docker compose -f compose.production.yaml exec media python -m lifereel_api.modules.evidence.oss_admin configure-lifecycle
 ```
 
 生产环境的 `--origin` 应使用真实 HTTPS 域名，不要包含路径或通配符。配置命令保留 Bucket 既有规则；如果之前已有 `AllowedOrigins=*`，需要先核对其他应用用途，再手动收紧。CORS 不是权限控制：Bucket 和对象必须保持私有。运行时应用只需指定 Bucket 范围的读、写、删除权限；CORS 和生命周期管理权限只在上述初始化命令执行时需要。
