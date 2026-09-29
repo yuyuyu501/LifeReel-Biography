@@ -11,10 +11,10 @@ from threading import Lock
 from uuid import UUID, uuid4
 
 import httpx
-from alembic.config import Config
 from sqlalchemy import select
 
 from alembic import command
+from alembic.config import Config
 from lifereel_api.core.config import get_settings
 from lifereel_api.core.database import SessionLocal, engine
 from lifereel_api.main import app  # noqa: F401

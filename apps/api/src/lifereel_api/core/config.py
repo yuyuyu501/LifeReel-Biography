@@ -99,7 +99,7 @@ class Settings(BaseSettings):
     interview_concurrency: int = Field(default=3, ge=1, le=8)
     video_concurrency: int = Field(default=1, ge=1, le=4)
     job_lease_seconds: int = Field(default=120, ge=60, le=600)
-    db_pool_size: int = Field(default=20, ge=5, le=50)
+    db_pool_size: int = Field(default=20, ge=1, le=50)
     db_max_overflow: int = Field(default=10, ge=0, le=50)
     media_direct_read: bool = True
     media_url_seconds: int = Field(default=900, ge=60, le=3600)

@@ -44,6 +44,22 @@ default = true
 [tool.hatch.build.targets.wheel]
 packages = ["src/lifereel_api"]
 
+[tool.hatch.build.targets.wheel.force-include]
+"../../services/identity/src/lifereel_api/modules/auth" = "lifereel_api/modules/auth"
+"../../services/identity/src/lifereel_api/modules/identity" = "lifereel_api/modules/identity"
+"../../services/identity/src/lifereel_api/modules/governance" = "lifereel_api/modules/governance"
+"../../services/interview/src/lifereel_api/modules/interview" = "lifereel_api/modules/interview"
+"../../services/interview/src/lifereel_api/modules/orchestration" = "lifereel_api/modules/orchestration"
+"../../services/memory/src/lifereel_api/modules/memory" = "lifereel_api/modules/memory"
+"../../services/script/src/lifereel_api/modules/script" = "lifereel_api/modules/script"
+"../../services/media/src/lifereel_api/modules/evidence" = "lifereel_api/modules/evidence"
+"../../services/media/src/lifereel_api/modules/restoration" = "lifereel_api/modules/restoration"
+"../../services/media/src/lifereel_api/modules/production" = "lifereel_api/modules/production"
+"../../services/media/src/lifereel_api/modules/publication" = "lifereel_api/modules/publication"
+"../../services/billing/src/lifereel_api/modules/billing" = "lifereel_api/modules/billing"
+"../../services/tasks/src/lifereel_api/modules/jobs" = "lifereel_api/modules/jobs"
+"../../services/model-gateway/src/lifereel_api/providers" = "lifereel_api/providers"
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q --disable-warnings"

@@ -3,10 +3,10 @@
 from concurrent.futures import ThreadPoolExecutor
 from uuid import uuid4
 
-from alembic.config import Config
 from sqlalchemy import func, select
 
 from alembic import command
+from alembic.config import Config
 from lifereel_api.core.config import get_settings
 from lifereel_api.core.database import SessionLocal
 from lifereel_api.core.errors import ApiError

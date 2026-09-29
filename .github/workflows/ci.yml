@@ -38,7 +38,7 @@ jobs:
           sudo apt-get install -y --no-install-recommends ffmpeg
           ffmpeg -version
       - run: pip install -e ".[dev]"
-      - run: ruff check .
+      - run: ruff check --config ../../ruff.toml src tests alembic ../../services ../../workers
       - run: pytest
       - name: Verify production database credentials and port configuration
         run: pytest ../../deploy/tests/test_database_configuration.py
@@ -86,16 +86,16 @@ jobs:
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: apps/worker
+        working-directory: apps/api
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
           cache: pip
-          cache-dependency-path: apps/worker/pyproject.toml
-      - run: pip install -e .
-      - run: python -m compileall -q src
+          cache-dependency-path: apps/api/pyproject.toml
+      - run: pip install -e ".[dev]"
+      - run: pytest tests/test_worker_execution.py tests/test_independent_services.py
 
   nginx:
     runs-on: ubuntu-latest
@@ -116,6 +116,64 @@ jobs:
       AUTH_TOKEN_SECRET: ci-auth-token-secret
       BOOTSTRAP_OWNER_EMAIL: ci@example.com
       BOOTSTRAP_OWNER_PASSWORD: ci-strong-password
+      POSTGRES_PASSWORD: ci-compose-password
+      DATABASE_URL: postgresql+psycopg://lifereel:ci-compose-password@postgres:5432/lifereel
+      LIFEREEL_ENV_FILE: .env.example
     steps:
       - uses: actions/checkout@v4
-      - run: docker compose -f compose.production.yaml config
+      - run: docker compose -f compose.production.yaml config --quiet
+
+  services-integration:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install httpx
+      - name: Prepare isolated mock configuration
+        run: |
+          mkdir -p tmp/services-qa
+          cat > tmp/services-qa/runtime.env <<'EOF'
+          LIFEREEL_ENV_FILE=./tmp/services-qa/runtime.env
+          LIFEREEL_RELEASE=services-qa
+          POSTGRES_PASSWORD=synthetic-ci-password
+          DATABASE_URL=postgresql+psycopg://lifereel:synthetic-ci-password@postgres:5432/lifereel
+          POSTGRES_BIND_HOST=127.0.0.1
+          POSTGRES_PORT=55439
+          WEB_BIND_HOST=127.0.0.1
+          WEB_PORT=5189
+          API_ACCESS_KEY=synthetic-ci-api-key
+          AUTH_TOKEN_SECRET=synthetic-ci-auth-secret-at-least-32-characters
+          AUTH_COOKIE_SECURE=false
+          BOOTSTRAP_OWNER_EMAIL=services-qa@example.com
+          BOOTSTRAP_OWNER_PASSWORD=synthetic-ci-owner-password
+          LLM_PROVIDER=mock
+          ASR_PROVIDER=mock
+          IMAGE_PROVIDER=mock
+          VIDEO_PROVIDER=mock
+          VOICE_PROVIDER=mock
+          REALTIME_VOICE_PROVIDER=disabled
+          SMS_ENABLED=false
+          MANUAL_WECHAT_ENABLED=false
+          MANUAL_ALIPAY_ENABLED=false
+          STORAGE_BACKEND=local
+          BILLING_TEXT_MODE=per_successful_chapter_update
+          BILLING_VIDEO_MODE=per_second
+          EOF
+      - name: Build and start isolated services
+        run: docker compose --env-file tmp/services-qa/runtime.env -p lifereel-servicesqa -f compose.production.yaml up -d --build --wait --wait-timeout 180
+      - name: Verify business flow, fault recovery and model gateway
+        run: |
+          python deploy/tests/service_e2e.py --env-file tmp/services-qa/runtime.env --output tmp/services-qa/e2e-results.json
+          python deploy/tests/model_gateway_e2e.py --env-file tmp/services-qa/runtime.env --output tmp/services-qa/model-gateway-results.json
+          docker compose --env-file tmp/services-qa/runtime.env -p lifereel-servicesqa -f compose.production.yaml exec -T tasks sh -c 'cd /workspace/apps/api && alembic check'
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: independent-services-results
+          path: tmp/services-qa/*results.json
+      - name: Clean up isolated resources
+        if: always()
+        run: docker compose --env-file tmp/services-qa/runtime.env -p lifereel-servicesqa -f compose.production.yaml down -v

@@ -6,11 +6,11 @@ from pathlib import Path
 from uuid import uuid4
 
 import pytest
-from alembic.migration import MigrationContext
-from alembic.operations import Operations
 from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.exc import IntegrityError
 
+from alembic.migration import MigrationContext
+from alembic.operations import Operations
 from lifereel_api.core.database import Base
 
 

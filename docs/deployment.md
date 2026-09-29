@@ -42,19 +42,20 @@ S3_BUCKET=replace-with-private-bucket
 docker compose -f compose.production.yaml up -d --build
 ```
 
-生产 Compose 将异步执行拆成两个角色：`worker-interview` 只处理采访任务，`worker-media` 只处理视频、图片和清理任务。两者共享 PostgreSQL 任务账本和内部执行协议，可以分别调整并发、资源和超时；当前仍属于单机模块化部署，不要求引入微服务消息集群。
+生产 Compose 包含 Gateway、Identity、Interview、Memory、Script、Media、Billing、Tasks、Model Gateway，以及两个 Worker。Worker 从 PostgreSQL 领取任务，在自身进程执行，不再回调旧 API。各服务可独立启动，仍共享数据库与统一版本基础库。
 
-API 容器启动时会依次执行 Alembic 迁移和幂等基础数据初始化，创建默认租户、首位 owner 账号及 11 个生命章节。
+一次性 migrate 容器先执行 Alembic 迁移和幂等初始化，创建默认租户、首位 owner 账号及 11 个生命章节。迁移成功后才启动业务服务。
 
 4. 检查：
 
 ```bash
 docker compose -f compose.production.yaml ps
-curl http://localhost:8000/health
-curl -H "X-API-Key: replace-with-a-long-random-secret" http://localhost:8000/v1/chapters
+curl http://localhost:5173/health
+curl http://localhost:5173/ready
+curl http://localhost:5173/system-status
 ```
 
-Web 默认在 `http://localhost:5173`，API 在 `http://localhost:8000`。用户通过 Web 登录，身份保存在 `Secure`、`HttpOnly`、`SameSite=Lax` Cookie 中。发布成功后的家庭访问地址为 `http://localhost:5173/watch/{token}`。
+Web 默认在 `http://localhost:5173`，API 经 Web 同源 `/v1/` 访问，内部服务不映射宿主机端口。用户通过 Web 登录，身份保存在 `Secure`、`HttpOnly`、`SameSite=Lax` Cookie 中。发布成功后的家庭访问地址为 `http://localhost:5173/watch/{token}`。
 
 对外上线必须使用 HTTPS 并启用 `AUTH_COOKIE_SECURE=true`，否则会话 Cookie 可能经明文连接发送。还应使用外部密钥管理、定期备份、日志/告警和受控对象存储。`X-API-Key` 仅供 Nginx 和 Worker 内部调用，不应交给浏览器用户。
 
@@ -125,7 +126,7 @@ JSON 证据写入被 Git 忽略的 `tmp/`；正常或异常退出都会清理本
 
 - PostgreSQL：人物、采访、记忆、剧本、授权、任务、发布与审计。
 - `private-data`：本地存储模式下的原始证据与生成资产，不能公开挂载。
-- Redis：异步任务队列，可重建但应开启持久化。
+- Redis：限流、并发门控及语音版本控制；持久任务与事件账本位于 PostgreSQL。
 - 外部 OSS/S3：生产 Compose 使用外部私有对象存储，Bucket 禁止匿名读取。若目标 S3 已配置 SSE/KMS，可设置 `S3_SERVER_SIDE_ENCRYPTION=AES256` 或服务端支持的算法。
 
 ### 阿里云 OSS（S3 兼容接口）

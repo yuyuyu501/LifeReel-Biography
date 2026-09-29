@@ -41,7 +41,7 @@ Thumbs.db
 # Runtime data and media must never be committed
 data/
 uploads/
-media/
+/media/
 *.webm
 *.wav
 *.mp3

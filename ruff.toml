@@ -1,0 +1,5 @@
+extend = "apps/api/pyproject.toml"
+src = ["apps/api/src", "services/*/src", "workers/runtime"]
+
+[lint.isort]
+known-first-party = ["lifereel_api", "alembic"]

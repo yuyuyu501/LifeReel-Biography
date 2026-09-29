@@ -68,7 +68,10 @@ def test_compose_uses_encoded_url_and_configurable_port(tmp_path, bind_host, pub
     )
     services = json.loads(result.stdout)["services"]
     assert services["postgres"]["environment"]["POSTGRES_PASSWORD"] == password
-    assert services["api"]["environment"]["DATABASE_URL"] == database_url
+    for name in ("migrate", "identity", "interview", "memory", "script",
+                 "media", "billing", "tasks", "model-gateway",
+                 "worker-interview", "worker-media"):
+        assert services[name]["environment"]["DATABASE_URL"] == database_url
     port = services["postgres"]["ports"][0]
     assert port["host_ip"] == bind_host
     assert int(port["published"]) == published_port

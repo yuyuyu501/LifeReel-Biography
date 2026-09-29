@@ -9,3 +9,7 @@ node_modules
 data
 *.db
 .env
+**/.env
+**/.env.*
+tmp
+backups

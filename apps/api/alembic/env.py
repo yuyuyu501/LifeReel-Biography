@@ -13,8 +13,8 @@ from lifereel_api.modules.evidence import models as evidence_models  # noqa: F40
 from lifereel_api.modules.governance import models as governance_models  # noqa: F401
 from lifereel_api.modules.identity import models as identity_models  # noqa: F401
 from lifereel_api.modules.interview import models as interview_models  # noqa: F401
-from lifereel_api.modules.jobs import models as job_models  # noqa: F401
 from lifereel_api.modules.jobs import events as job_events  # noqa: F401
+from lifereel_api.modules.jobs import models as job_models  # noqa: F401
 from lifereel_api.modules.memory import models as memory_models  # noqa: F401
 from lifereel_api.modules.orchestration import service as orchestration_service  # noqa: F401
 from lifereel_api.modules.production import models as production_models  # noqa: F401
@@ -24,6 +24,7 @@ from lifereel_api.modules.production import (
 from lifereel_api.modules.publication import models as publication_models  # noqa: F401
 from lifereel_api.modules.restoration import models as restoration_models  # noqa: F401
 from lifereel_api.modules.script import models as script_models  # noqa: F401
+from lifereel_api.providers import models as provider_models  # noqa: F401
 
 config = context.config
 if config.config_file_name is not None:

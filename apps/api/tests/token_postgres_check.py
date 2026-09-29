@@ -7,10 +7,10 @@ from unittest.mock import patch
 from uuid import uuid4
 
 import httpx
-from alembic.config import Config
 from sqlalchemy import select, text
 
 from alembic import command
+from alembic.config import Config
 
 os.environ.update(
     {

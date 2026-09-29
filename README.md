@@ -21,9 +21,25 @@
 
 ```text
 apps/
-  api/          FastAPI 模块化后端
+  api/          共享基础库、ORM 注册、迁移与兼容测试入口
   web/          React + TypeScript PWA
-  worker/       分角色异步任务 Worker
+  mini-program/ 微信 / 抖音小程序
+services/       独立业务服务：每个目录有 src、app.py 和 Dockerfile
+  gateway/      Nginx API 路由
+  identity/     账号、人物、授权
+  interview/    采访与工作流编排
+  memory/       记忆、图谱、时间线
+  script/       章节剧本、分镜、版本
+  media/        资料、图片、影像、发布
+  billing/      钱包、用量、支付
+  model-gateway/ 模型协议与统一调用
+  tasks/        任务接口与事务事件投递
+workers/
+  interview/    采访任务直接执行，独立 Dockerfile
+  media/        媒体任务直接执行，独立 Dockerfile
+  runtime/      租约续期与并发基础库
+deploy/
+  Dockerfile.backend 共享依赖与迁移镜像
 packages/
   contracts/    跨前后端共享的数据契约
 docs/
@@ -47,23 +63,25 @@ docker compose -f compose.production.yaml up -d --build
 
 - PostgreSQL: `localhost:5432`
 - Web: `http://localhost:5173`
-- API: `http://localhost:8000`
+- API: Web 同源 `/v1/`，内部服务不发布宿主机端口
 
 ### 2. 初始化数据库
 
 ```powershell
-docker compose -f compose.production.yaml exec api alembic upgrade head
+docker compose -f compose.production.yaml run --rm --no-deps migrate alembic current
 ```
 
-API 文档：`http://localhost:8000/docs`
+`migrate` 在服务启动前自动执行迁移与幂等初始化；迁移失败时业务服务不会启动。各服务 `/docs` 仅在内部网络开放。
 
-生产 Compose 已包含 API、Web、`worker-interview`、`worker-media`、PostgreSQL 和 Redis。两个 Worker 共用任务账本，但分别处理采访任务与媒体任务；生产模式只创建 `.env` 中 `BOOTSTRAP_OWNER_EMAIL` / `BOOTSTRAP_OWNER_PASSWORD` 指定的首位管理员。
+生产 Compose 包含 Web、Gateway、八个后端服务、两个 Worker、PostgreSQL 和 Redis。Worker 直接执行各自领域任务，不回调旧 API 执行。服务间通过签名 HTTP 与事务 Outbox/Inbox 协作；仍共享 PostgreSQL、ORM 和统一版本的基础运行库。生产模式只创建 `.env` 指定的首位管理员。
 
 ### 3. 验证
 
 ```powershell
 docker compose -f compose.production.yaml ps
-docker compose -f compose.production.yaml exec api python -m pytest
+curl http://localhost:5173/ready
+# 测试在本地隔离环境运行，勿在生产容器执行
+python -m pytest apps/api/tests
 pnpm --filter @lifereel/web test
 pnpm --filter @lifereel/web build
 ```

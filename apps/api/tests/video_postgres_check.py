@@ -4,9 +4,8 @@ import os
 from concurrent.futures import ThreadPoolExecutor
 from uuid import uuid4
 
-from alembic.config import Config
-
 from alembic import command
+from alembic.config import Config
 
 os.environ.update({
     "APP_ENV": "test", "AUTO_CREATE_SCHEMA": "false",

@@ -16,8 +16,8 @@ def test_service_catalog_covers_business_and_runtime_boundaries():
         "billing", "worker",
     }
     assert required <= set(SERVICE_CATALOG)
-    assert SERVICE_CATALOG["interview"]["runtime"] == "api + worker-interview"
-    assert SERVICE_CATALOG["media"]["runtime"] == "api + worker-media"
+    assert SERVICE_CATALOG["interview"]["runtime"] == "interview + worker-interview"
+    assert SERVICE_CATALOG["media"]["runtime"] == "media + worker-media"
     assert SERVICE_CATALOG["storage"]["runtime"] == "external OSS/S3"
 
 

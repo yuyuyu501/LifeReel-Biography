@@ -67,12 +67,22 @@ server {
     proxy_set_header X-Forwarded-For "";
   }
 
-  location ^~ /v1/internal/worker {
+  location ^~ /internal { return 404; }
+
+  location ^~ /v1/internal {
     add_header Cache-Control "private, no-store" always;
     return 404;
   }
 
   location = /health {
+    proxy_pass http://$api_upstream$request_uri;
+  }
+
+  location = /ready {
+    proxy_pass http://$api_upstream$request_uri;
+  }
+
+  location = /system-status {
     proxy_pass http://$api_upstream$request_uri;
   }
 }

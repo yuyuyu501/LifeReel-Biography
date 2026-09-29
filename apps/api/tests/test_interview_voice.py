@@ -308,10 +308,10 @@ def test_voice_migration_preserves_existing_schema(tmp_path):
     import importlib.util
     from pathlib import Path
 
-    from alembic.migration import MigrationContext
-    from alembic.operations import Operations
     from sqlalchemy import create_engine, inspect
 
+    from alembic.migration import MigrationContext
+    from alembic.operations import Operations
     from lifereel_api.core.database import Base
 
     migration_path = Path(__file__).parents[1] / "alembic/versions/20260918_0030_interview_voice.py"

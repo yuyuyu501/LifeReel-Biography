@@ -2,12 +2,16 @@
 
 ## 1. 目标形态
 
-当前采用“模块化 Core API + 明确服务边界 + 分角色异步 Worker”的渐进式拆分架构。它仍是模块化单体，不把当前部署误称为微服务：身份、采访、证据、记忆、剧本、授权和发布共享 PostgreSQL 事务边界；长耗时任务通过数据库任务账本交给 `worker-interview` 或 `worker-media`。完成事件总线和数据迁移后，再按流量把领域模块拆成独立服务。
+当前采用独立进程服务：Web 与小程序为两个前端板块；Gateway 只做路由；Identity、Interview、Memory、Script、Media、Billing、Model Gateway、Tasks 分别启动；两个 Worker 在自己的进程执行任务。每个服务和 Worker 有独立目录、入口与 Dockerfile。
+
+服务间 HTTP 使用 HMAC 签名、调用方白名单与租户校验。事务 Outbox 投递到 Inbox 后才能领取任务；账本命令和剧本结果有幂等收据。成功的模型响应可重放缓存，网络不确定状态禁止自动重复收费请求。
+
+仍保留单个 PostgreSQL、共享 ORM 和同一版本 backend wheel。人物小传更新、初始化及部分跨域查询仍有兼容性共享；尚不是每服务独立数据库或独立依赖发布。主机与数据库仍是共同故障域。实时语音连接由 Interview 持有，记忆与剧本更新调用独立服务。
 
 ```mermaid
 flowchart TB
     WEB[React PWA\n老人端 / 家属端 / 工作台]
-    API[Core API / Gateway]
+    API[Nginx Gateway]
     ORCHESTRATOR[Interview Orchestrator]
     SERVICES[Evidence / Memory / Script Services]
     WORKER[Interview Worker + Media Worker]
@@ -23,8 +27,8 @@ flowchart TB
     SERVICES --> PG
     API --> S3
     API --> REDIS
-    REDIS --> WORKER
-    WORKER --> API
+    PG -->|Outbox / Inbox 与租约| WORKER
+    WORKER --> SERVICES
     SERVICES --> S3
     SERVICES --> PROVIDERS
 ```
@@ -88,5 +92,5 @@ flowchart LR
 
 - 浏览器经 Web Nginx 同源访问 API；Nginx 注入内部 `X-API-Key`。
 - 用户身份由签名的 HttpOnly 会话 Cookie 提供，租户与角色每次请求从数据库成员关系确认。
-- Worker 使用 API Key 与显式 `X-Tenant-ID` 调用内部执行接口。
+- Worker 直接执行所属领域任务，内部 HTTP 只调用其他服务能力；旧 HTTP Worker 已移除，公开网关禁止执行接口。
 - 发布令牌只开放最小发布元数据和对应成片，不开放人物、记忆、逐字稿或素材列表。

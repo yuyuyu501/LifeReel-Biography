@@ -1,6 +1,7 @@
 """Add a transactional outbox for service boundary events."""
 
 import sqlalchemy as sa
+
 from alembic import op
 
 revision = "20260928_0036"

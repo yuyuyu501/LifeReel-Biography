@@ -357,13 +357,12 @@ pnpm -r lint
 pnpm -r test
 pnpm -r build
 
-cd apps/worker
-python -m compileall -q src
+python -m compileall -q workers services
 ```
 
 ## 14. 部署与运维
 
-生产单机版本由 Docker Compose 提供 PostgreSQL、Redis、API、两个分角色 Worker 和 Web，媒体存储连接外部私有 OSS/S3。首次启动执行迁移和幂等种子，创建 11 个章节及配置指定的首位 Owner。
+生产单机版本由 Docker Compose 提供 PostgreSQL、Redis、Gateway、八个独立领域/任务服务、两个 Worker 和 Web，媒体存储连接外部私有 OSS/S3。一次性 migrate 服务先执行迁移和幂等种子，创建 11 个章节及配置指定的首位 Owner。源码与运行边界以 docs/architecture.md 和 compose.production.yaml 为准。
 
 上线必须完成：
 
