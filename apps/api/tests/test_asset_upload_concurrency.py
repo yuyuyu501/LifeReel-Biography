@@ -32,6 +32,7 @@ from lifereel_api.core.config import get_settings
 from lifereel_api.core.database import Base, get_db
 from lifereel_api.core.errors import ApiError, install_error_handlers
 from lifereel_api.core.models import utcnow
+from lifereel_api.core.schema import SERVICE_SCHEMAS, SQLITE_SCHEMA_MAP
 from lifereel_api.core.tenant import get_tenant_id
 from lifereel_api.modules.evidence import direct_uploads, service
 from lifereel_api.modules.evidence.asset_conflicts import is_asset_duplicate
@@ -59,20 +60,31 @@ def upload_db(request, tmp_path):
         with engine.begin() as conn:
             assert conn.get_isolation_level() == "READ COMMITTED"
             conn.exec_driver_sql(f'CREATE SCHEMA "{schema}"')
-        engine = engine.execution_options(schema_translate_map={None: schema})
+        engine = engine.execution_options(
+            schema_translate_map={None: schema, **dict.fromkeys(SERVICE_SCHEMAS, schema)}
+        )
     else:
         engine = create_engine(
             f"sqlite:///{(tmp_path / 'uploads.db').as_posix()}",
             connect_args={"check_same_thread": False, "timeout": 15},
+            execution_options={"schema_translate_map": SQLITE_SCHEMA_MAP},
         )
 
         @event.listens_for(engine, "connect")
         def foreign_keys(connection, _):
             connection.execute("PRAGMA foreign_keys=ON")
 
-    tables = [model.__table__ for model in (
-        Tenant, Person, Chapter, InterviewSession, SourceAsset, EvidenceUpload,
-    )]
+    tables = [
+        model.__table__
+        for model in (
+            Tenant,
+            Person,
+            Chapter,
+            InterviewSession,
+            SourceAsset,
+            EvidenceUpload,
+        )
+    ]
     try:
         Base.metadata.create_all(engine, tables=tables)
         yield sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
@@ -88,27 +100,42 @@ def scope(upload_db):
     tenant, other_tenant, person, other_person, foreign_person = [uuid4() for _ in range(5)]
     chapters, sessions = [uuid4(), uuid4()], [uuid4(), uuid4()]
     with upload_db() as db:
-        db.add_all([
-            Tenant(id=tenant, name="D01", slug=str(tenant)),
-            Tenant(id=other_tenant, name="Other D01", slug=str(other_tenant)),
-        ])
+        db.add_all(
+            [
+                Tenant(id=tenant, name="D01", slug=str(tenant)),
+                Tenant(id=other_tenant, name="Other D01", slug=str(other_tenant)),
+            ]
+        )
         db.flush()
-        db.add_all([
-            Person(id=person, tenant_id=tenant, display_name="First"),
-            Person(id=other_person, tenant_id=tenant, display_name="Second"),
-            Person(id=foreign_person, tenant_id=other_tenant, display_name="Foreign"),
-            *[Chapter(id=chapter, tenant_id=tenant, order_index=i, title=f"Chapter {i}")
-              for i, chapter in enumerate(chapters)],
-        ])
+        db.add_all(
+            [
+                Person(id=person, tenant_id=tenant, display_name="First"),
+                Person(id=other_person, tenant_id=tenant, display_name="Second"),
+                Person(id=foreign_person, tenant_id=other_tenant, display_name="Foreign"),
+                *[
+                    Chapter(id=chapter, tenant_id=tenant, order_index=i, title=f"Chapter {i}")
+                    for i, chapter in enumerate(chapters)
+                ],
+            ]
+        )
         db.flush()
-        db.add_all([
-            InterviewSession(id=session, tenant_id=tenant, subject_id=person, chapter_id=chapter)
-            for session, chapter in zip(sessions, chapters, strict=True)
-        ])
+        db.add_all(
+            [
+                InterviewSession(
+                    id=session, tenant_id=tenant, subject_id=person, chapter_id=chapter
+                )
+                for session, chapter in zip(sessions, chapters, strict=True)
+            ]
+        )
         db.commit()
     return SimpleNamespace(
-        tenant=tenant, other_tenant=other_tenant, person=person, other_person=other_person,
-        foreign_person=foreign_person, chapters=chapters, sessions=sessions,
+        tenant=tenant,
+        other_tenant=other_tenant,
+        person=person,
+        other_person=other_person,
+        foreign_person=foreign_person,
+        chapters=chapters,
+        sessions=sessions,
     )
 
 
@@ -135,9 +162,8 @@ def racing_sessions(upload_db, count):
     class RacingSession(Session):
         def scalar(self, statement, *args, **kwargs):
             result = super().scalar(statement, *args, **kwargs)
-            if (
-                statement.column_descriptions[0].get("entity") is SourceAsset
-                and not self.info.get("dedup_checked")
+            if statement.column_descriptions[0].get("entity") is SourceAsset and not self.info.get(
+                "dedup_checked"
             ):
                 self.info["dedup_checked"] = True
                 # Force every request past a genuinely empty lookup before any insert.
@@ -146,19 +172,27 @@ def racing_sessions(upload_db, count):
             return result
 
     return sessionmaker(
-        bind=upload_db.kw["bind"], class_=RacingSession, autoflush=False, expire_on_commit=False,
+        bind=upload_db.kw["bind"],
+        class_=RacingSession,
+        autoflush=False,
+        expire_on_commit=False,
     )
 
 
 def create(db, scope, *, filename="memory.txt", session=None, **changes):
     values = dict(
-        tenant_id=scope.tenant, subject_id=scope.person, interview_session_id=session,
-        kind="document", consent_scope="private",
+        tenant_id=scope.tenant,
+        subject_id=scope.person,
+        interview_session_id=session,
+        kind="document",
+        consent_scope="private",
     )
     values.update(changes)
     with BytesIO(CONTENT) as file:
         upload = UploadFile(
-            file=file, filename=filename, headers=Headers({"content-type": "text/plain"}),
+            file=file,
+            filename=filename,
+            headers=Headers({"content-type": "text/plain"}),
         )
         return asyncio.run(service.create_asset(db, upload=upload, **values))
 
@@ -180,20 +214,24 @@ def test_parallel_http_uploads_return_one_asset_and_write_once(upload_db, scope,
 
     def request(i):
         form = {
-            "subject_id": str(scope.person), "kind": "document",
+            "subject_id": str(scope.person),
+            "kind": "document",
             "consent_scope": "family" if i % 2 else "private",
         }
         if variant == "different-chapter" and i % 3:
             form["interview_session_id"] = str(scope.sessions[i % 3 - 1])
         filename = (
             f"copy-{i}.{'md' if i % 2 else 'txt'}"
-            if variant == "different-suffix" else "memory.txt"
+            if variant == "different-suffix"
+            else "memory.txt"
         )
         # Separate portals model separate API event loops; one shared portal would
         # serialize the synchronous DB/storage section and never reproduce D01.
         with TestClient(app, raise_server_exceptions=False) as client:
             return client.post(
-                "/v1/evidence/assets", data=form, files={"file": (filename, CONTENT, "text/plain")},
+                "/v1/evidence/assets",
+                data=form,
+                files={"file": (filename, CONTENT, "text/plain")},
             )
 
     with ThreadPoolExecutor(max_workers=count) as pool:
@@ -204,8 +242,10 @@ def test_parallel_http_uploads_return_one_asset_and_write_once(upload_db, scope,
         assets = list(db.scalars(select(SourceAsset)))
         assert len(assets) == 1
         asset = assets[0]
-        assert all(r.json()["chapter_id"] == (str(asset.chapter_id) if asset.chapter_id else None)
-                   for r in responses)
+        assert all(
+            r.json()["chapter_id"] == (str(asset.chapter_id) if asset.chapter_id else None)
+            for r in responses
+        )
         assert all(r.json()["original_filename"] == asset.original_filename for r in responses)
         assert all(r.json()["consent_scope"] == asset.consent_scope for r in responses)
         assert asset.sha256 == hashlib.sha256(CONTENT).hexdigest()
@@ -216,7 +256,8 @@ def test_parallel_http_uploads_return_one_asset_and_write_once(upload_db, scope,
 
 def test_concurrent_dedup_stays_within_tenant_and_person(upload_db, scope, storage):
     owners = [
-        (scope.tenant, scope.person), (scope.tenant, scope.other_person),
+        (scope.tenant, scope.person),
+        (scope.tenant, scope.other_person),
         (scope.other_tenant, scope.foreign_person),
     ] * 2
     sessions = racing_sessions(upload_db, len(owners))
@@ -242,7 +283,11 @@ def test_retries_preserve_first_metadata_and_still_validate_scope(upload_db, sco
         first = create(db, scope, session=scope.sessions[0], filename="first.TXT")
         for session in (None, scope.sessions[1]):
             duplicate = create(
-                db, scope, session=session, filename="renamed.md", consent_scope="public",
+                db,
+                scope,
+                session=session,
+                filename="renamed.md",
+                consent_scope="public",
             )
             assert duplicate.id == first.id
             assert duplicate.chapter_id == scope.chapters[0]
@@ -262,7 +307,11 @@ def test_retries_preserve_first_metadata_and_still_validate_scope(upload_db, sco
 
 @pytest.mark.parametrize("after_write", [False, True])
 def test_storage_failure_rolls_back_asset_preserves_caller_and_allows_retry(
-    upload_db, scope, storage, monkeypatch, after_write,
+    upload_db,
+    scope,
+    storage,
+    monkeypatch,
+    after_write,
 ):
     put = storage.local.put_file
     delete = Mock(side_effect=AssertionError("A shared object must never be deleted"))
@@ -317,7 +366,7 @@ def test_failed_writer_releases_competing_uploads(upload_db, scope, storage, mon
     assert len(set(results) - {None}) == 1
     assert len(attempts) == 2
     with upload_db() as db:
-        asset, = db.scalars(select(SourceAsset))
+        (asset,) = db.scalars(select(SourceAsset))
         assert storage.local.get(asset.storage_key) == CONTENT
 
 
@@ -334,7 +383,8 @@ def test_asset_is_not_visible_until_object_write_finishes(upload_db, scope, stor
 
     def before_insert(conn, cursor, statement, parameters, context, executemany):
         if (
-            started.is_set() and statement.startswith("INSERT INTO")
+            started.is_set()
+            and statement.startswith("INSERT INTO")
             and "source_assets" in statement
         ):
             contender_insert.set()
@@ -377,7 +427,9 @@ def test_relay_and_direct_upload_converge(upload_db, scope, storage, monkeypatch
     monkeypatch.setattr(storage.local, "put_file", put)
     client = Mock()
     client.head_object.return_value = {
-        "ContentLength": len(CONTENT), "ContentType": "text/plain", "ETag": '"verified"',
+        "ContentLength": len(CONTENT),
+        "ContentType": "text/plain",
+        "ETag": '"verified"',
     }
     client.get_object.side_effect = lambda **kwargs: {
         "Body": StreamingBody(BytesIO(CONTENT), len(CONTENT)),
@@ -386,12 +438,17 @@ def test_relay_and_direct_upload_converge(upload_db, scope, storage, monkeypatch
     remote = SimpleNamespace(client=client, bucket="synthetic-bucket")
     with upload_db() as db:
         upload = EvidenceUpload(
-            tenant_id=scope.tenant, subject_id=scope.person, kind="document",
+            tenant_id=scope.tenant,
+            subject_id=scope.person,
+            kind="document",
             original_filename="direct.md" if variant != "same-key" else "memory.txt",
             chapter_id=scope.chapters[1] if variant != "same-key" else None,
             interview_session_id=scope.sessions[1] if variant != "same-key" else None,
-            mime_type="text/plain", byte_size=len(CONTENT), consent_scope="family",
-            storage_key=f"synthetic-staging/{uuid4()}", expires_at=utcnow(),
+            mime_type="text/plain",
+            byte_size=len(CONTENT),
+            consent_scope="family",
+            storage_key=f"synthetic-staging/{uuid4()}",
+            expires_at=utcnow(),
         )
         db.add(upload)
         db.commit()
@@ -402,8 +459,13 @@ def test_relay_and_direct_upload_converge(upload_db, scope, storage, monkeypatch
         with sessions() as db:
             asset = (
                 direct_uploads.verify_and_commit(
-                    db, scope.tenant, db.get(EvidenceUpload, upload_id), remote,
-                ) if direct else create(db, scope)
+                    db,
+                    scope.tenant,
+                    db.get(EvidenceUpload, upload_id),
+                    remote,
+                )
+                if direct
+                else create(db, scope)
             )
             return asset.id
 
@@ -411,7 +473,7 @@ def test_relay_and_direct_upload_converge(upload_db, scope, storage, monkeypatch
         results = list(pool.map(request, [False, True]))
     assert results[0] == results[1]
     with upload_db() as db:
-        asset, = db.scalars(select(SourceAsset))
+        (asset,) = db.scalars(select(SourceAsset))
         assert db.get(EvidenceUpload, upload_id).asset_id == asset.id
         assert objects[asset.storage_key] == CONTENT
         assert asset.sha256 == hashlib.sha256(CONTENT).hexdigest()
@@ -445,11 +507,19 @@ def miss_first_asset_lookup(monkeypatch, db):
     monkeypatch.setattr(db, "scalar", stale_lookup)
 
 
-@pytest.mark.parametrize("constraint", [
-    "uq_source_assets_storage_key", "uq_asset_tenant_subject_sha256",
-])
+@pytest.mark.parametrize(
+    "constraint",
+    [
+        "uq_source_assets_storage_key",
+        "uq_asset_tenant_subject_sha256",
+    ],
+)
 def test_both_unique_constraints_recover_without_losing_caller_changes(
-    upload_db, scope, storage, monkeypatch, constraint,
+    upload_db,
+    scope,
+    storage,
+    monkeypatch,
+    constraint,
 ):
     engine = upload_db.kw["bind"]
     if engine.dialect.name != "postgresql":
@@ -461,11 +531,11 @@ def test_both_unique_constraints_recover_without_losing_caller_changes(
         with engine.begin() as conn:
             conn.exec_driver_sql(
                 f'ALTER TABLE "{schema}".source_assets '
-                'DROP CONSTRAINT uq_asset_tenant_subject_sha256'
+                "DROP CONSTRAINT uq_asset_tenant_subject_sha256"
             )
             conn.exec_driver_sql(
                 f'ALTER TABLE "{schema}".source_assets ADD CONSTRAINT '
-                'uq_asset_tenant_subject_sha256 UNIQUE (tenant_id, subject_id, sha256)'
+                "uq_asset_tenant_subject_sha256 UNIQUE (tenant_id, subject_id, sha256)"
             )
     with upload_db() as db:
         first = create(db, scope)
@@ -491,7 +561,10 @@ def test_both_unique_constraints_recover_without_losing_caller_changes(
 
 
 def test_unrelated_integrity_error_is_not_hidden_by_existing_asset(
-    upload_db, scope, storage, monkeypatch,
+    upload_db,
+    scope,
+    storage,
+    monkeypatch,
 ):
     with upload_db() as db:
         first = create(db, scope)
@@ -514,7 +587,10 @@ def test_unrelated_integrity_error_is_not_hidden_by_existing_asset(
 
 
 def test_commit_failure_keeps_object_and_allows_retry(
-    upload_db, scope, storage, monkeypatch,
+    upload_db,
+    scope,
+    storage,
+    monkeypatch,
 ):
     if upload_db.kw["bind"].dialect.name != "postgresql":
         pytest.skip("Requires PostgreSQL outer transaction semantics")

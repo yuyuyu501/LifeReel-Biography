@@ -12,6 +12,7 @@ from lifereel_api.core.models import TimestampMixin, UUIDPrimaryKeyMixin, utcnow
 
 class Tenant(UUIDPrimaryKeyMixin, Base):
     __tablename__ = "tenants"
+    __table_args__ = {"schema": "identity"}
 
     name: Mapped[str] = mapped_column(String(120))
     slug: Mapped[str] = mapped_column(String(80), unique=True)
@@ -20,9 +21,10 @@ class Tenant(UUIDPrimaryKeyMixin, Base):
 
 class Person(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "persons"
+    __table_args__ = {"schema": "identity"}
 
     tenant_id: Mapped[UUID] = mapped_column(
-        Uuid, ForeignKey("tenants.id", ondelete="CASCADE"), index=True
+        Uuid, ForeignKey("identity.tenants.id", ondelete="CASCADE"), index=True
     )
     display_name: Mapped[str] = mapped_column(String(120))
     preferred_name: Mapped[str | None] = mapped_column(String(120), nullable=True)

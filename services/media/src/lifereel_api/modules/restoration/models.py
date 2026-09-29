@@ -9,11 +9,14 @@ from lifereel_api.core.models import TimestampMixin, UUIDPrimaryKeyMixin
 
 class RestorationPhoto(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "restoration_photos"
-    __table_args__ = (UniqueConstraint("tenant_id", "sha256", name="uq_restore_photo_hash"),)
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "sha256", name="uq_restore_photo_hash"),
+        {"schema": "media"},
+    )
 
     tenant_id: Mapped[UUID] = mapped_column(
         Uuid,
-        ForeignKey("tenants.id", ondelete="CASCADE"),
+        ForeignKey("identity.tenants.id", ondelete="CASCADE"),
         index=True,
     )
     original_filename: Mapped[str] = mapped_column(String(255))

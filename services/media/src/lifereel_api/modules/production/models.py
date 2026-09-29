@@ -11,15 +11,16 @@ from lifereel_api.core.models import TimestampMixin, UUIDPrimaryKeyMixin
 
 class ProductionRun(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "production_runs"
+    __table_args__ = {"schema": "media"}
 
     tenant_id: Mapped[UUID] = mapped_column(
-        Uuid, ForeignKey("tenants.id", ondelete="CASCADE"), index=True
+        Uuid, ForeignKey("identity.tenants.id", ondelete="CASCADE"), index=True
     )
     project_id: Mapped[UUID] = mapped_column(
-        Uuid, ForeignKey("script_projects.id", ondelete="CASCADE"), index=True
+        Uuid, ForeignKey("script.script_projects.id", ondelete="CASCADE"), index=True
     )
     job_id: Mapped[UUID | None] = mapped_column(
-        Uuid, ForeignKey("jobs.id", ondelete="SET NULL"), nullable=True, index=True
+        Uuid, ForeignKey("tasks.jobs.id", ondelete="SET NULL"), nullable=True, index=True
     )
     status: Mapped[str] = mapped_column(String(32), default="queued")
     provider: Mapped[str] = mapped_column(String(64), default="mock")
@@ -32,15 +33,16 @@ class ProductionRun(UUIDPrimaryKeyMixin, TimestampMixin, Base):
 
 class GeneratedAsset(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "generated_assets"
+    __table_args__ = {"schema": "media"}
 
     tenant_id: Mapped[UUID] = mapped_column(
-        Uuid, ForeignKey("tenants.id", ondelete="CASCADE"), index=True
+        Uuid, ForeignKey("identity.tenants.id", ondelete="CASCADE"), index=True
     )
     production_run_id: Mapped[UUID] = mapped_column(
-        Uuid, ForeignKey("production_runs.id", ondelete="CASCADE"), index=True
+        Uuid, ForeignKey("media.production_runs.id", ondelete="CASCADE"), index=True
     )
     scene_id: Mapped[UUID | None] = mapped_column(
-        Uuid, ForeignKey("script_scenes.id", ondelete="SET NULL"), nullable=True
+        Uuid, ForeignKey("script.script_scenes.id", ondelete="SET NULL"), nullable=True
     )
     kind: Mapped[str] = mapped_column(String(32))
     provider: Mapped[str] = mapped_column(String(64))

@@ -25,10 +25,11 @@ class Job(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __table_args__ = (
         UniqueConstraint("tenant_id", "idempotency_key", name="uq_job_tenant_idempotency"),
         Index("ix_jobs_dispatch", "kind", "status", "lease_expires_at", "created_at"),
+        {"schema": "tasks"},
     )
 
     tenant_id: Mapped[UUID] = mapped_column(
-        Uuid, ForeignKey("tenants.id", ondelete="CASCADE"), index=True
+        Uuid, ForeignKey("identity.tenants.id", ondelete="CASCADE"), index=True
     )
     kind: Mapped[str] = mapped_column(String(80))
     status: Mapped[str] = mapped_column(String(32), default="queued")
@@ -40,5 +41,6 @@ class Job(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     attempt_count: Mapped[int] = mapped_column(Integer, default=0)
     lease_token: Mapped[UUID | None] = mapped_column(Uuid, nullable=True)
     lease_expires_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True,
+        DateTime(timezone=True),
+        nullable=True,
     )

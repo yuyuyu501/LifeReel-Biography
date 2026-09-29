@@ -18,25 +18,29 @@ class MemoryClaim(UUIDPrimaryKeyMixin, TimestampMixin, Base):
             "source_observation_id",
             name="uq_claim_tenant_source_observation",
         ),
+        {"schema": "memory"},
     )
 
     tenant_id: Mapped[UUID] = mapped_column(
-        Uuid, ForeignKey("tenants.id", ondelete="CASCADE"), index=True
+        Uuid, ForeignKey("identity.tenants.id", ondelete="CASCADE"), index=True
     )
     subject_id: Mapped[UUID] = mapped_column(
-        Uuid, ForeignKey("persons.id", ondelete="CASCADE"), index=True
+        Uuid, ForeignKey("identity.persons.id", ondelete="CASCADE"), index=True
     )
     interview_session_id: Mapped[UUID | None] = mapped_column(
-        Uuid, ForeignKey("interview_sessions.id", ondelete="CASCADE"), index=True, nullable=True
+        Uuid,
+        ForeignKey("interview.interview_sessions.id", ondelete="CASCADE"),
+        index=True,
+        nullable=True,
     )
     source_round_id: Mapped[UUID | None] = mapped_column(
-        Uuid, ForeignKey("interview_rounds.id", ondelete="CASCADE"), nullable=True
+        Uuid, ForeignKey("interview.interview_rounds.id", ondelete="CASCADE"), nullable=True
     )
     source_observation_id: Mapped[UUID | None] = mapped_column(
-        Uuid, ForeignKey("evidence_observations.id", ondelete="CASCADE"), nullable=True
+        Uuid, ForeignKey("media.evidence_observations.id", ondelete="CASCADE"), nullable=True
     )
     chapter_id: Mapped[UUID | None] = mapped_column(
-        Uuid, ForeignKey("chapters.id", ondelete="SET NULL"), nullable=True
+        Uuid, ForeignKey("interview.chapters.id", ondelete="SET NULL"), nullable=True
     )
     claim_text: Mapped[str] = mapped_column(Text)
     source_quote: Mapped[str] = mapped_column(Text)
@@ -57,13 +61,14 @@ class MemoryEntity(UUIDPrimaryKeyMixin, TimestampMixin, Base):
             "normalized_name",
             name="uq_memory_entity",
         ),
+        {"schema": "memory"},
     )
 
     tenant_id: Mapped[UUID] = mapped_column(
-        Uuid, ForeignKey("tenants.id", ondelete="CASCADE"), index=True
+        Uuid, ForeignKey("identity.tenants.id", ondelete="CASCADE"), index=True
     )
     subject_id: Mapped[UUID] = mapped_column(
-        Uuid, ForeignKey("persons.id", ondelete="CASCADE"), index=True
+        Uuid, ForeignKey("identity.persons.id", ondelete="CASCADE"), index=True
     )
     entity_type: Mapped[str] = mapped_column(String(32))
     name: Mapped[str] = mapped_column(String(180))
@@ -74,15 +79,16 @@ class MemoryEntity(UUIDPrimaryKeyMixin, TimestampMixin, Base):
 
 class TimelineAnchor(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "timeline_anchors"
+    __table_args__ = {"schema": "memory"}
 
     tenant_id: Mapped[UUID] = mapped_column(
-        Uuid, ForeignKey("tenants.id", ondelete="CASCADE"), index=True
+        Uuid, ForeignKey("identity.tenants.id", ondelete="CASCADE"), index=True
     )
     subject_id: Mapped[UUID] = mapped_column(
-        Uuid, ForeignKey("persons.id", ondelete="CASCADE"), index=True
+        Uuid, ForeignKey("identity.persons.id", ondelete="CASCADE"), index=True
     )
     claim_id: Mapped[UUID] = mapped_column(
-        Uuid, ForeignKey("memory_claims.id", ondelete="CASCADE"), index=True
+        Uuid, ForeignKey("memory.memory_claims.id", ondelete="CASCADE"), index=True
     )
     year: Mapped[int | None] = mapped_column(Integer, nullable=True)
     time_text: Mapped[str] = mapped_column(String(120))
@@ -92,12 +98,13 @@ class TimelineAnchor(UUIDPrimaryKeyMixin, TimestampMixin, Base):
 
 class MemoryConflict(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "memory_conflicts"
+    __table_args__ = {"schema": "memory"}
 
     tenant_id: Mapped[UUID] = mapped_column(
-        Uuid, ForeignKey("tenants.id", ondelete="CASCADE"), index=True
+        Uuid, ForeignKey("identity.tenants.id", ondelete="CASCADE"), index=True
     )
     subject_id: Mapped[UUID] = mapped_column(
-        Uuid, ForeignKey("persons.id", ondelete="CASCADE"), index=True
+        Uuid, ForeignKey("identity.persons.id", ondelete="CASCADE"), index=True
     )
     claim_ids: Mapped[list[str]] = mapped_column(JSON, default=list)
     conflict_key: Mapped[str] = mapped_column(String(180))

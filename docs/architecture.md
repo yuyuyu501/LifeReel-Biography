@@ -6,7 +6,7 @@
 
 服务间 HTTP 使用 HMAC 签名、调用方白名单与租户校验。事务 Outbox 投递到 Inbox 后才能领取任务；账本命令和剧本结果有幂等收据。成功的模型响应可重放缓存，网络不确定状态禁止自动重复收费请求。
 
-仍保留单个 PostgreSQL、共享 ORM 和同一版本 backend wheel。人物小传更新、初始化及部分跨域查询仍有兼容性共享；尚不是每服务独立数据库或独立依赖发布。主机与数据库仍是共同故障域。实时语音连接由 Interview 持有，记忆与剧本更新调用独立服务。
+仍保留单个 PostgreSQL 数据库、共享 ORM 和同一版本 backend wheel。数据库通过 identity、interview、memory、script、media、billing、tasks、model_gateway 八个 Schema 分类业务表；public 保留迁移版本表。媒体文件本体在 OSS，数据库保存对象键与元数据。详见 [Schema 表归属](database-schemas.md)。人物小传更新、初始化及部分跨域查询仍有兼容性共享；尚不是每服务独立数据库或独立依赖发布。主机与数据库仍是共同故障域。实时语音连接由 Interview 持有，记忆与剧本更新调用独立服务。
 
 ```mermaid
 flowchart TB

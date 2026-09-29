@@ -22,7 +22,10 @@ from lifereel_api.core.models import TimestampMixin, UUIDPrimaryKeyMixin
 
 class BillingCommand(UUIDPrimaryKeyMixin, Base):
     __tablename__ = "billing_commands"
-    tenant_id: Mapped[UUID] = mapped_column(Uuid, ForeignKey("tenants.id", ondelete="CASCADE"))
+    __table_args__ = {"schema": "billing"}
+    tenant_id: Mapped[UUID] = mapped_column(
+        Uuid, ForeignKey("identity.tenants.id", ondelete="CASCADE")
+    )
     result: Mapped[dict] = mapped_column(JSON, default=dict)
 
 
@@ -37,8 +40,11 @@ class Wallet(TimestampMixin, Base):
             "bonus_cents >= frozen_bonus_cents",
             name="covered_frozen",
         ),
+        {"schema": "billing"},
     )
-    tenant_id: Mapped[UUID] = mapped_column(Uuid, ForeignKey("tenants.id"), primary_key=True)
+    tenant_id: Mapped[UUID] = mapped_column(
+        Uuid, ForeignKey("identity.tenants.id"), primary_key=True
+    )
     paid_cents: Mapped[int] = mapped_column(Integer, default=0)
     bonus_cents: Mapped[int] = mapped_column(Integer, default=0)
     frozen_paid_cents: Mapped[int] = mapped_column(Integer, default=0)
@@ -55,8 +61,11 @@ class Charge(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         ),
         CheckConstraint("amount_cents = paid_cents + bonus_cents", name="charge_split"),
         CheckConstraint("status IN ('reserved', 'settled', 'released')", name="valid_status"),
+        {"schema": "billing"},
     )
-    tenant_id: Mapped[UUID] = mapped_column(Uuid, ForeignKey("wallets.tenant_id"), index=True)
+    tenant_id: Mapped[UUID] = mapped_column(
+        Uuid, ForeignKey("billing.wallets.tenant_id"), index=True
+    )
     business_key: Mapped[str] = mapped_column(String(200))
     kind: Mapped[str] = mapped_column(String(30))
     title: Mapped[str] = mapped_column(String(300))
@@ -70,9 +79,14 @@ class Charge(UUIDPrimaryKeyMixin, TimestampMixin, Base):
 
 class LedgerEntry(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "wallet_ledger"
-    __table_args__ = (UniqueConstraint("tenant_id", "event_key"),)
-    tenant_id: Mapped[UUID] = mapped_column(Uuid, ForeignKey("wallets.tenant_id"), index=True)
-    charge_id: Mapped[UUID | None] = mapped_column(Uuid, ForeignKey("billing_charges.id"))
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "event_key"),
+        {"schema": "billing"},
+    )
+    tenant_id: Mapped[UUID] = mapped_column(
+        Uuid, ForeignKey("billing.wallets.tenant_id"), index=True
+    )
+    charge_id: Mapped[UUID | None] = mapped_column(Uuid, ForeignKey("billing.billing_charges.id"))
     event_key: Mapped[str] = mapped_column(String(240))
     event: Mapped[str] = mapped_column(String(24))
     title: Mapped[str] = mapped_column(String(300))
@@ -85,8 +99,11 @@ class LedgerEntry(UUIDPrimaryKeyMixin, TimestampMixin, Base):
 
 class UsageEvent(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "provider_usage"
-    __table_args__ = (UniqueConstraint("tenant_id", "operation", "provider_request_id", "status"),)
-    tenant_id: Mapped[UUID] = mapped_column(Uuid, ForeignKey("tenants.id"), index=True)
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "operation", "provider_request_id", "status"),
+        {"schema": "billing"},
+    )
+    tenant_id: Mapped[UUID] = mapped_column(Uuid, ForeignKey("identity.tenants.id"), index=True)
     operation: Mapped[str] = mapped_column(String(48))
     reference: Mapped[str | None] = mapped_column(String(100))
     model: Mapped[str] = mapped_column(String(150))
@@ -104,15 +121,16 @@ class RechargeOrder(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         UniqueConstraint("tenant_id", "request_id"),
         UniqueConstraint("verified_reference"),
         CheckConstraint("amount_cents BETWEEN 1 AND 20000", name="recharge_amount"),
-        CheckConstraint(
-            "payment_method IN ('wechat', 'alipay')", name="recharge_payment_method"
-        ),
+        CheckConstraint("payment_method IN ('wechat', 'alipay')", name="recharge_payment_method"),
         CheckConstraint(
             "status IN ('pending', 'submitted', 'credited', 'rejected', 'cancelled')",
             name="recharge_status",
         ),
+        {"schema": "billing"},
     )
-    tenant_id: Mapped[UUID] = mapped_column(Uuid, ForeignKey("wallets.tenant_id"), index=True)
+    tenant_id: Mapped[UUID] = mapped_column(
+        Uuid, ForeignKey("billing.wallets.tenant_id"), index=True
+    )
     request_id: Mapped[UUID] = mapped_column(Uuid)
     # Existing rows predate Alipay; the migration preserves their WeChat origin.
     payment_method: Mapped[str] = mapped_column(

@@ -47,16 +47,27 @@ def receive_until(socket, kind):
 
 
 def test_call_updates_graph_and_script_before_hangup_without_saving_conversation(
-    client, voice, tmp_path, monkeypatch,
+    client,
+    voice,
+    tmp_path,
+    monkeypatch,
 ):
     from lifereel_api.modules.evidence.models import SourceAsset
     from lifereel_api.modules.jobs.models import Job
     from lifereel_api.modules.memory import service as memory
     from lifereel_api.modules.memory.models import MemoryClaim, MemoryEntity
 
-    monkeypatch.setattr(memory, "_extract_claim", lambda *_a, **_kw: (
-        "童年与母亲共同生活在村里。", "recollection", 0.9, "test-extractor", None,
-    ))
+    monkeypatch.setattr(
+        memory,
+        "_extract_claim",
+        lambda *_a, **_kw: (
+            "童年与母亲共同生活在村里。",
+            "recollection",
+            0.9,
+            "test-extractor",
+            None,
+        ),
+    )
     session, call = voice
     with client.websocket_connect(f"/v1/interview-voice/{call['id']}/stream", headers=ORIGIN) as ws:
         receive_until(ws, "ready")
@@ -135,6 +146,7 @@ def test_only_user_utterances_update_memory_and_duplicates_are_ignored(client, v
     from lifereel_api.modules.memory.models import MemoryClaim
 
     session, call = voice
+
     @asynccontextmanager
     async def connection():
         mock = provider.MockConnection()
@@ -143,14 +155,21 @@ def test_only_user_utterances_update_memory_and_duplicates_are_ignored(client, v
         async def send(event):
             await original_send(event)
             if event["type"] == "input_audio_buffer.append":
-                await mock.events.put({
-                    "type": provider.ASR_PREFIX + "completed",
-                    "item_id": "user-1", "transcript": "重复原文不得再次执行。",
-                })
-                await mock.events.put({
-                    "type": "response.output_text.done", "response_id": "assistant-extra",
-                    "text": "我猜您在北京。",
-                })
+                await mock.events.put(
+                    {
+                        "type": provider.ASR_PREFIX + "completed",
+                        "item_id": "user-1",
+                        "transcript": "重复原文不得再次执行。",
+                    }
+                )
+                await mock.events.put(
+                    {
+                        "type": "response.output_text.done",
+                        "response_id": "assistant-extra",
+                        "text": "我猜您在北京。",
+                    }
+                )
+
         mock.send = send
         yield mock
 
@@ -313,12 +332,16 @@ def test_voice_migration_preserves_existing_schema(tmp_path):
     from alembic.migration import MigrationContext
     from alembic.operations import Operations
     from lifereel_api.core.database import Base
+    from lifereel_api.core.schema import SQLITE_SCHEMA_MAP
 
     migration_path = Path(__file__).parents[1] / "alembic/versions/20260918_0030_interview_voice.py"
     spec = importlib.util.spec_from_file_location("voice_migration", migration_path)
     migration = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(migration)
-    engine = create_engine(f"sqlite:///{tmp_path / 'voice-migration.db'}")
+    engine = create_engine(
+        f"sqlite:///{tmp_path / 'voice-migration.db'}",
+        execution_options={"schema_translate_map": SQLITE_SCHEMA_MAP},
+    )
     Base.metadata.create_all(
         engine, tables=[t for t in Base.metadata.sorted_tables if t.name != "interview_voice_calls"]
     )

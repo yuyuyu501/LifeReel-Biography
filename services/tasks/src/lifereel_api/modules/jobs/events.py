@@ -12,13 +12,19 @@ from lifereel_api.core.models import UUIDPrimaryKeyMixin
 
 class JobDelivery(Base):
     __tablename__ = "job_deliveries"
+    __table_args__ = {"schema": "tasks"}
     job_id: Mapped[UUID] = mapped_column(
-        Uuid, ForeignKey("jobs.id", ondelete="CASCADE"), primary_key=True,
+        Uuid,
+        ForeignKey("tasks.jobs.id", ondelete="CASCADE"),
+        primary_key=True,
     )
     event_id: Mapped[UUID] = mapped_column(Uuid)
-    tenant_id: Mapped[UUID] = mapped_column(Uuid, ForeignKey("tenants.id", ondelete="CASCADE"))
+    tenant_id: Mapped[UUID] = mapped_column(
+        Uuid, ForeignKey("identity.tenants.id", ondelete="CASCADE")
+    )
     delivered_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=lambda: datetime.now(UTC),
+        DateTime(timezone=True),
+        default=lambda: datetime.now(UTC),
     )
 
 
@@ -29,9 +35,10 @@ class OutboxEvent(UUIDPrimaryKeyMixin, Base):
     __table_args__ = (
         Index("ix_outbox_events_dispatch", "status", "occurred_at"),
         Index("ix_outbox_events_tenant", "tenant_id", "occurred_at"),
+        {"schema": "tasks"},
     )
     tenant_id: Mapped[UUID] = mapped_column(
-        Uuid, ForeignKey("tenants.id", ondelete="CASCADE"), index=True
+        Uuid, ForeignKey("identity.tenants.id", ondelete="CASCADE"), index=True
     )
     event_type: Mapped[str] = mapped_column(String(120))
     schema_version: Mapped[int] = mapped_column(default=1)

@@ -13,7 +13,10 @@ from lifereel_api.core.models import TimestampMixin, UUIDPrimaryKeyMixin
 class UserAccount(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "user_accounts"
 
-    __table_args__ = (UniqueConstraint("email"),)
+    __table_args__ = (
+        UniqueConstraint("email"),
+        {"schema": "identity"},
+    )
 
     email: Mapped[str | None] = mapped_column(String(255), index=True)
     phone: Mapped[str | None] = mapped_column(String(20), unique=True, index=True)
@@ -27,13 +30,15 @@ class UserAccount(UUIDPrimaryKeyMixin, TimestampMixin, Base):
 
 class AccountPhone(TimestampMixin, Base):
     __tablename__ = "account_phones"
+    __table_args__ = {"schema": "identity"}
 
     phone: Mapped[str] = mapped_column(String(20), primary_key=True)
-    user_id: Mapped[UUID] = mapped_column(Uuid, ForeignKey("user_accounts.id"), index=True)
+    user_id: Mapped[UUID] = mapped_column(Uuid, ForeignKey("identity.user_accounts.id"), index=True)
 
 
 class SmsChallenge(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "sms_challenges"
+    __table_args__ = {"schema": "identity"}
 
     phone: Mapped[str] = mapped_column(String(20), index=True)
     purpose: Mapped[str] = mapped_column(String(24))
@@ -45,6 +50,7 @@ class SmsChallenge(UUIDPrimaryKeyMixin, TimestampMixin, Base):
 
 class AuthRateLimit(Base):
     __tablename__ = "auth_rate_limits"
+    __table_args__ = {"schema": "identity"}
 
     key: Mapped[str] = mapped_column(String(64), primary_key=True)
     count: Mapped[int] = mapped_column(Integer)
@@ -53,6 +59,7 @@ class AuthRateLimit(Base):
 
 class AccountAudit(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "account_audits"
+    __table_args__ = {"schema": "identity"}
 
     actor_id: Mapped[UUID | None] = mapped_column(Uuid)
     user_id: Mapped[UUID] = mapped_column(Uuid, index=True)
@@ -62,13 +69,16 @@ class AccountAudit(UUIDPrimaryKeyMixin, TimestampMixin, Base):
 
 class TenantMembership(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "tenant_memberships"
-    __table_args__ = (UniqueConstraint("tenant_id", "user_id", name="uq_membership_tenant_user"),)
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "user_id", name="uq_membership_tenant_user"),
+        {"schema": "identity"},
+    )
 
     tenant_id: Mapped[UUID] = mapped_column(
-        Uuid, ForeignKey("tenants.id", ondelete="CASCADE"), index=True
+        Uuid, ForeignKey("identity.tenants.id", ondelete="CASCADE"), index=True
     )
     user_id: Mapped[UUID] = mapped_column(
-        Uuid, ForeignKey("user_accounts.id", ondelete="CASCADE"), index=True
+        Uuid, ForeignKey("identity.user_accounts.id", ondelete="CASCADE"), index=True
     )
     role: Mapped[str] = mapped_column(String(32), default="owner")
 
@@ -77,12 +87,13 @@ class PlatformIdentity(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "platform_identities"
     __table_args__ = (
         UniqueConstraint("platform", "app_id", "open_id", name="uq_platform_identity"),
+        {"schema": "identity"},
     )
     user_id: Mapped[UUID] = mapped_column(
-        Uuid, ForeignKey("user_accounts.id", ondelete="CASCADE"), index=True
+        Uuid, ForeignKey("identity.user_accounts.id", ondelete="CASCADE"), index=True
     )
     tenant_id: Mapped[UUID] = mapped_column(
-        Uuid, ForeignKey("tenants.id", ondelete="CASCADE"), index=True
+        Uuid, ForeignKey("identity.tenants.id", ondelete="CASCADE"), index=True
     )
     platform: Mapped[str] = mapped_column(String(16))
     app_id: Mapped[str] = mapped_column(String(128))
@@ -92,8 +103,9 @@ class PlatformIdentity(UUIDPrimaryKeyMixin, TimestampMixin, Base):
 
 class MiniSession(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "mini_sessions"
+    __table_args__ = {"schema": "identity"}
     identity_id: Mapped[UUID] = mapped_column(
-        Uuid, ForeignKey("platform_identities.id", ondelete="CASCADE"), index=True
+        Uuid, ForeignKey("identity.platform_identities.id", ondelete="CASCADE"), index=True
     )
     refresh_hash: Mapped[str] = mapped_column(String(64), unique=True)
     session_version: Mapped[int] = mapped_column(Integer)

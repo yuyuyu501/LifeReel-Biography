@@ -12,15 +12,16 @@ from lifereel_api.core.models import TimestampMixin, UUIDPrimaryKeyMixin
 
 class Publication(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "publications"
+    __table_args__ = {"schema": "media"}
 
     tenant_id: Mapped[UUID] = mapped_column(
-        Uuid, ForeignKey("tenants.id", ondelete="CASCADE"), index=True
+        Uuid, ForeignKey("identity.tenants.id", ondelete="CASCADE"), index=True
     )
     production_run_id: Mapped[UUID] = mapped_column(
-        Uuid, ForeignKey("production_runs.id", ondelete="CASCADE"), index=True
+        Uuid, ForeignKey("media.production_runs.id", ondelete="CASCADE"), index=True
     )
     subject_id: Mapped[UUID] = mapped_column(
-        Uuid, ForeignKey("persons.id", ondelete="CASCADE"), index=True
+        Uuid, ForeignKey("identity.persons.id", ondelete="CASCADE"), index=True
     )
     audience: Mapped[str] = mapped_column(String(32))
     status: Mapped[str] = mapped_column(String(32), default="published")

@@ -12,7 +12,10 @@ from lifereel_api.core.models import UUIDPrimaryKeyMixin
 
 class ModelInvocation(UUIDPrimaryKeyMixin, Base):
     __tablename__ = "model_invocations"
-    tenant_id: Mapped[UUID] = mapped_column(Uuid, ForeignKey("tenants.id", ondelete="CASCADE"))
+    __table_args__ = {"schema": "model_gateway"}
+    tenant_id: Mapped[UUID] = mapped_column(
+        Uuid, ForeignKey("identity.tenants.id", ondelete="CASCADE")
+    )
     operation: Mapped[str] = mapped_column(String(120))
     request_digest: Mapped[str] = mapped_column(String(64))
     state: Mapped[str] = mapped_column(String(24))

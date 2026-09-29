@@ -23,15 +23,16 @@ from lifereel_api.core.models import TimestampMixin, UUIDPrimaryKeyMixin
 
 class ScriptGenerationReceipt(Base):
     __tablename__ = "script_generation_receipts"
+    __table_args__ = {"schema": "script"}
     tenant_id: Mapped[UUID] = mapped_column(
         Uuid,
-        ForeignKey("tenants.id", ondelete="CASCADE"),
+        ForeignKey("identity.tenants.id", ondelete="CASCADE"),
         primary_key=True,
     )
     request_id: Mapped[UUID] = mapped_column(Uuid, primary_key=True)
     fingerprint: Mapped[str] = mapped_column(String(64))
     project_id: Mapped[UUID] = mapped_column(
-        Uuid, ForeignKey("script_projects.id", ondelete="CASCADE")
+        Uuid, ForeignKey("script.script_projects.id", ondelete="CASCADE")
     )
 
 
@@ -46,13 +47,14 @@ class ScriptProject(UUIDPrimaryKeyMixin, TimestampMixin, Base):
             postgresql_where=text("status <> 'superseded'"),
             sqlite_where=text("status <> 'superseded'"),
         ),
+        {"schema": "script"},
     )
 
     tenant_id: Mapped[UUID] = mapped_column(
-        Uuid, ForeignKey("tenants.id", ondelete="CASCADE"), index=True
+        Uuid, ForeignKey("identity.tenants.id", ondelete="CASCADE"), index=True
     )
     subject_id: Mapped[UUID] = mapped_column(
-        Uuid, ForeignKey("persons.id", ondelete="CASCADE"), index=True
+        Uuid, ForeignKey("identity.persons.id", ondelete="CASCADE"), index=True
     )
     title: Mapped[str] = mapped_column(String(180))
     mode: Mapped[str] = mapped_column(String(32), default="single_chapter")
@@ -70,16 +72,17 @@ class ScriptScene(UUIDPrimaryKeyMixin, Base):
     __tablename__ = "script_scenes"
     __table_args__ = (
         UniqueConstraint("project_id", "chapter_id", name="uq_script_scene_project_chapter"),
+        {"schema": "script"},
     )
 
     tenant_id: Mapped[UUID] = mapped_column(
-        Uuid, ForeignKey("tenants.id", ondelete="CASCADE"), index=True
+        Uuid, ForeignKey("identity.tenants.id", ondelete="CASCADE"), index=True
     )
     project_id: Mapped[UUID] = mapped_column(
-        Uuid, ForeignKey("script_projects.id", ondelete="CASCADE"), index=True
+        Uuid, ForeignKey("script.script_projects.id", ondelete="CASCADE"), index=True
     )
     chapter_id: Mapped[UUID | None] = mapped_column(
-        Uuid, ForeignKey("chapters.id", ondelete="SET NULL"), nullable=True, index=True
+        Uuid, ForeignKey("interview.chapters.id", ondelete="SET NULL"), nullable=True, index=True
     )
     order_index: Mapped[int] = mapped_column(Integer)
     heading: Mapped[str] = mapped_column(String(180))
@@ -100,12 +103,13 @@ class ScriptScene(UUIDPrimaryKeyMixin, Base):
 
 class ScriptShot(UUIDPrimaryKeyMixin, Base):
     __tablename__ = "script_shots"
+    __table_args__ = {"schema": "script"}
 
     tenant_id: Mapped[UUID] = mapped_column(
-        Uuid, ForeignKey("tenants.id", ondelete="CASCADE"), index=True
+        Uuid, ForeignKey("identity.tenants.id", ondelete="CASCADE"), index=True
     )
     scene_id: Mapped[UUID] = mapped_column(
-        Uuid, ForeignKey("script_scenes.id", ondelete="CASCADE"), index=True
+        Uuid, ForeignKey("script.script_scenes.id", ondelete="CASCADE"), index=True
     )
     order_index: Mapped[int] = mapped_column(Integer)
     shot_type: Mapped[str] = mapped_column(String(48), default="medium")

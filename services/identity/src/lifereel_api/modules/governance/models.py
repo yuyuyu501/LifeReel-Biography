@@ -12,12 +12,13 @@ from lifereel_api.core.models import TimestampMixin, UUIDPrimaryKeyMixin
 
 class ConsentGrant(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "consent_grants"
+    __table_args__ = {"schema": "identity"}
 
     tenant_id: Mapped[UUID] = mapped_column(
-        Uuid, ForeignKey("tenants.id", ondelete="CASCADE"), index=True
+        Uuid, ForeignKey("identity.tenants.id", ondelete="CASCADE"), index=True
     )
     subject_id: Mapped[UUID] = mapped_column(
-        Uuid, ForeignKey("persons.id", ondelete="CASCADE"), index=True
+        Uuid, ForeignKey("identity.persons.id", ondelete="CASCADE"), index=True
     )
     consent_type: Mapped[str] = mapped_column(String(32))
     scope: Mapped[str] = mapped_column(String(32))
@@ -29,9 +30,10 @@ class ConsentGrant(UUIDPrimaryKeyMixin, TimestampMixin, Base):
 
 class AuditEvent(UUIDPrimaryKeyMixin, Base):
     __tablename__ = "audit_events"
+    __table_args__ = {"schema": "identity"}
 
     tenant_id: Mapped[UUID] = mapped_column(
-        Uuid, ForeignKey("tenants.id", ondelete="CASCADE"), index=True
+        Uuid, ForeignKey("identity.tenants.id", ondelete="CASCADE"), index=True
     )
     actor: Mapped[str] = mapped_column(String(180), default="development-user")
     action: Mapped[str] = mapped_column(String(80))

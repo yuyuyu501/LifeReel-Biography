@@ -73,7 +73,7 @@ docker compose -f compose.production.yaml run --rm --no-deps migrate alembic cur
 
 `migrate` 在服务启动前自动执行迁移与幂等初始化；迁移失败时业务服务不会启动。各服务 `/docs` 仅在内部网络开放。
 
-生产 Compose 包含 Web、Gateway、八个后端服务、两个 Worker、PostgreSQL 和 Redis。Worker 直接执行各自领域任务，不回调旧 API 执行。服务间通过签名 HTTP 与事务 Outbox/Inbox 协作；仍共享 PostgreSQL、ORM 和统一版本的基础运行库。生产模式只创建 `.env` 指定的首位管理员。
+生产 Compose 包含 Web、Gateway、八个后端服务、两个 Worker、PostgreSQL 和 Redis。Worker 直接执行各自领域任务，不回调旧 API 执行。服务间通过签名 HTTP 与事务 Outbox/Inbox 协作；仍共享一个 PostgreSQL 数据库、ORM 和统一版本的基础运行库。46 张业务表按服务分入八个 Schema，媒体文件本体仍在 OSS；见 [数据库分类说明](docs/database-schemas.md)。生产模式只创建 `.env` 指定的首位管理员。
 
 ### 3. 验证
 

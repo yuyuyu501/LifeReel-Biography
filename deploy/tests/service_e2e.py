@@ -115,8 +115,8 @@ def main():
                 "-v",
                 "ON_ERROR_STOP=1",
                 "-c",
-                "UPDATE wallets SET bonus_cents=1000000 WHERE tenant_id="
-                f"(SELECT tenant_id FROM persons WHERE id='{subject_id}')"
+                "UPDATE billing.wallets SET bonus_cents=1000000 WHERE tenant_id="
+                f"(SELECT tenant_id FROM identity.persons WHERE id='{subject_id}')"
                 " AND frozen_bonus_cents=0 AND frozen_paid_cents=0",
             )
             wallet_before = request("GET", "/v1/wallet")
@@ -133,7 +133,10 @@ def main():
             workspace_url = f"/v1/interviews/{session['id']}/workspace"
             payload = {
                 "round_id": session["rounds"][-1]["id"],
-                "answer_text": "1988年，我在泉州的小学上学，父亲骑自行车送我，老师鼓励我朗读。我起初害怕，后来很开心，这让我喜欢阅读。",
+                "answer_text": (
+                    "1988年，我在泉州的小学上学，父亲骑自行车送我，老师鼓励我朗读。"
+                    "我起初害怕，后来很开心，这让我喜欢阅读。"
+                ),
                 "idempotency_key": f"services-qa-{uuid4()}",
             }
             # A stopped publisher must leave the committed turn queued, then recover it.
@@ -263,9 +266,28 @@ def main():
                 "python",
                 "-c",
                 "from lifereel_api.core.database import engine; from sqlalchemy import text; "
-                "c=engine.connect(); print(c.execute(text('select version_num from alembic_version')).scalar())",
+                "c=engine.connect(); "
+                "print(c.execute(text('select version_num from public.alembic_version')).scalar())",
             )
+            assert versions.strip() == "20260929_0040"
             checked("migration_runtime_version", version=versions.strip())
+            layout = docker(
+                "exec", "-T", "tasks", "python", "-c",
+                "import json; from sqlalchemy import inspect; "
+                "from lifereel_api.core.database import Base,engine; "
+                "from lifereel_api.core.schema import SERVICE_SCHEMAS; "
+                "from lifereel_api.architecture.metadata import register_models; "
+                "register_models(); "
+                "expected={s:sorted(t.name for t in Base.metadata.tables.values() if t.schema==s) "
+                "for s in SERVICE_SCHEMAS}; "
+                "actual={s:sorted(inspect(engine).get_table_names(schema=s)) "
+                "for s in SERVICE_SCHEMAS}; "
+                "assert actual==expected,(actual,expected); "
+                "assert set(inspect(engine).get_table_names(schema='public'))"
+                "=={'alembic_version'}; "
+                "print(json.dumps({s:len(t) for s,t in actual.items()}))",
+            )
+            checked("single_database_service_schemas", tables=json.loads(layout))
     except Exception as exc:
         checks.append({"test": "suite", "status": "failed", "error": str(exc)[:1000]})
         raise

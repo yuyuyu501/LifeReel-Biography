@@ -4,7 +4,7 @@
 
 使用唯一的 `compose.production.yaml`。`LIFEREEL_RELEASE` 为提交 SHA；`LIFEREEL_ENV_FILE` 默认 `.env`。每个服务有独立 Dockerfile，共享依赖镜像为 `deploy/Dockerfile.backend`，通过 Compose `additional_contexts: service:migrate` 构建。需使用支持该功能的 Docker Compose V2 / BuildKit。
 
-`services/` 保存领域源码，`workers/` 保存执行入口，`apps/api/` 保存基础库、迁移、ORM 注册及兼容测试入口。后端 wheel 仍包含共享领域模型，采用统一版本发布；数据库尚未按服务拆分。
+`services/` 保存领域源码，`workers/` 保存执行入口，`apps/api/` 保存基础库、迁移、ORM 注册及兼容测试入口。后端 wheel 仍包含共享领域模型，采用统一版本发布；数据库仍为一个，通过八个 Schema 按服务分类；表归属和媒体存储见 [数据库分类说明](database-schemas.md)。
 
 ## 发布顺序
 
@@ -24,6 +24,9 @@
 - ASR 临时转运对象使用私有 `service-transit/` 前缀并在请求结束删除。进程强制退出后可留下临时对象，OSS 应针对该前缀配置一天自动过期；不可对原始证据前缀应用该规则。
 
 ## 回滚
+
+0040 将业务表从 public 移至服务 Schema。回退到 0039 及以前的应用时，必须先停止新服务写入，使用新迁移镜像执行 alembic downgrade 20260929_0039，核对表、行数及账本/媒体摘要后再启动旧镜像。不能只切换旧镜像。整库备份应包含全部 Schema；回退拒绝级联删除用户新增对象。
+
 
 停止新业务服务，用保留的旧 Compose 与镜像恢复旧服务。0037–0039 为新增表，旧代码可以忽略；旧 API 的启动命令必须直接启动 uvicorn，跳过旧镜像中的 Alembic 自动升级（旧迁移目录不认识 0039）。不要为应用回滚直接删表。若需要恢复数据库，先停止所有写入，核验备份恢复点及之后新增数据的影响。备份和旧镜像保留至人工验收完成。
 

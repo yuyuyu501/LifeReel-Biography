@@ -7,6 +7,7 @@ from sqlalchemy import engine_from_config, pool
 from alembic import context
 from lifereel_api.core.config import get_settings
 from lifereel_api.core.database import Base
+from lifereel_api.core.schema import SERVICE_SCHEMAS
 from lifereel_api.modules.auth import models as auth_models  # noqa: F401
 from lifereel_api.modules.billing import models as billing_models  # noqa: F401
 from lifereel_api.modules.evidence import models as evidence_models  # noqa: F401
@@ -33,15 +34,35 @@ if config.config_file_name is not None:
 # ConfigParser interpolates percent signs, including URL-encoded passwords.
 config.set_main_option("sqlalchemy.url", get_settings().database_url.replace("%", "%%"))
 target_metadata = Base.metadata
+application_tables = {table.name for table in target_metadata.tables.values()}
+
+
+def include_name(name, type_, parent_names):
+    if type_ == "schema":
+        return name in (None, "public", *SERVICE_SCHEMAS)
+    if type_ == "table":
+        # Do not propose deleting unrelated user or extension tables.
+        return name in application_tables
+    return True
+
+
+def migration_options():
+    postgres = get_settings().database_url.startswith("postgresql")
+    return {
+        "target_metadata": target_metadata,
+        "compare_type": True,
+        "include_schemas": postgres,
+        "include_name": include_name,
+        "version_table_schema": "public" if postgres else None,
+    }
 
 
 def run_migrations_offline() -> None:
     context.configure(
         url=config.get_main_option("sqlalchemy.url"),
-        target_metadata=target_metadata,
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
-        compare_type=True,
+        **migration_options(),
     )
     with context.begin_transaction():
         context.run_migrations()
@@ -54,7 +75,7 @@ def run_migrations_online() -> None:
         poolclass=pool.NullPool,
     )
     with connectable.connect() as connection:
-        context.configure(connection=connection, target_metadata=target_metadata, compare_type=True)
+        context.configure(connection=connection, **migration_options())
         with context.begin_transaction():
             context.run_migrations()
 

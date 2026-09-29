@@ -23,10 +23,13 @@ from lifereel_api.core.models import TimestampMixin, UUIDPrimaryKeyMixin, utcnow
 
 class Chapter(UUIDPrimaryKeyMixin, Base):
     __tablename__ = "chapters"
-    __table_args__ = (UniqueConstraint("tenant_id", "order_index", name="uq_chapter_tenant_order"),)
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "order_index", name="uq_chapter_tenant_order"),
+        {"schema": "interview"},
+    )
 
     tenant_id: Mapped[UUID] = mapped_column(
-        Uuid, ForeignKey("tenants.id", ondelete="CASCADE"), index=True
+        Uuid, ForeignKey("identity.tenants.id", ondelete="CASCADE"), index=True
     )
     order_index: Mapped[int] = mapped_column(Integer)
     title: Mapped[str] = mapped_column(String(120))
@@ -49,14 +52,17 @@ class InterviewSession(UUIDPrimaryKeyMixin, TimestampMixin, Base):
             "chapter_id",
             name="uq_interview_subject_chapter",
         ),
+        {"schema": "interview"},
     )
 
     tenant_id: Mapped[UUID] = mapped_column(
-        Uuid, ForeignKey("tenants.id", ondelete="CASCADE"), index=True
+        Uuid, ForeignKey("identity.tenants.id", ondelete="CASCADE"), index=True
     )
-    subject_id: Mapped[UUID] = mapped_column(Uuid, ForeignKey("persons.id", ondelete="CASCADE"))
+    subject_id: Mapped[UUID] = mapped_column(
+        Uuid, ForeignKey("identity.persons.id", ondelete="CASCADE")
+    )
     chapter_id: Mapped[UUID | None] = mapped_column(
-        Uuid, ForeignKey("chapters.id", ondelete="SET NULL"), nullable=True
+        Uuid, ForeignKey("interview.chapters.id", ondelete="SET NULL"), nullable=True
     )
     topic_hint: Mapped[str | None] = mapped_column(String(240), nullable=True)
     status: Mapped[str] = mapped_column(String(32), default="active")
@@ -76,13 +82,16 @@ class InterviewSession(UUIDPrimaryKeyMixin, TimestampMixin, Base):
 
 class InterviewRound(UUIDPrimaryKeyMixin, Base):
     __tablename__ = "interview_rounds"
-    __table_args__ = (UniqueConstraint("session_id", "round_index", name="uq_round_session_index"),)
+    __table_args__ = (
+        UniqueConstraint("session_id", "round_index", name="uq_round_session_index"),
+        {"schema": "interview"},
+    )
 
     tenant_id: Mapped[UUID] = mapped_column(
-        Uuid, ForeignKey("tenants.id", ondelete="CASCADE"), index=True
+        Uuid, ForeignKey("identity.tenants.id", ondelete="CASCADE"), index=True
     )
     session_id: Mapped[UUID] = mapped_column(
-        Uuid, ForeignKey("interview_sessions.id", ondelete="CASCADE")
+        Uuid, ForeignKey("interview.interview_sessions.id", ondelete="CASCADE")
     )
     round_index: Mapped[int] = mapped_column(Integer)
     question_text: Mapped[str] = mapped_column(Text)
@@ -105,22 +114,23 @@ class InterviewTurnWorkflow(UUIDPrimaryKeyMixin, TimestampMixin, Base):
             "idempotency_key",
             name="uq_interview_turn_tenant_idempotency",
         ),
+        {"schema": "interview"},
     )
 
     tenant_id: Mapped[UUID] = mapped_column(
-        Uuid, ForeignKey("tenants.id", ondelete="CASCADE"), index=True
+        Uuid, ForeignKey("identity.tenants.id", ondelete="CASCADE"), index=True
     )
     session_id: Mapped[UUID] = mapped_column(
-        Uuid, ForeignKey("interview_sessions.id", ondelete="CASCADE"), index=True
+        Uuid, ForeignKey("interview.interview_sessions.id", ondelete="CASCADE"), index=True
     )
     round_id: Mapped[UUID] = mapped_column(
-        Uuid, ForeignKey("interview_rounds.id", ondelete="CASCADE"), index=True
+        Uuid, ForeignKey("interview.interview_rounds.id", ondelete="CASCADE"), index=True
     )
     chapter_id: Mapped[UUID | None] = mapped_column(
-        Uuid, ForeignKey("chapters.id", ondelete="SET NULL"), nullable=True, index=True
+        Uuid, ForeignKey("interview.chapters.id", ondelete="SET NULL"), nullable=True, index=True
     )
     job_id: Mapped[UUID | None] = mapped_column(
-        Uuid, ForeignKey("jobs.id", ondelete="SET NULL"), nullable=True, index=True
+        Uuid, ForeignKey("tasks.jobs.id", ondelete="SET NULL"), nullable=True, index=True
     )
     idempotency_key: Mapped[str] = mapped_column(String(180))
     status: Mapped[str] = mapped_column(String(32), default="queued")
@@ -150,15 +160,16 @@ class InterviewTurnWorkflow(UUIDPrimaryKeyMixin, TimestampMixin, Base):
 
 class InterviewVoiceCall(UUIDPrimaryKeyMixin, Base):
     __tablename__ = "interview_voice_calls"
+    __table_args__ = {"schema": "interview"}
 
     tenant_id: Mapped[UUID] = mapped_column(
-        Uuid, ForeignKey("tenants.id", ondelete="CASCADE"), index=True
+        Uuid, ForeignKey("identity.tenants.id", ondelete="CASCADE"), index=True
     )
     session_id: Mapped[UUID] = mapped_column(
-        Uuid, ForeignKey("interview_sessions.id", ondelete="CASCADE"), index=True
+        Uuid, ForeignKey("interview.interview_sessions.id", ondelete="CASCADE"), index=True
     )
     user_id: Mapped[UUID | None] = mapped_column(
-        Uuid, ForeignKey("user_accounts.id", ondelete="SET NULL"), nullable=True
+        Uuid, ForeignKey("identity.user_accounts.id", ondelete="SET NULL"), nullable=True
     )
     status: Mapped[str] = mapped_column(String(32), default="connecting", index=True)
     messages: Mapped[list[dict]] = mapped_column(JSON, default=list)
