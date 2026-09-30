@@ -21,6 +21,8 @@ def test_mini_program_login_refresh_and_bearer_session(client, monkeypatch) -> N
     monkeypatch.setattr(mini_program, "exchange_code", fake_exchange)
     monkeypatch.setenv("MINI_PROGRAM_ENABLED", "true")
     monkeypatch.setenv("MINI_PROGRAM_REGISTRATION_ENABLED", "true")
+    # This test must work without a developer's private .env file.
+    monkeypatch.setenv("AUTH_TOKEN_SECRET", "synthetic-mini-program-test-key")
     get_settings.cache_clear()
     try:
         login = client.post(
@@ -58,6 +60,7 @@ def test_mini_program_login_refresh_and_bearer_session(client, monkeypatch) -> N
     finally:
         monkeypatch.delenv("MINI_PROGRAM_ENABLED", raising=False)
         monkeypatch.delenv("MINI_PROGRAM_REGISTRATION_ENABLED", raising=False)
+        monkeypatch.delenv("AUTH_TOKEN_SECRET", raising=False)
         get_settings.cache_clear()
 
 
