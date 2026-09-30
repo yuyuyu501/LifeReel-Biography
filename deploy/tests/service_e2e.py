@@ -14,6 +14,25 @@ import httpx
 ROOT = Path(__file__).resolve().parents[2]
 
 
+def script_content(project):
+    """Check generated prose, not UUIDs, timestamps or other metadata."""
+    scene_fields = (
+        "heading", "plot", "narration", "visual_prompt", "dialogues",
+        "visual_constraints", "story_skeleton",
+    )
+    return json.dumps(
+        {
+            "title": project["title"],
+            "scenes": [{k: scene.get(k) for k in scene_fields} for scene in project["scenes"]],
+            "shots": [
+                {k: shot.get(k) for k in ("visual_prompt", "visual_constraints")}
+                for shot in project["shots"]
+            ],
+        },
+        ensure_ascii=False,
+    )
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--env-file", type=Path, required=True)
@@ -210,7 +229,7 @@ def main():
             timeline = request("GET", f"/v1/memories/subjects/{subject_id}/timeline")
             assert any(t["year"] == 1989 for t in timeline)
             assert not any(t["year"] == 1988 for t in timeline)
-            project_json = json.dumps(workspace["script"], ensure_ascii=False)
+            project_json = script_content(workspace["script"])
             assert "漳州" in project_json and "泉州" not in project_json
             assert "1989" in project_json and "1988" not in project_json
             wait_for(lambda: request("GET", "/v1/wallet")["frozen_cents"] == 0)

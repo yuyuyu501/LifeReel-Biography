@@ -137,6 +137,8 @@ jobs:
         with:
           python-version: "3.12"
       - run: pip install httpx
+      - name: Verify integration assertions ignore unrelated identifiers
+        run: python -m unittest discover -s deploy/tests -p test_service_e2e_content.py -v
       - name: Prepare isolated mock configuration
         run: |
           mkdir -p tmp/services-qa
