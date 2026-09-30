@@ -175,7 +175,8 @@ export const api = {
     sessionId: string,
     payload: {
       round_id?: string;
-      action?: "interview" | "regenerate_script";
+      action?: "interview" | "regenerate_script" | "revise_answer";
+      expected_version?: number;
       answer_text?: string;
       asset_ids: string[];
       idempotency_key: string;
@@ -339,6 +340,17 @@ export const api = {
   revokeConsent: (consentId: string) =>
     request<ConsentGrant>(`/v1/consents/${consentId}/revoke`, { method: "POST" }),
   listProductionRuns: () => request<ProductionRun[]>("/v1/production/runs"),
+  productionProgress: (runId: string) => request<{
+    elapsed_seconds: number; sample_count: number; estimated_seconds: [number, number] | null;
+  }>("/v1/production/runs/" + runId + "/progress"),
+  segmentQuote: (runId: string, index: number) => request<{
+    amount_cents: number; target_seconds: number; video_billing_mode: string; script_version: number;
+  }>("/v1/production/runs/" + runId + "/segments/" + index + "/quote"),
+  regenerateSegment: (runId: string, index: number, payload: {
+    request_id: string; expected_script_version: number; quoted_amount_cents: number;
+  }) => request<ProductionRun>("/v1/production/runs/" + runId + "/segments/" + index + "/regenerate", {
+    method: "POST", body: JSON.stringify(payload),
+  }),
   restoreProductionOriginal: (runId: string) =>
     request<ProductionRun>(`/v1/production/runs/${runId}/continuation`, { method: "POST" }),
   replaceProductionReference: (runId: string, referenceAssetId: string) =>
@@ -384,6 +396,10 @@ export function productionSegmentUrl(runId: string, index: number) {
 
 export function evidenceAssetUrl(assetId: string) {
   return `${API_BASE_URL}/v1/evidence/assets/${assetId}/content`;
+}
+
+export function productionReviewUrl(runId: string, index: number, position: number) {
+  return API_BASE_URL + "/v1/production/runs/" + runId + "/segments/" + index + "/review/" + position;
 }
 
 export function publicContentUrl(token: string) {

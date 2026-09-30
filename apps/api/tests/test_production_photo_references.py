@@ -53,17 +53,26 @@ def photo_pipeline(client, monkeypatch, tmp_path):
 
     def provider(options):
         return VolcengineSeedanceProvider(
-            options=options, client=httpx.Client(transport=httpx.MockTransport(handler)),
+            options=options,
+            client=httpx.Client(transport=httpx.MockTransport(handler)),
         )
 
     def fetch(self, task_id, duration):
         fetches.append(task_id)
         return ProviderOutput(
-            b"clip", "video/mp4", "mp4", {
+            b"clip",
+            "video/mp4",
+            "mp4",
+            {
                 "last_frame_mime": "image/png",
-                "original": self.original_metadata({
-                    "id": task_id, "model": self.model, "created_at": time.time(),
-                }, b"clip"),
+                "original": self.original_metadata(
+                    {
+                        "id": task_id,
+                        "model": self.model,
+                        "created_at": time.time(),
+                    },
+                    b"clip",
+                ),
             },
             last_frame=b"official-tail",
         )
@@ -82,15 +91,17 @@ def start(client, payload):
     return run, f"/v1/production/runs/{run['id']}/execute"
 
 
-def image_content(content):
+def image_content(content, role="first_frame"):
     return {
-        "type": "image_url", "role": "first_frame",
+        "type": "image_url",
+        "role": role,
         "image_url": {"url": "data:image/png;base64," + base64.b64encode(content).decode()},
     }
 
 
 def test_selected_chapter_photo_reaches_http_request_then_official_tail_is_used(
-    client, photo_pipeline,
+    client,
+    photo_pipeline,
 ):
     payload, photo_id, requests, plans, _ = photo_pipeline
     run, endpoint = start(client, payload)
@@ -98,15 +109,18 @@ def test_selected_chapter_photo_reaches_http_request_then_official_tail_is_used(
     first = client.post(endpoint).json()
     assert first["status"] == "running", first
     assert plans[0]["has_portrait"] is True
-    assert requests[0]["content"][1] == image_content(b"replacement")
+    assert requests[0]["content"][1] == image_content(b"replacement", "reference_image")
     segment = first["output_manifest"]["segments"][0]
     assert segment["reference_asset_id"] == photo_id
-    assert segment["reference_kind"] == "uploaded_image"
-    assert segment["reference_sha256"] == hashlib.sha256(b"replacement").hexdigest()
+    assert segment["reference_kind"] == "chapter_identity"
+    assert (
+        segment["identity_reference_hashes"][photo_id] == hashlib.sha256(b"replacement").hexdigest()
+    )
     second = client.post(endpoint).json()
     assert second["status"] == "running", second
-    assert requests[1]["content"][1] == image_content(b"official-tail")
-    assert second["output_manifest"]["segments"][1]["reference_kind"] == "official_tail"
+    assert requests[1]["content"][1] == image_content(b"replacement", "reference_image")
+    assert requests[1]["content"][2] == image_content(b"official-tail", "reference_image")
+    assert second["output_manifest"]["segments"][1]["reference_kind"] == "chapter_identity"
     assert client.post(endpoint).json()["status"] == "completed"
     assert client.post(endpoint).json()["status"] == "completed"
     assert len(requests) == 2
@@ -114,7 +128,9 @@ def test_selected_chapter_photo_reaches_http_request_then_official_tail_is_used(
 
 @pytest.mark.parametrize("replacement", [False, True])
 def test_already_planned_run_binds_photo_without_overriding_manual_reference(
-    client, photo_pipeline, replacement,
+    client,
+    photo_pipeline,
+    replacement,
 ):
     payload, photo_id, requests, _, _ = photo_pipeline
     run, endpoint = start(client, payload)
@@ -122,11 +138,18 @@ def test_already_planned_run_binds_photo_without_overriding_manual_reference(
     with SessionLocal() as db:
         row = db.get(ProductionRun, UUID(run["id"]))
         manifest = copy.deepcopy(row.output_manifest)
+        # This regression covers a queued legacy plan, before frozen image packages.
+        manifest["generation_config"].pop("identity_lock_version", None)
+        manifest["reference_package"].pop("schema", None)
         manifest["plan"] = {"voice": "test", "continuity": "test"}
-        manifest["segments"] = [{
-            "status": "pending", "duration_seconds": 15, "narration": "test",
-            "visual_prompt": "test",
-        }]
+        manifest["segments"] = [
+            {
+                "status": "pending",
+                "duration_seconds": 15,
+                "narration": "test",
+                "visual_prompt": "test",
+            }
+        ]
         if manual_id:
             manifest["segments"][0]["reference_asset_id"] = manual_id
         row.output_manifest = manifest
@@ -137,12 +160,19 @@ def test_already_planned_run_binds_photo_without_overriding_manual_reference(
     assert requests[0]["content"][1] == image_content(b"manual" if replacement else b"replacement")
 
 
-@pytest.mark.parametrize("change", [
-    {"consent_status": "revoked"}, {"consent_status": "unknown"},
-    {"status": "processing"}, {"subject_id": uuid4()}, {"tenant_id": uuid4()},
-    {"mime_type": "image/svg+xml"}, {"byte_size": 11 * 1024 * 1024},
-    {"metadata_json": {"purpose": "photo_redraw"}},
-])
+@pytest.mark.parametrize(
+    "change",
+    [
+        {"consent_status": "revoked"},
+        {"consent_status": "unknown"},
+        {"status": "processing"},
+        {"subject_id": uuid4()},
+        {"tenant_id": uuid4()},
+        {"mime_type": "image/svg+xml"},
+        {"byte_size": 11 * 1024 * 1024},
+        {"metadata_json": {"purpose": "photo_redraw"}},
+    ],
+)
 def test_selected_photo_is_revalidated_before_any_model_request(client, photo_pipeline, change):
     payload, photo_id, requests, plans, _ = photo_pipeline
     _, endpoint = start(client, payload)
@@ -208,7 +238,8 @@ def test_timed_out_photo_task_is_fetched_without_resubmission(client, monkeypatc
 
 
 def test_photo_fingerprint_allows_new_generation_but_deduplicates_repeat_clicks(
-    client, photo_pipeline,
+    client,
+    photo_pipeline,
 ):
     payload, _, _, _, _ = photo_pipeline
     old, _ = start(client, payload)
@@ -216,9 +247,9 @@ def test_photo_fingerprint_allows_new_generation_but_deduplicates_repeat_clicks(
         row = db.get(ProductionRun, UUID(old["id"]))
         job = db.get(Job, row.job_id)
         config = row.output_manifest["generation_config"]
-        old_fingerprint = hashlib.sha256(
-            json.dumps(config, sort_keys=True).encode()
-        ).hexdigest()[:16]
+        old_fingerprint = hashlib.sha256(json.dumps(config, sort_keys=True).encode()).hexdigest()[
+            :16
+        ]
         job.idempotency_key = job.idempotency_key.rsplit(":", 1)[0] + ":" + old_fingerprint
         row.status = job.status = "completed"
         db.commit()

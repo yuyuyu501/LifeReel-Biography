@@ -28,20 +28,26 @@ def video_case(client, monkeypatch):
     monkeypatch.setattr(jobs, "enqueue", lambda _: None)
     project, scenes = make_script(client)
     with SessionLocal() as db:
-        db.add_all([
-            ScriptShot(
-                tenant_id=project.tenant_id,
-                scene_id=scene.id,
-                order_index=1,
-                shot_type="wide",
-                visual_prompt=f"Metering shot {scene.order_index}",
-                duration_seconds=30,
-            )
-            for scene in scenes
-        ])
+        db.add_all(
+            [
+                ScriptShot(
+                    tenant_id=project.tenant_id,
+                    scene_id=scene.id,
+                    order_index=1,
+                    shot_type="wide",
+                    visual_prompt=f"Metering shot {scene.order_index}",
+                    duration_seconds=30,
+                )
+                for scene in scenes
+            ]
+        )
         db.commit()
-    payload = {"project_id": str(project.id), "scene_id": str(scenes[0].id),
-               "provider": "volcengine-seedance", "quoted_amount_cents": 2400}
+    payload = {
+        "project_id": str(project.id),
+        "scene_id": str(scenes[0].id),
+        "provider": "volcengine-seedance",
+        "quoted_amount_cents": 2400,
+    }
     return client, payload, scenes
 
 
@@ -68,6 +74,30 @@ def finish(run_id, success=True):
         billing.video_finish(db, run, success)
         db.commit()
         return run.output_manifest["billing"]
+
+
+def test_reused_shot_receipts_are_not_charged_or_waited_for(video_case):
+    run_id = start(video_case)
+    with SessionLocal() as db:
+        run = db.get(ProductionRun, run_id)
+        run.output_manifest = {
+            **run.output_manifest,
+            "segments": [
+                {
+                    "status": "completed",
+                    "task_id": "old-task",
+                    "previous_task_ids": ["old-attempt"],
+                    "reused": True,
+                },
+                {"status": "completed", "task_id": "new-task"},
+            ],
+        }
+        db.commit()
+    receipt(run_id, "new-task", {"completion_tokens": 1000})
+    result = finish(run_id)
+    assert result["status"] == "settled"
+    assert result["charged_cents"] == 3
+    assert finish(run_id) == result
 
 
 @pytest.mark.parametrize("balance", [1, 2000])
@@ -101,9 +131,14 @@ def test_nonpositive_balance_blocks_new_work(video_case, balance):
     assert client.get("/v1/production/runs").json() == []
 
 
-@pytest.mark.parametrize("count,cents,remainder", [
-    (100000, 345, 0), (649800, 2241, 8100000), (1000000, 3450, 0),
-])
+@pytest.mark.parametrize(
+    "count,cents,remainder",
+    [
+        (100000, 345, 0),
+        (649800, 2241, 8100000),
+        (1000000, 3450, 0),
+    ],
+)
 def test_settlement_returns_difference_or_charges_debt_once(video_case, count, cents, remainder):
     client, _, _ = video_case
     run_id = start(video_case)
@@ -171,17 +206,24 @@ def test_video_planner_uses_existing_hold_and_is_included_in_final_usage(video_c
 
     def response(*args, **kwargs):
         assert kwargs["json"]["max_tokens"] == tokens.MAX_OUTPUT
-        return httpx.Response(200, request=httpx.Request("POST", "https://synthetic.test"), json={
-            "id": "planner", "usage": {"prompt_tokens": 10000, "completion_tokens": 1000},
-            "choices": [{"message": {"content": "{}"}}],
-        })
+        return httpx.Response(
+            200,
+            request=httpx.Request("POST", "https://synthetic.test"),
+            json={
+                "id": "planner",
+                "usage": {"prompt_tokens": 10000, "completion_tokens": 1000},
+                "choices": [{"message": {"content": "{}"}}],
+            },
+        )
 
     monkeypatch.setattr(httpx, "post", response)
 
     @track_usage("video")
     def planner(db, tenant_id, run_id):
         return OpenAICompatibleClient(
-            "https://ark.cn-beijing.volces.com/api/v3", "synthetic", tokens.MODEL,
+            "https://ark.cn-beijing.volces.com/api/v3",
+            "synthetic",
+            tokens.MODEL,
         ).chat_json("test", "test")
 
     with SessionLocal() as db:
@@ -243,17 +285,33 @@ def test_operator_reconciliation_checks_receipt_identity_and_cannot_rebill(video
     with SessionLocal() as db:
         event = db.scalar(select(UsageEvent).where(UsageEvent.reference == str(run_id)))
         with pytest.raises(ValueError):
-            reconcile(db, run_id, event.id,
-                      {"id": "wrong", "usage": {"completion_tokens": 100000}}, "test", "invoice")
+            reconcile(
+                db,
+                run_id,
+                event.id,
+                {"id": "wrong", "usage": {"completion_tokens": 100000}},
+                "test",
+                "invoice",
+            )
         db.rollback()
-        result = reconcile(db, run_id, event.id,
-                           {"id": "incomplete", "usage": {"completion_tokens": 100000}},
-                           "test", "invoice")
+        result = reconcile(
+            db,
+            run_id,
+            event.id,
+            {"id": "incomplete", "usage": {"completion_tokens": 100000}},
+            "test",
+            "invoice",
+        )
         assert result["charged_cents"] == 345
         with pytest.raises(ValueError):
-            reconcile(db, run_id, event.id,
-                      {"id": "incomplete", "usage": {"completion_tokens": 100000}},
-                      "test", "invoice")
+            reconcile(
+                db,
+                run_id,
+                event.id,
+                {"id": "incomplete", "usage": {"completion_tokens": 100000}},
+                "test",
+                "invoice",
+            )
 
 
 def test_segmented_pipeline_settles_native_receipts_only_after_assembly(client, monkeypatch):

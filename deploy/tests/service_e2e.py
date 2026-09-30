@@ -175,6 +175,49 @@ def main():
                 subject_id=person["id"],
                 script_project_id=workspace["latest_workflow"]["script_project_id"],
             )
+            # Exercise the correction through real HTTP and independent workers.
+            revision_payload = {
+                "action": "revise_answer",
+                "round_id": payload["round_id"],
+                "expected_version": 1,
+                "answer_text": (
+                    "1989年，我在漳州的小学上学，父亲骑自行车送我，老师鼓励我朗读。"
+                    "我起初害怕，后来很开心，这让我喜欢阅读。"
+                ),
+                "idempotency_key": f"experience-qa-revise-{uuid4()}",
+            }
+            revision = request("POST", turn_url, json=revision_payload)
+            workspace = wait_for(completed)
+            current_session = request("GET", f"/v1/interviews/{session['id']}")
+            revised_round = next(
+                r for r in current_session["rounds"] if r["id"] == payload["round_id"]
+            )
+            assert revised_round["answer_version"] == 2
+            assert revised_round["answer_text"] == revision_payload["answer_text"]
+            assert revised_round["answer_revisions"][0]["text"] == payload["answer_text"]
+            assert workspace["progress"]["stage"] == "completed"
+            assert workspace["latest_workflow"]["script_brief"]["response_completed_at"]
+            assert request("POST", turn_url, json=revision_payload)["id"] == revision["id"]
+            assert (
+                client.post(
+                    turn_url, json={**revision_payload, "idempotency_key": str(uuid4())}
+                ).status_code
+                == 409
+            )
+            claims = request("GET", "/v1/memories", params={"subject_id": subject_id})
+            current = next(c for c in claims if c["source_round_id"] == payload["round_id"])
+            assert current["source_quote"] == revision_payload["answer_text"]
+            timeline = request("GET", f"/v1/memories/subjects/{subject_id}/timeline")
+            assert any(t["year"] == 1989 for t in timeline)
+            assert not any(t["year"] == 1988 for t in timeline)
+            project_json = json.dumps(workspace["script"], ensure_ascii=False)
+            assert "漳州" in project_json and "泉州" not in project_json
+            assert "1989" in project_json and "1988" not in project_json
+            wait_for(lambda: request("GET", "/v1/wallet")["frozen_cents"] == 0)
+            checked(
+                "revision_updates_memory_timeline_script_and_keeps_history",
+                workflow_id=revision["id"],
+            )
             project_id = workspace["latest_workflow"]["script_project_id"]
             project = request("GET", f"/v1/scripts/{project_id}")
             scene_id = project["scenes"][0]["id"]
@@ -269,10 +312,25 @@ def main():
                 "c=engine.connect(); "
                 "print(c.execute(text('select version_num from public.alembic_version')).scalar())",
             )
-            assert versions.strip() == "20260929_0040"
+            expected_head = docker(
+                "exec",
+                "-T",
+                "tasks",
+                "python",
+                "-c",
+                "from alembic.config import Config; from alembic.script import ScriptDirectory; "
+                "c=Config('/workspace/apps/api/alembic.ini'); "
+                "c.set_main_option('script_location','/workspace/apps/api/alembic'); "
+                "print(ScriptDirectory.from_config(c).get_current_head())",
+            )
+            assert versions.strip() == expected_head.strip()
             checked("migration_runtime_version", version=versions.strip())
             layout = docker(
-                "exec", "-T", "tasks", "python", "-c",
+                "exec",
+                "-T",
+                "tasks",
+                "python",
+                "-c",
                 "import json; from sqlalchemy import inspect; "
                 "from lifereel_api.core.database import Base,engine; "
                 "from lifereel_api.core.schema import SERVICE_SCHEMAS; "

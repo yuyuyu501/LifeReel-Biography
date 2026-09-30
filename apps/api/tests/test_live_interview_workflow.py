@@ -211,7 +211,8 @@ def test_followup_retry_resumes_without_repeating_completed_ai_work(client, monk
         raise ApiError(502, ErrorCode.INTERVIEW_LLM_REQUEST_FAILED)
 
     monkeypatch.setattr(
-        service, "_assess_chapter",
+        service,
+        "_assess_chapter",
         lambda *args: {"ready_for_script": ready, "missing_topics": [], "reason": "test"},
     )
     monkeypatch.setattr(interviews, "suggest_next_question", fail)
@@ -245,9 +246,21 @@ def test_followup_retry_resumes_without_repeating_completed_ai_work(client, monk
     after = client.get(f"/v1/interviews/{session['id']}/workspace").json()
     assert after["script"] == workspace["script"]
     final_brief = after["latest_workflow"]["script_brief"]
-    assert {k: v for k, v in final_brief.items() if k != "memory_recovery"} == {
-        k: v for k, v in checkpoint.items() if k != "memory_recovery"
+    timing = {
+        "memory_recovery",
+        "stage",
+        "stage_started_at",
+        "stage_times",
+        "response_completed_at",
     }
+    assert {k: v for k, v in final_brief.items() if k not in timing} == {
+        k: v for k, v in checkpoint.items() if k not in timing
+    }
+    assert final_brief["stage"] == "completed"
+    assert final_brief["response_completed_at"]
+    for stage, timestamp in checkpoint["stage_times"].items():
+        if stage != "preparing_reply":
+            assert final_brief["stage_times"][stage] == timestamp
     assert final_brief["memory_recovery"]["runs"] == 2
     assert len(after["session"]["rounds"]) == 2
     assert after["latest_workflow"]["error_code"] is None

@@ -28,6 +28,11 @@ from lifereel_api.modules.interview.schemas import InterviewRoundCreate, Intervi
 from lifereel_api.modules.jobs import service as job_service
 from lifereel_api.modules.memory import recovery as memory_recovery
 from lifereel_api.modules.memory.models import MemoryClaim
+from lifereel_api.modules.orchestration.progress import (
+    pipeline_signature,
+    progress_summary,
+    record_stage,
+)
 from lifereel_api.modules.script import service as script_service
 from lifereel_api.modules.script.models import ScriptProject
 from lifereel_api.modules.script.schemas import (
@@ -83,10 +88,12 @@ def _script_payload(db: Session, tenant_id: UUID, subject_id: UUID) -> dict | No
     project, scenes, shots = script_service.get_project(db, tenant_id, project.id)
     return (
         ScriptProjectRead.model_validate(project)
-        .model_copy(update={
-            "scenes": [ScriptSceneRead.model_validate(scene) for scene in scenes],
-            "shots": [ScriptShotRead.model_validate(shot) for shot in shots],
-        })
+        .model_copy(
+            update={
+                "scenes": [ScriptSceneRead.model_validate(scene) for scene in scenes],
+                "shots": [ScriptShotRead.model_validate(shot) for shot in shots],
+            }
+        )
         .model_dump(mode="json")
     )
 
@@ -118,6 +125,7 @@ def get_workspace(db: Session, tenant_id: UUID, session_id: UUID) -> dict:
         "assets": [_asset_payload(item) for item in assets],
         "script": _script_payload(db, tenant_id, session.subject_id),
         "latest_workflow": latest,
+        "progress": progress_summary(db, tenant_id, latest),
     }
 
 
@@ -149,14 +157,23 @@ def create_turn(
     if existing is not None:
         if existing.session_id != session_id:
             raise ApiError(status.HTTP_409_CONFLICT, ErrorCode.INTERVIEW_TURN_STATE_INVALID)
+        if payload.action == "revise_answer" and existing.script_brief.get("revision_request") != {
+            "round_id": str(payload.round_id),
+            "expected_version": payload.expected_version,
+            "text_sha256": hashlib.sha256((payload.answer_text or "").strip().encode()).hexdigest(),
+        }:
+            raise ApiError(409, ErrorCode.INTERVIEW_TURN_STATE_INVALID)
         return existing
     # Internal callers also pass through this gate before any round/job writes.
     require_memory_input(payload.answer_text or "")
     from lifereel_api.modules.interview.voice_service import assert_no_call
 
     assert_no_call(db, tenant_id, session_id)
-    if (not (payload.answer_text or "").strip() and not payload.asset_ids
-            and payload.action == "interview"):
+    if (
+        not (payload.answer_text or "").strip()
+        and not payload.asset_ids
+        and payload.action == "interview"
+    ):
         raise ApiError(
             status.HTTP_422_UNPROCESSABLE_ENTITY,
             ErrorCode.INTERVIEW_TURN_CONTENT_REQUIRED,
@@ -177,9 +194,11 @@ def create_turn(
     if payload.action == "regenerate_script":
         current = session.rounds[-1] if session.rounds else None
         round_ = InterviewRound(
-            tenant_id=tenant_id, session_id=session.id,
+            tenant_id=tenant_id,
+            session_id=session.id,
             round_index=(current.round_index if current else 0) + 1,
-            question_text="", question_source="script_request",
+            question_text="",
+            question_source="script_request",
         )
         db.add(round_)
         db.flush()
@@ -210,7 +229,27 @@ def create_turn(
             db.add(round_)
             db.flush()
             session.round_count = round_.round_index
-    if round_.answer_text:
+    revision_request = None
+    if payload.action == "revise_answer":
+        if not round_.answer_text or round_.answer_version != payload.expected_version:
+            raise ApiError(409, ErrorCode.INTERVIEW_TURN_STATE_INVALID)
+        if round_.answer_text == (payload.answer_text or "").strip():
+            raise ApiError(422, ErrorCode.INTERVIEW_TURN_CONTENT_REQUIRED)
+        round_.answer_revisions = [
+            *round_.answer_revisions,
+            {
+                "version": round_.answer_version,
+                "text": round_.answer_text,
+                "revised_at": datetime.now(UTC).isoformat(),
+            },
+        ]
+        round_.answer_version += 1
+        revision_request = {
+            "round_id": str(round_.id),
+            "expected_version": payload.expected_version,
+            "text_sha256": hashlib.sha256(payload.answer_text.strip().encode()).hexdigest(),
+        }
+    elif round_.answer_text:
         raise ApiError(status.HTTP_409_CONFLICT, ErrorCode.INTERVIEW_TURN_STATE_INVALID)
 
     assets = (
@@ -239,7 +278,10 @@ def create_turn(
         answer_text = "请根据已讲述的内容重新生成本章剧本。"
     if answer_text:
         round_.answer_text = answer_text
-        round_.source_asset_id = assets[0].id if assets else None
+        if payload.action == "revise_answer":
+            round_.question_source = "user_revision"
+        if payload.action != "revise_answer":
+            round_.source_asset_id = assets[0].id if assets else None
         round_.answered_at = datetime.now(UTC)
         round_.transcript_status = "done"
 
@@ -250,14 +292,30 @@ def create_turn(
         chapter_id=session.chapter_id,
         idempotency_key=payload.idempotency_key,
         status="queued",
-        script_brief={"requested_action": payload.action},
+        script_brief={
+            "requested_action": payload.action,
+            "stage": "queued",
+            "source_version": round_.answer_version,
+            "revision_request": revision_request,
+            "pipeline_signature": pipeline_signature(),
+            "workload": "assets" if assets else "text",
+        },
         # Continue transiently failed analysis. Rejected inputs require a new
         # selection; keep originals stored without reattaching them automatically.
-        asset_ids=list(dict.fromkeys([
-            *(latest.asset_ids if latest and latest.status == "failed"
-              and not memory_recovery.input_rejected(latest) else []),
-            *(str(item.id) for item in assets),
-        ])),
+        asset_ids=list(
+            dict.fromkeys(
+                [
+                    *(
+                        latest.asset_ids
+                        if latest
+                        and latest.status == "failed"
+                        and not memory_recovery.input_rejected(latest)
+                        else []
+                    ),
+                    *(str(item.id) for item in assets),
+                ]
+            )
+        ),
     )
     db.add(workflow)
     db.flush()
@@ -393,9 +451,11 @@ def _assess_chapter(
     issues = []
     for attempt in range(2):
         retry_hint = (
-            "\n上次返回未通过格式校验，原因码：" + issues[-1]
+            "\n上次返回未通过格式校验，原因码："
+            + issues[-1]
             + "。请根据原始资料重新输出完整JSON；信息不足时正常返回false，不要强行编剧。"
-            if attempt else ""
+            if attempt
+            else ""
         )
         try:
             result = client.chat_json(
@@ -453,30 +513,42 @@ def _new_claims_for_workflow(
     return list(db.scalars(statement.where(or_(*conditions)).order_by(MemoryClaim.created_at)))
 
 
-def _complete_turn_follow_up(
-    db: Session, tenant_id: UUID, workflow: InterviewTurnWorkflow
-) -> InterviewTurnWorkflow:
-    next_question = interview_service.suggest_next_question(
+def _publish_turn_reply(db, tenant_id, workflow, assessment):
+    if workflow.next_question:
+        return
+    record_stage(db, workflow, "preparing_reply")
+    reply = interview_service.suggest_next_question(
         db,
         tenant_id,
         workflow.session_id,
-        assessment=workflow.script_brief["assessment"],
+        assessment=assessment,
     )
-    # add_round commits the response and completed workflow in the same transaction.
-    workflow.status = "completed"
-    workflow.next_question = next_question["question_text"]
-    workflow.next_question_intent = next_question["question_intent"]
-    workflow.completed_at = datetime.now(UTC)
+    workflow.next_question = reply["question_text"]
+    workflow.next_question_intent = reply["question_intent"]
+    workflow.script_brief = {
+        **workflow.script_brief,
+        "response_completed_at": datetime.now(UTC).isoformat(),
+    }
+    # Persist the visible response and its checkpoint together. Retrying later
+    # stages cannot create another assistant message or repeat this paid call.
     interview_service.add_round(
         db,
         tenant_id,
         workflow.session_id,
         InterviewRoundCreate(
-            question_text=next_question["question_text"],
-            question_intent=next_question["question_intent"],
-            question_source=next_question["question_source"],
+            question_text=reply["question_text"],
+            question_intent=reply["question_intent"],
+            question_source=reply["question_source"],
         ),
     )
+
+
+def _complete_turn_follow_up(db, tenant_id, workflow):
+    _publish_turn_reply(db, tenant_id, workflow, workflow.script_brief["assessment"])
+    workflow.status = "completed"
+    workflow.completed_at = datetime.now(UTC)
+    record_stage(db, workflow, "completed", commit=False)
+    db.commit()
     db.refresh(workflow)
     if workflow.job_id:
         job_service.complete_job(
@@ -485,9 +557,9 @@ def _complete_turn_follow_up(
             workflow.job_id,
             {
                 "workflow_id": str(workflow.id),
-                "script_project_id": (
-                    str(workflow.script_project_id) if workflow.script_project_id else None
-                ),
+                "script_project_id": str(workflow.script_project_id)
+                if workflow.script_project_id
+                else None,
             },
         )
     return workflow
@@ -495,7 +567,11 @@ def _complete_turn_follow_up(
 
 @track_usage("interview")
 def execute_turn(
-    db: Session, tenant_id: UUID, workflow_id: UUID, *, recover_interrupted: bool = False,
+    db: Session,
+    tenant_id: UUID,
+    workflow_id: UUID,
+    *,
+    recover_interrupted: bool = False,
 ) -> InterviewTurnWorkflow:
     from lifereel_api.modules.production.locking import execution_lock
 
@@ -511,7 +587,11 @@ def execute_turn(
 
 
 def _execute_turn(
-    db: Session, tenant_id: UUID, workflow_id: UUID, *, recover_interrupted: bool = False,
+    db: Session,
+    tenant_id: UUID,
+    workflow_id: UUID,
+    *,
+    recover_interrupted: bool = False,
 ) -> InterviewTurnWorkflow:
     workflow = _get_workflow(db, tenant_id, workflow_id)
     if workflow.status == "completed":
@@ -542,9 +622,13 @@ def _execute_turn(
         from lifereel_api.modules.billing.models import Charge
 
         # A crashed paid call without a receipt must be reconciled, not resubmitted.
-        holds = db.scalars(select(Charge).where(
-            Charge.tenant_id == tenant_id, Charge.kind == "token_hold", Charge.status == "reserved",
-        ))
+        holds = db.scalars(
+            select(Charge).where(
+                Charge.tenant_id == tenant_id,
+                Charge.kind == "token_hold",
+                Charge.status == "reserved",
+            )
+        )
         if any(h.price_snapshot.get("reference") == str(workflow.id) for h in holds):
             workflow.status = "failed"
             workflow.error_code = ErrorCode.BILLING_USAGE_PENDING.value
@@ -557,6 +641,9 @@ def _execute_turn(
     if workflow.status == "failed" and memory_recovery.retry_after(workflow):
         raise ApiError(409, ErrorCode.MEMORY_RETRY_COOLDOWN)
 
+    source = db.get(InterviewRound, workflow.round_id)
+    if source and source.answer_version != workflow.script_brief.get("source_version", 1):
+        raise ApiError(409, ErrorCode.INTERVIEW_TURN_STATE_INVALID)
     workflow.status = "running"
     workflow.error_code = None
     if workflow.job_id:
@@ -571,6 +658,27 @@ def _execute_turn(
         if workflow.script_brief.get("followup_ready") is True:
             return _complete_turn_follow_up(db, tenant_id, workflow)
         session = interview_service.get_session(db, tenant_id, workflow.session_id)
+        from lifereel_api.modules.interview.planning import control
+
+        command = db.get(InterviewRound, workflow.round_id)
+        if (
+            command
+            and control(command.answer_text or "") != "continue"
+            and workflow.script_brief.get("requested_action") != "revise_answer"
+            and not workflow.asset_ids
+        ):
+            command.question_source = "conversation_control"
+            workflow.script_brief = {
+                **workflow.script_brief,
+                "assessment": {
+                    "ready_for_script": False,
+                    "missing_topics": [],
+                    "script_updated": False,
+                },
+                "followup_ready": True,
+            }
+            db.commit()
+            return _complete_turn_follow_up(db, tenant_id, workflow)
         script_request = ScriptGenerateRequest(
             subject_id=session.subject_id,
             chapter_id=session.chapter_id,
@@ -580,6 +688,7 @@ def _execute_turn(
         )
         billing_key = script_service.reserve_interview_update(db, tenant_id, script_request)
         db.commit()
+        record_stage(db, workflow, "analyzing_materials")
         for asset_id in workflow.asset_ids:
             asset_uuid = UUID(asset_id)
             existing = db.scalar(
@@ -623,16 +732,28 @@ def _execute_turn(
 
         intent = workflow.script_brief.get("turn_intent")
         if intent is None:
-            intent = ({"action": "regenerate_script", "has_new_facts": False,
-                       "instructions": source_round.answer_text or ""}
-                      if workflow.script_brief.get("requested_action") == "regenerate_script"
-                      else classify_turn(source_round.answer_text or ""))
+            intent = (
+                {"action": "interview", "has_new_facts": True, "instructions": ""}
+                if workflow.script_brief.get("requested_action") == "revise_answer"
+                else {
+                    "action": "regenerate_script",
+                    "has_new_facts": False,
+                    "instructions": source_round.answer_text or "",
+                }
+                if workflow.script_brief.get("requested_action") == "regenerate_script"
+                else classify_turn(source_round.answer_text or "")
+            )
             workflow.script_brief = {**workflow.script_brief, "turn_intent": intent}
             if not intent["has_new_facts"]:
                 source_round.question_source = "script_request"
             db.commit()
 
-        MemorySkill.compile(db, tenant_id, session.id)
+        record_stage(db, workflow, "updating_memory")
+        from lifereel_api.modules.interview.planning import control
+
+        dialogue_control = control(source_round.answer_text or "")
+        if dialogue_control == "continue":
+            MemorySkill.compile(db, tenant_id, session.id)
         chapter_claims = list(
             db.scalars(
                 select(MemoryClaim)
@@ -640,7 +761,8 @@ def _execute_turn(
                     MemoryClaim.tenant_id == tenant_id,
                     MemoryClaim.subject_id == session.subject_id,
                     MemoryClaim.chapter_id == session.chapter_id,
-                    MemoryClaim.review_status.not_in(["disputed", "private"]),
+                    MemoryClaim.current_source(),
+                    MemoryClaim.review_status.not_in(["disputed", "private", "superseded"]),
                 )
                 .order_by(MemoryClaim.created_at)
             )
@@ -648,21 +770,38 @@ def _execute_turn(
         new_claims = _new_claims_for_workflow(db, tenant_id, workflow)
         chapter = db.get(Chapter, session.chapter_id) if session.chapter_id else None
         profile = get_chapter_prompt_profile(chapter)
-        assessment_key = hashlib.sha256(json.dumps([
-            memory_recovery.fingerprint(chapter_claims), profile,
-            [(r.question_text, r.answer_text) for r in session.rounds],
-        ], ensure_ascii=False).encode()).hexdigest()
+        assessment_key = hashlib.sha256(
+            json.dumps(
+                [
+                    memory_recovery.fingerprint(chapter_claims),
+                    profile,
+                    [(r.question_text, r.answer_text) for r in session.rounds],
+                ],
+                ensure_ascii=False,
+            ).encode()
+        ).hexdigest()
         saved_assessment = workflow.script_brief.get("assessment_checkpoint", {})
         if saved_assessment.get("key") == assessment_key:
             assessment = saved_assessment["result"]
         else:
+            record_stage(db, workflow, "assessing_chapter")
             assessment = ScriptSkill.assess(db, tenant_id, chapter_claims, session.rounds, chapter)
-            workflow.script_brief = {**workflow.script_brief, "assessment_checkpoint": {
-                "key": assessment_key, "result": assessment,
-            }}
+            workflow.script_brief = {
+                **workflow.script_brief,
+                "assessment_checkpoint": {
+                    "key": assessment_key,
+                    "result": assessment,
+                },
+            }
             db.commit()
         missing = assessment["missing_topics"]
-        assessment = {**assessment, "script_action": intent["action"]}
+        assessment = {
+            **assessment,
+            "script_action": intent["action"],
+            "revised_round_id": str(source_round.id)
+            if workflow.script_brief.get("revision_request")
+            else None,
+        }
         brief = {
             "chapter_id": str(session.chapter_id) if session.chapter_id else None,
             "chapter_title": chapter.title if chapter else "自由采访",
@@ -685,9 +824,20 @@ def _execute_turn(
             "script_instructions": intent["instructions"],
         }
 
+        reply_error = None
+        if intent["action"] != "regenerate_script":
+            try:
+                _publish_turn_reply(
+                    db, tenant_id, workflow, {**assessment, "script_updated": False}
+                )
+            except ApiError as exc:
+                # Preserve the established recovery contract: a failed reply
+                # must not discard successful memory/script work.
+                reply_error = exc
         project = None
         scenes = []
-        if chapter_claims and assessment["ready_for_script"]:
+        if chapter_claims and assessment["ready_for_script"] and dialogue_control == "continue":
+            record_stage(db, workflow, "updating_script")
             project, scenes, _ = ScriptSkill.generate(
                 db,
                 tenant_id,
@@ -707,6 +857,8 @@ def _execute_turn(
         workflow.missing_topics = missing
         workflow.script_brief = {**workflow.script_brief, **brief, "followup_ready": True}
         db.commit()
+        if reply_error is not None:
+            raise reply_error
         return _complete_turn_follow_up(db, tenant_id, workflow)
     except ApiError as exc:
         db.rollback()

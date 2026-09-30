@@ -42,9 +42,14 @@ def cleanup_project(db, tenant_id, project_id):
         ProductionRun.tenant_id == tenant_id, ProductionRun.project_id == project_id,
     ).order_by(ProductionRun.created_at.desc(), ProductionRun.id.desc())))
     winners = {}
+    # A local replacement is reviewable against the original, including its publications.
+    preserved = {str((r.output_manifest or {}).get("regeneration", {}).get("source_run_id"))
+                 for r in runs if not is_retired(r)}
     for run in runs:
         key = chapter_key(run)
         if not key:
+            continue
+        if str(run.id) in preserved:
             continue
         if key not in winners:
             final = db.scalar(select(GeneratedAsset.id).where(
@@ -77,6 +82,9 @@ def cleanup_project(db, tenant_id, project_id):
                     tail = segment.get("official_tail") or {}
                     if tail.get("storage_key"):
                         keys.add(tail["storage_key"])
+                    for frame in segment.get("review_frames", []):
+                        if frame.get("storage_key"):
+                            keys.add(frame["storage_key"])
                 prefix = f"LifeReel-Biography/generated/{tenant_id}/{run.id}/"
                 if any(not key.startswith(prefix) or ".." in key or "\\" in key for key in keys):
                     raise ValueError("MEDIA_RETENTION_KEY_INVALID")

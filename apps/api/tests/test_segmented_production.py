@@ -214,6 +214,23 @@ def test_real_ffmpeg_assembly_keeps_audio_and_order(tmp_path):
     assert info["has_audio"] is True
     assert (info["width"], info["height"]) == (1280, 720)
     assert abs(info["duration_seconds"] - 2) < 0.15
+    from io import BytesIO
+    from types import SimpleNamespace
+
+    from PIL import Image
+
+    from lifereel_api.modules.evidence.storage import LocalPrivateStorage
+    from lifereel_api.modules.production.quality import collect_review_frames
+
+    store = LocalPrivateStorage()
+    synthetic_run = SimpleNamespace(tenant_id="qa-frames", id=tmp_path.name)
+    frames = collect_review_frames(store, synthetic_run, 0, paths[0], 1)
+    assert len(frames) == 2
+    for frame in frames:
+        with Image.open(BytesIO(store.get(frame["storage_key"]))) as image:
+            assert image.format == "JPEG"
+            assert image.width == 240
+        store.delete(frame["storage_key"])
     for timestamp, channel in [(0.5, 0), (1.5, 2)]:
         frame = subprocess.run(
             [

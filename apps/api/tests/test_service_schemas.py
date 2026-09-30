@@ -18,6 +18,7 @@ from sqlalchemy.orm import Session
 
 from alembic import command
 from alembic.config import Config
+from alembic.script import ScriptDirectory
 from lifereel_api.core.config import get_settings
 from lifereel_api.core.database import Base, engine
 from lifereel_api.core.schema import SERVICE_SCHEMAS, SQLITE_SCHEMA_MAP
@@ -71,7 +72,10 @@ def postgres(monkeypatch):
         connection.exec_driver_sql(f'CREATE DATABASE "{name}"')
     target_url = url.set(database=name)
     target = create_engine(target_url)
-    config = Config(str(API / "alembic.ini"))
+    # Embedded migrations must not run the CLI logging setup and disable the
+    # application's loggers in subsequent tests. Connection settings are
+    # supplied by get_settings below; the script path is explicit.
+    config = Config()
     config.set_main_option("script_location", str(API / "alembic"))
     monkeypatch.setattr(
         get_settings(), "database_url", target_url.render_as_string(hide_password=False)
@@ -94,7 +98,7 @@ def snapshot(target, relocated):
                 connection.scalars(
                     text(
                         f'SELECT to_jsonb(t)::text FROM "{schema}"."{table}" t '
-                        'ORDER BY to_jsonb(t)::text'
+                        "ORDER BY to_jsonb(t)::text"
                     )
                 )
             )
@@ -125,7 +129,7 @@ def snapshot(target, relocated):
     return result
 
 
-def assert_layout(target, relocated):
+def assert_layout(target, relocated, revision=None):
     with target.connect() as connection:
         for table, owner in OWNERS.items():
             actual = connection.scalar(
@@ -137,13 +141,13 @@ def assert_layout(target, relocated):
             )
             assert actual == (owner if relocated else "public"), table
         version = connection.scalar(text("SELECT version_num FROM public.alembic_version"))
-        assert version == ("20260929_0040" if relocated else "20260929_0039")
+        assert version == (revision or ("20260929_0040" if relocated else "20260929_0039"))
 
 
 def test_empty_postgresql_upgrade_and_model_check(postgres):
     target, config = postgres
     command.upgrade(config, "head")
-    assert_layout(target, True)
+    assert_layout(target, True, ScriptDirectory.from_config(config).get_current_head())
     command.check(config)
     command.upgrade(config, "head")
     with target.begin() as connection:
@@ -178,13 +182,6 @@ def test_populated_postgresql_migration_preserves_data_constraints_and_rollback(
             [
                 asset,
                 Wallet(tenant_id=tenant.id, paid_cents=1234, bonus_cents=56),
-                MemoryClaim(
-                    tenant_id=tenant.id,
-                    subject_id=person.id,
-                    chapter_id=chapter.id,
-                    claim_text="Synthetic fact",
-                    source_quote="Synthetic quote",
-                ),
                 ScriptProject(tenant_id=tenant.id, subject_id=person.id, title="Synthetic script"),
                 Job(
                     tenant_id=tenant.id,
@@ -201,6 +198,15 @@ def test_populated_postgresql_migration_preserves_data_constraints_and_rollback(
                 ),
             ]
         )
+        # Freeze this fixture to the pre-0040 columns; current ORM may grow new fields.
+        db.execute(
+            text("""INSERT INTO public.memory_claims
+            (id, tenant_id, subject_id, chapter_id, claim_text, source_quote,
+             claim_type, confidence, review_status, extraction_provider, created_at, updated_at)
+            VALUES (:id, :tenant, :subject, :chapter, 'Synthetic fact', 'Synthetic quote',
+                    'recollection', 1, 'unreviewed', 'rule', now(), now())"""),
+            {"id": uuid4(), "tenant": tenant.id, "subject": person.id, "chapter": chapter.id},
+        )
         db.commit()
         tenant_id, chapter_id, asset_id = tenant.id, chapter.id, asset.id
     before = snapshot(target, False)
@@ -213,16 +219,15 @@ def test_populated_postgresql_migration_preserves_data_constraints_and_rollback(
         connection.exec_driver_sql("CREATE SCHEMA identity")
         connection.exec_driver_sql("CREATE TABLE identity.persons (id integer)")
     with pytest.raises(SQLAlchemyError):
-        command.upgrade(config, "head")
+        command.upgrade(config, "20260929_0040")
     assert snapshot(target, False) == before
     with target.begin() as connection:
         connection.exec_driver_sql("DROP TABLE identity.persons")
         connection.exec_driver_sql("DROP SCHEMA identity")
 
-    command.upgrade(config, "head")
+    command.upgrade(config, "20260929_0040")
     assert_layout(target, True)
     assert snapshot(target, True) == before
-    command.check(config)
     with pytest.raises(IntegrityError), target.begin() as connection:
         connection.execute(
             update(SourceAsset).where(SourceAsset.id == asset_id).values(chapter_id=uuid4())
@@ -256,6 +261,7 @@ def test_populated_postgresql_migration_preserves_data_constraints_and_rollback(
     assert snapshot(target, False) == before
     with Session(old) as db:
         assert db.get(Wallet, tenant_id).paid_cents == 1234
-    command.upgrade(config, "head")
+    command.upgrade(config, "20260929_0040")
     assert snapshot(target, True) == before
+    command.upgrade(config, "head")
     command.check(config)

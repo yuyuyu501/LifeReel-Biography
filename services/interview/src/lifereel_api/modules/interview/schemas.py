@@ -4,7 +4,7 @@ from datetime import datetime
 from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from lifereel_api.core.processing_limits import MEMORY_INPUT_MAX_CHARS, require_memory_input
 from lifereel_api.modules.evidence.schemas import SourceAssetRead
@@ -55,6 +55,8 @@ class InterviewRoundRead(BaseModel):
     question_intent: str | None
     question_source: str | None
     answer_text: str | None
+    answer_version: int = 1
+    answer_revisions: list[dict] = Field(default_factory=list)
     source_asset_id: UUID | None
     transcript_status: str
     created_at: datetime
@@ -83,7 +85,8 @@ class NextQuestionRead(BaseModel):
 
 
 class InterviewTurnCreate(BaseModel):
-    action: Literal["interview", "regenerate_script"] = "interview"
+    action: Literal["interview", "regenerate_script", "revise_answer"] = "interview"
+    expected_version: int | None = Field(default=None, ge=1)
     round_id: UUID | None = None
     answer_text: str | None = Field(default=None, max_length=MEMORY_INPUT_MAX_CHARS)
     asset_ids: list[UUID] = Field(default_factory=list, max_length=12)
@@ -97,6 +100,16 @@ class InterviewTurnCreate(BaseModel):
         if isinstance(value, str):
             require_memory_input(value)
         return value
+
+
+    @model_validator(mode="after")
+    def validate_revision(self):
+        if self.action == "revise_answer" and (
+            self.round_id is None or self.expected_version is None
+            or not (self.answer_text or "").strip() or self.asset_ids
+        ):
+            raise ValueError("修订需要原回答、完整新文本与版本号，不附加新素材")
+        return self
 
 
 class InterviewTurnWorkflowRead(BaseModel):
@@ -130,3 +143,4 @@ class InterviewWorkspaceRead(BaseModel):
     assets: list[SourceAssetRead] = Field(default_factory=list)
     script: ScriptProjectRead | None = None
     latest_workflow: InterviewTurnWorkflowRead | None = None
+    progress: dict = Field(default_factory=dict)

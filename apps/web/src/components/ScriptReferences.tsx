@@ -131,13 +131,14 @@ export function ScriptReferences({
   });
   const busy = save.isPending || upload.isPending;
   const selectedAssets = assets.filter((asset) => selected.includes(asset.id));
+  const portrait = selected.find((id) => assets.some((asset) => asset.id === id && asset.kind === "photo"));
   const audioOnly =
     selectedAssets.some((asset) => asset.kind === "audio") &&
     !selectedAssets.some((asset) => asset.kind === "photo");
   return (
     <section className="script-references" aria-label="本章形象">
       <div className="script-reference-heading">
-        <h4>形象</h4>
+        <h4>人物与场景参考</h4>
         <Button
           variant="ghost"
           size="icon"
@@ -161,11 +162,12 @@ export function ScriptReferences({
         </Button>
       </div>
       <ErrorNotice error={references.error} />
+      <p className="studio-muted">指定一张清晰的人物照片作为各镜头共同参考；其余照片用于场景或物件。没有照片也可生成，但人物一致性需要人工核对。</p>
       <div className="script-reference-grid" aria-busy={references.isPending}>
         {references.data?.map((asset) => (
           <figure className="script-reference-item" key={asset.id}>
             <Media asset={asset} />
-            <figcaption>{asset.original_filename}</figcaption>
+            <figcaption>{asset.original_filename} · {asset.kind === "photo" ? (asset.id === references.data?.find((item) => item.kind === "photo")?.id ? "固定人物参考" : "场景参考") : "声音参考"}</figcaption>
           </figure>
         ))}
       </div>
@@ -206,6 +208,13 @@ export function ScriptReferences({
                   />
                   <span>{asset.original_filename}</span>
                 </label>
+                {asset.kind === "photo" && selected.includes(asset.id) && (
+                  <label>
+                    <input type="radio" name="portrait-reference" checked={portrait === asset.id}
+                      disabled={busy} onChange={() => setSelected((ids) => [asset.id, ...ids.filter((id) => id !== asset.id)])} />
+                    设为固定人物参考
+                  </label>
+                )}
               </div>
             ))}
           </div>
@@ -240,7 +249,7 @@ export function ScriptReferences({
               <Upload size={16} />
               {upload.isPending ? "上传中" : "上传素材"}
             </Button>
-            <Button disabled={busy} onClick={() => save.mutate()}>
+            <Button disabled={busy || audioOnly} onClick={() => save.mutate()}>
               <Save size={16} />
               {save.isPending ? "保存中" : "保存"}
             </Button>

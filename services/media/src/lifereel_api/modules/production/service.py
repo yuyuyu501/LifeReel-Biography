@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+from datetime import UTC, datetime
 from uuid import UUID
 
 from fastapi import status
@@ -23,6 +24,7 @@ from lifereel_api.modules.production.locking import execution_lock
 from lifereel_api.modules.production.models import GeneratedAsset, ProductionRun
 from lifereel_api.modules.production.planning import shot_segment_count
 from lifereel_api.modules.production.providers import VideoProviderError, get_video_provider
+from lifereel_api.modules.production.quality import shot_review
 from lifereel_api.modules.production.reference_models import ChapterReferencePackage
 from lifereel_api.modules.production.references import build_reference_package
 from lifereel_api.modules.production.schemas import ProductionStart
@@ -131,6 +133,7 @@ def start_production(db: Session, tenant_id: UUID, payload: ProductionStart) -> 
     if len(scenes) == 1 and (
         settings.video_reference_style == "color_redraw"
         or scenes[0].reference_asset_ids is not None
+        or reference_package.get("character_reference_kind") == "photo"
     ):
         from lifereel_api.modules.production.appearance import validate_package
         from lifereel_api.modules.production.references import chapter_package
@@ -143,6 +146,8 @@ def start_production(db: Session, tenant_id: UUID, payload: ProductionStart) -> 
 
                 config["reference_prompt_version"] = PROMPT_VERSION
             validate_package(db, project, reference_package, config)
+    if config and config["mode"] == "segmented":
+        config["identity_lock_version"] = 1
     idempotency_key = (
         f"production:{project.id}:v{project.version_number}:{payload.audience}:{provider_name}"
     )
@@ -229,6 +234,7 @@ def start_production(db: Session, tenant_id: UUID, payload: ProductionStart) -> 
             "scene_id": str(payload.scene_id) if payload.scene_id else None,
             "script_version": project.version_number,
             "script_snapshot": snapshot,
+            "quality_review": shot_review(snapshot),
             "generation_config": config,
             "reference_package": reference_package,
             "subject": {
@@ -369,6 +375,7 @@ def _execute_run(db: Session, tenant_id: UUID, run_id: UUID) -> ProductionRun:
         run.error_message = None
         run.output_manifest = {
             **manifest,
+            "completed_at": datetime.now(UTC).isoformat(),
             "asset_id": str(asset.id),
             "sha256": digest,
             "mime_type": output.mime_type,

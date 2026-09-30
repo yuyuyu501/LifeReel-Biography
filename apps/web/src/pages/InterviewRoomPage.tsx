@@ -39,6 +39,8 @@ import {
 import { useAudioRecorder } from "../hooks/useAudioRecorder";
 import { useRealtimeInterview } from "../hooks/useRealtimeInterview";
 import { InterviewVoice } from "../components/InterviewVoice";
+import { AnswerRevision, ChapterNavigation, InterviewProgress } from "../components/InterviewExperience";
+import { useConversationFollow, useInterviewDraft } from "../hooks/useConversationExperience";
 
 const kindIcon = {
   audio: FileAudio,
@@ -93,7 +95,8 @@ function InterviewWorkspace({ id }: { id: string }) {
     queryKey: ["chapters"],
     queryFn: api.listChapters,
   });
-  const [answer, setAnswer] = useState("");
+  const [answer, setAnswer] = useInterviewDraft(id);
+  const [answerEditing, setAnswerEditing] = useState<string | null>(null);
   const [files, setFiles] = useState<File[]>([]);
   const [fileError, setFileError] = useState<string | null>(null);
   const [mobilePane, setMobilePane] = useState<"conversation" | "script">(
@@ -106,6 +109,7 @@ function InterviewWorkspace({ id }: { id: string }) {
 
   const session = workspace.data?.session;
   const current = session?.rounds.at(-1);
+  const follow = useConversationFollow(JSON.stringify(session?.rounds.map(r => [r.id, r.question_text, r.answer_text, r.answer_version])));
   const chapter = chapters.data?.find(
     (item) => item.id === session?.chapter_id,
   );
@@ -219,6 +223,7 @@ function InterviewWorkspace({ id }: { id: string }) {
     event.preventDefault();
     if (
       voice.busy ||
+      Boolean(answerEditing) ||
       scriptEditing ||
       regenerate.isPending ||
       recorder.isRecording ||
@@ -351,7 +356,10 @@ function InterviewWorkspace({ id }: { id: string }) {
               {visibleRounds.filter((item) => item.answer_text).length} 次回答
             </small>
           </div>
-          <div className="conversation">
+          <ChapterNavigation chapters={chapters.data ?? []} session={session}
+            disabled={voice.busy || recorder.isRecording || scriptEditing || Boolean(answerEditing)}
+            canLeave={() => !(files.length || recorder.audioBlob) || window.confirm("本章尚有未发送的录音或附件，离开将丢弃这些临时内容。文字草稿会在本标签页保留。是否继续？")} />
+          <div className="conversation" ref={follow.conversation} onScroll={follow.onScroll} aria-label="对话消息">
             {visibleRounds.map((round) => (
               <div key={round.id} className="conversation-turn">
                 {round.question_text && (
@@ -366,6 +374,10 @@ function InterviewWorkspace({ id }: { id: string }) {
                     <Check size={15} />
                   </div>
                 )}
+                {round.answer_text && round.question_source !== "script_request" && <AnswerRevision
+                  round={round} sessionId={id}
+                  disabled={workflowRunning || voice.busy || scriptEditing || Boolean(answerEditing && answerEditing !== round.id)}
+                  onEditingChange={editing => setAnswerEditing(editing ? round.id : null)} />}
               </div>
             ))}
             {workspace.data.assets.length > 0 && (
@@ -378,6 +390,12 @@ function InterviewWorkspace({ id }: { id: string }) {
             )}
           </div>
 
+          {follow.unread && <Button className="new-message-button" variant="outline" size="sm" onClick={follow.showLatest}>有新消息 · 回到最新</Button>}
+          <InterviewProgress workspace={workspace.data} />
+          <details className="material-guidance"><summary>照片、录音和讲述小提示</summary>
+            <p>可以讲一件小事，也可以用回形针上传本章照片或录音，说明人物、时间和地点。发送后点“修改回答”可纠正文字或转录。</p>
+            <p>资料先用于整理记忆；在剧本页选择本章照片和音频参考后，再用于影像制作。人物形象保持一致不影响镜头变化。</p>
+          </details>
           <InterviewVoice voice={voice} disabled={
             scriptEditing || workflowRunning || regenerate.isPending || submitTurn.isPending ||
             retryWorkflow.isPending || recorder.isRecording || Boolean(recorder.audioBlob) ||
@@ -492,6 +510,7 @@ function InterviewWorkspace({ id }: { id: string }) {
                 }
                 disabled={
                   voice.busy ||
+                  Boolean(answerEditing) ||
                   scriptEditing ||
                   regenerate.isPending ||
                   (!answer.trim() && !recorder.audioBlob && !files.length) ||
@@ -562,6 +581,7 @@ function InterviewWorkspace({ id }: { id: string }) {
                 aria-label="重新生成本章剧本"
                 disabled={
                   voice.busy ||
+                  Boolean(answerEditing) ||
                   scriptEditing ||
                   regenerate.isPending ||
                   workflowRunning ||

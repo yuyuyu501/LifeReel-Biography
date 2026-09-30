@@ -98,6 +98,8 @@ class InterviewRound(UUIDPrimaryKeyMixin, Base):
     question_intent: Mapped[str | None] = mapped_column(String(80), nullable=True)
     question_source: Mapped[str | None] = mapped_column(String(80), nullable=True)
     answer_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    answer_version: Mapped[int] = mapped_column(Integer, default=1, server_default="1")
+    answer_revisions: Mapped[list[dict]] = mapped_column(JSON, default=list, server_default="[]")
     source_asset_id: Mapped[UUID | None] = mapped_column(Uuid, nullable=True)
     transcript_status: Mapped[str] = mapped_column(String(32), default="not_required")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)

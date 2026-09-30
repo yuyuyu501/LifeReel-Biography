@@ -29,6 +29,12 @@ class ReferenceRetry(BaseModel):
     reference_asset_id: UUID
 
 
+class SegmentRegeneration(BaseModel):
+    request_id: UUID
+    expected_script_version: int = Field(ge=1)
+    quoted_amount_cents: int = Field(ge=0)
+
+
 class ProductionRecovery(BaseModel):
     code: str
     segment_index: int

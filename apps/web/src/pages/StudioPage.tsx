@@ -15,6 +15,11 @@ import { hasQueryIssue } from "../queryHelpers";
 import { statusLabel } from "../statusLabels";
 import { EditableScript } from "../components/EditableScript";
 import { ProductionDetails } from "../components/ProductionDetails";
+import {
+  ProductionQuality,
+  ProductionWait,
+  ShotPreview,
+} from "../components/ProductionExperience";
 import { usePageSubject } from "../usePageSubject";
 
 function matchesChapter(
@@ -207,11 +212,13 @@ export function StudioPage() {
     activeRun?.status === "running" && progress?.stage
       ? progress.stage === "preparing_references"
         ? "正在准备本章形象"
-        : progress.stage === "planning"
-          ? "正在规划分镜"
-          : progress.stage === "assembling"
-            ? "正在拼接整章视频"
-            : `已完成 ${progress.completed_segments ?? 0} / ${progress.segments?.length ?? 0} 段`
+        : progress.stage === "copying_segments"
+          ? "正在复用已完成镜头"
+          : progress.stage === "planning"
+            ? "正在规划分镜"
+            : progress.stage === "assembling"
+              ? "正在拼接整章视频"
+              : `已完成 ${progress.completed_segments ?? 0} / ${progress.segments?.length ?? 0} 段`
       : null;
   const refresh = () =>
     queryClient.invalidateQueries({ queryKey: ["production-runs"] });
@@ -502,6 +509,10 @@ export function StudioPage() {
                       {progressText}
                     </p>
                   )}
+                  {activeRun &&
+                    ["queued", "running"].includes(activeRun.status) && (
+                      <ProductionWait key={activeRun.id} run={activeRun} />
+                    )}
                   <div
                     id="studio-panel-video"
                     role="tabpanel"
@@ -628,6 +639,13 @@ export function StudioPage() {
                         </span>
                       </div>
                     )}
+                    {activeRun && (
+                      <ProductionQuality
+                        key={activeRun.id}
+                        run={activeRun}
+                        disabled={isGenerating || scriptEditing}
+                      />
+                    )}
                     {activeAsset && (
                       <div className="studio-publish-row">
                         {publication ? (
@@ -683,6 +701,10 @@ export function StudioPage() {
                         onEditingChange={setScriptEditing}
                       />
                     </article>
+                    <ShotPreview
+                      scene={selected.scene}
+                      projectShots={selected.project.shots}
+                    />
                     {activeRun && <ProductionDetails run={activeRun} />}
                   </div>
                 </>

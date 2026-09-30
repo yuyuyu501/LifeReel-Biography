@@ -14,8 +14,9 @@ import { Link } from "react-router-dom";
 import { api } from "../api/client";
 import { QueryState } from "../components/QueryState";
 import { hasQueryIssue } from "../queryHelpers";
+import { GettingStarted } from "../components/GettingStarted";
 
-export function HomePage() {
+export function HomePage({ userId = "local" }: { userId?: string } = {}) {
   const people = useQuery({ queryKey: ["persons"], queryFn: api.listPersons });
   const interviews = useQuery({
     queryKey: ["interviews"],
@@ -70,6 +71,7 @@ export function HomePage() {
         </Button>
       </header>
 
+      <GettingStarted key={userId} userId={userId} />
       {hasQueryIssue(overviewQueries) ? (
         <QueryState
           queries={overviewQueries}

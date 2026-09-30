@@ -23,6 +23,7 @@ from lifereel_api.modules.production.schemas import (
     ProductionRunRead,
     ProductionStart,
     ReferenceRetry,
+    SegmentRegeneration,
 )
 from lifereel_api.providers.siliconflow import PROMPT_VERSION
 
@@ -90,6 +91,27 @@ def runs(db: Db, tenant_id: Tenant) -> list[ProductionRunRead]:
         to_read(item, service.get_run_payload(db, tenant_id, item.id)[1])
         for item in service.list_runs(db, tenant_id)
     ]
+
+
+@router.get("/runs/{run_id}/segments/{index}/quote")
+def segment_quote(run_id: UUID, index: int, db: Db, tenant_id: Tenant):
+    from lifereel_api.modules.production import regeneration
+    return regeneration.quote(db, tenant_id, run_id, index)
+
+
+@router.get("/runs/{run_id}/progress")
+def production_progress(run_id: UUID, db: Db, tenant_id: Tenant):
+    from lifereel_api.modules.production.progress import summary
+    run, _ = service.get_run_payload(db, tenant_id, run_id)
+    return summary(db, run)
+
+
+@router.post("/runs/{run_id}/segments/{index}/regenerate", response_model=ProductionRunRead)
+def regenerate_segment(run_id: UUID, index: int, payload: SegmentRegeneration,
+                       db: Db, tenant_id: Tenant):
+    from lifereel_api.modules.production import regeneration
+    run = regeneration.start(db, tenant_id, run_id, index, payload)
+    return to_read(run, service.get_run_payload(db, tenant_id, run.id)[1])
 
 
 @router.post(
@@ -173,6 +195,21 @@ def segment_content(
     if redirect is not None:
         return redirect
     return streamed_media(expected, "video/mp4", range_header)
+
+
+@router.get("/runs/{run_id}/segments/{index}/review/{position}")
+def review_frame(run_id: UUID, index: int, position: int, db: Db, tenant_id: Tenant):
+    run, _ = service.get_run_payload(db, tenant_id, run_id)
+    manifest = run.output_manifest or {}
+    segments = manifest.get("segments", [])
+    if manifest.get("media_retention") or not 0 <= index < len(segments):
+        raise ApiError(404, ErrorCode.PRODUCTION_ASSET_NOT_FOUND)
+    frames = segments[index].get("review_frames", [])
+    frame = next((f for f in frames if f.get("position") == position), None)
+    expected = f"LifeReel-Biography/generated/{tenant_id}/{run.id}/review/{index}-{position}.jpg"
+    if not frame or frame.get("storage_key") != expected:
+        raise ApiError(404, ErrorCode.PRODUCTION_ASSET_NOT_FOUND)
+    return streamed_media(expected, "image/jpeg", None)
 
 
 @router.post("/runs/{run_id}/continuation", response_model=ProductionRunRead)

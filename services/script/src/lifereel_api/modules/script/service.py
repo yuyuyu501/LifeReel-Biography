@@ -48,7 +48,8 @@ def _story_skeleton(plot: str, dialogues: list[dict]) -> dict:
     ending = lines[-1] if lines else plot.strip()
     beats = [line for line in lines[1:-1][:4]] or [plot.strip()]
     return StorySkeleton(
-        opening=opening[:600], beats=[item[:600] for item in beats],
+        opening=opening[:600],
+        beats=[item[:600] for item in beats],
         turning_point=beats[0][:600] if len(beats) > 1 else None,
         ending=ending[:600],
     ).model_dump()
@@ -63,7 +64,10 @@ def _script_input(request: dict) -> str:
             # JSONEncoder emits each string as one piece. Check before escaping
             # so a legacy 50 MiB field never needs a second full-size allocation.
             require_budget(
-                len(value), limit, stage="script_input", code=ErrorCode.SCRIPT_INPUT_TOO_LARGE,
+                len(value),
+                limit,
+                stage="script_input",
+                code=ErrorCode.SCRIPT_INPUT_TOO_LARGE,
             )
         elif isinstance(value, dict):
             for key, item in value.items():
@@ -88,24 +92,43 @@ def _validate_generated_scene(scene: dict, allowed_ids: set[str]) -> dict:
     try:
         scene_constraints = normalize_constraints(scene.get("visual_constraints"))
         skeleton = scene.get("story_skeleton") or _story_skeleton(
-            scene.get("plot") or "本章经历", scene.get("dialogues") or [],
+            scene.get("plot") or "本章经历",
+            scene.get("dialogues") or [],
         )
-        edited = ScriptSceneUpdate.model_validate({
-            "expected_version": 1,
-            **{key: scene[key] for key in (
-                "heading", "plot", "dialogues", "visual_prompt", "duration_seconds",
-            )},
-            "visual_constraints": scene_constraints,
-            "story_skeleton": skeleton,
-            "shots": [{
-                **{key: shot[key] for key in (
-                    "shot_type", "visual_prompt", "duration_seconds",
-                )},
-                "visual_constraints": normalize_constraints(
-                    shot.get("visual_constraints"), inherited=scene_constraints,
-                ),
-            } for shot in scene["shots"]],
-        })
+        edited = ScriptSceneUpdate.model_validate(
+            {
+                "expected_version": 1,
+                **{
+                    key: scene[key]
+                    for key in (
+                        "heading",
+                        "plot",
+                        "dialogues",
+                        "visual_prompt",
+                        "duration_seconds",
+                    )
+                },
+                "visual_constraints": scene_constraints,
+                "story_skeleton": skeleton,
+                "shots": [
+                    {
+                        **{
+                            key: shot[key]
+                            for key in (
+                                "shot_type",
+                                "visual_prompt",
+                                "duration_seconds",
+                            )
+                        },
+                        "visual_constraints": normalize_constraints(
+                            shot.get("visual_constraints"),
+                            inherited=scene_constraints,
+                        ),
+                    }
+                    for shot in scene["shots"]
+                ],
+            }
+        )
         if not edited.plot or not edited.shots or not 15 <= edited.duration_seconds <= 30:
             raise ValueError("invalid generated chapter")
         if sum(shot.duration_seconds for shot in edited.shots) != edited.duration_seconds:
@@ -114,18 +137,25 @@ def _validate_generated_scene(scene: dict, allowed_ids: set[str]) -> dict:
             raise ValueError("empty spoken line")
         for item in [scene, *scene["shots"]]:
             references = item["source_claim_ids"]
-            if (not isinstance(references, list) or not references
-                    or any(not isinstance(ref, str) or ref not in allowed_ids
-                           for ref in references)):
+            if (
+                not isinstance(references, list)
+                or not references
+                or any(not isinstance(ref, str) or ref not in allowed_ids for ref in references)
+            ):
                 raise ValueError("invalid evidence references")
         canonical = "\n".join(line.text for line in edited.dialogues)
         if scene["narration"] != canonical:
             raise ValueError("narration does not match dialogues")
         normalized = edited.model_dump(exclude={"expected_version", "shots"})
-        return {**scene, **normalized, "narration": canonical, "shots": [
-            {**original, **shot.model_dump()}
-            for original, shot in zip(scene["shots"], edited.shots, strict=True)
-        ]}
+        return {
+            **scene,
+            **normalized,
+            "narration": canonical,
+            "shots": [
+                {**original, **shot.model_dump()}
+                for original, shot in zip(scene["shots"], edited.shots, strict=True)
+            ],
+        }
     except (KeyError, TypeError, ValueError) as exc:
         raise ApiError(502, ErrorCode.SCRIPT_LLM_RESPONSE_INVALID) from exc
 
@@ -162,7 +192,9 @@ def _rule_scenes(
     for claim in claims:
         spoken_size += len(claim.claim_text.rstrip("。")) + 1
         require_budget(
-            spoken_size, 2000, stage="script_mock_output",
+            spoken_size,
+            2000,
+            stage="script_mock_output",
             code=ErrorCode.SCRIPT_MOCK_OUTPUT_TOO_LARGE,
         )
     memories = "\n\n".join(claim.claim_text.rstrip("。") + "。" for claim in claims)
@@ -176,16 +208,22 @@ def _rule_scenes(
         {
             "heading": chapter_title,
             "plot": memories,
-            "dialogues": [{"kind": "narration", "speaker": subject_name,
-                           "text": f"{introduction}{memories}"}],
+            "dialogues": [
+                {"kind": "narration", "speaker": subject_name, "text": f"{introduction}{memories}"}
+            ],
             "narration": f"{introduction}{memories}",
             "visual_prompt": visual_prompt,
             "duration_seconds": duration,
             "source_claim_ids": source_ids,
             "visual_constraints": constraints,
-            "story_skeleton": _story_skeleton(memories, [{
-                "text": f"{introduction}{memories}",
-            }]),
+            "story_skeleton": _story_skeleton(
+                memories,
+                [
+                    {
+                        "text": f"{introduction}{memories}",
+                    }
+                ],
+            ),
             "shots": [
                 {
                     "shot_type": "wide",
@@ -249,7 +287,8 @@ def _llm_scenes(
         "visual_constraints": user_visual_constraints(
             (update_brief or {}).get("script_instructions"),
             ((update_brief or {}).get("turn_intent") or {}).get("instructions")
-            if isinstance((update_brief or {}).get("turn_intent"), dict) else None,
+            if isinstance((update_brief or {}).get("turn_intent"), dict)
+            else None,
         ),
         "duration_range_seconds": {"min": 15, "max": 30},
     }
@@ -276,6 +315,10 @@ def _llm_scenes(
             "visual_prompt是整体场景描述，说明有据可查的年代、地点、环境、人物外观与氛围。"
             "story_skeleton是先于分镜的叙事骨架，包含opening、beats、turning_point、ending，"
             "只总结输入事实，不新增人物经历；分镜和口播必须能回溯到骨架。"
+            "分镜分别承担具体叙事作用，如环境建立、人物动作、物件或照片细节、转折、收束；"
+            "按证据选择，不机械套齐每种景别。相邻镜头避免重复构图和动作，不能只换措辞。"
+            "同一人物跨镜头保持身份和辨识特征稳定，镜头变化不等于更换人物；"
+            "不要默认全片人物面对镜头口播，环境与物件也可承载旁白。"
             "visual_constraints是结构化视觉约束；scene的约束适用于全章，每个shot都必须复制或收紧它。"
             "用户明确提出的视觉限制优先级最高，不得在shot中放宽。没有用户限制时，face_policy必须保持unspecified，"
             "不能凭空把人物设为禁止露脸或指定真实肖像。"
@@ -310,8 +353,9 @@ def _llm_scenes(
     except ApiError:
         raise
     except Exception as exc:
-        logger.warning("Script generation provider request failed: error_type=%s",
-                       type(exc).__name__)
+        logger.warning(
+            "Script generation provider request failed: error_type=%s", type(exc).__name__
+        )
         raise ApiError(
             status.HTTP_502_BAD_GATEWAY,
             ErrorCode.SCRIPT_LLM_REQUEST_FAILED,
@@ -328,8 +372,11 @@ def _llm_scenes(
         raise ApiError(status.HTTP_502_BAD_GATEWAY, ErrorCode.SCRIPT_LLM_RESPONSE_INVALID)
     try:
         raw_source_ids = raw_chapter["source_claim_ids"]
-        if (not isinstance(raw_source_ids, list) or not raw_source_ids
-                or any(not isinstance(value, str) for value in raw_source_ids)):
+        if (
+            not isinstance(raw_source_ids, list)
+            or not raw_source_ids
+            or any(not isinstance(value, str) for value in raw_source_ids)
+        ):
             raise ValueError("chapter has no valid evidence references")
         source_ids = list(dict.fromkeys(value for value in raw_source_ids if value in allowed_ids))
         if not source_ids:
@@ -345,19 +392,24 @@ def _llm_scenes(
             if not isinstance(raw_shot, dict):
                 raise ValueError("shot is not an object")
             raw_shot_source_ids = raw_shot["source_claim_ids"]
-            if (not isinstance(raw_shot_source_ids, list) or not raw_shot_source_ids
-                    or any(not isinstance(value, str) for value in raw_shot_source_ids)):
+            if (
+                not isinstance(raw_shot_source_ids, list)
+                or not raw_shot_source_ids
+                or any(not isinstance(value, str) for value in raw_shot_source_ids)
+            ):
                 raise ValueError("shot has no valid evidence or visual prompt")
-            shot_source_ids = list(dict.fromkeys(
-                value for value in raw_shot_source_ids if value in allowed_ids
-            ))
+            shot_source_ids = list(
+                dict.fromkeys(value for value in raw_shot_source_ids if value in allowed_ids)
+            )
             if not shot_source_ids:
                 raise ValueError("shot has no valid evidence or visual prompt")
-            validated_shot = ScriptShotUpdate.model_validate({
-                "shot_type": raw_shot.get("shot_type", "medium"),
-                "visual_prompt": raw_shot["visual_prompt"],
-                "duration_seconds": raw_shot.get("duration_seconds", 6),
-            })
+            validated_shot = ScriptShotUpdate.model_validate(
+                {
+                    "shot_type": raw_shot.get("shot_type", "medium"),
+                    "visual_prompt": raw_shot["visual_prompt"],
+                    "duration_seconds": raw_shot.get("duration_seconds", 6),
+                }
+            )
             source_ids.extend(
                 claim_id for claim_id in shot_source_ids if claim_id not in source_ids
             )
@@ -390,7 +442,8 @@ def _llm_scenes(
         user_constraints = user_visual_constraints(
             (update_brief or {}).get("script_instructions"),
             ((update_brief or {}).get("turn_intent") or {}).get("instructions")
-            if isinstance((update_brief or {}).get("turn_intent"), dict) else None,
+            if isinstance((update_brief or {}).get("turn_intent"), dict)
+            else None,
         )
         scene = {
             "heading": heading,
@@ -404,14 +457,19 @@ def _llm_scenes(
             "duration_seconds": duration,
             "source_claim_ids": source_ids,
             "visual_constraints": merge_constraints(
-                user_constraints, raw_chapter.get("visual_constraints"),
+                user_constraints,
+                raw_chapter.get("visual_constraints"),
             ),
             "shots": shots,
         }
         scene["shots"] = [
-            {**shot, "visual_constraints": merge_constraints(
-                scene["visual_constraints"], shot.get("visual_constraints"),
-            )}
+            {
+                **shot,
+                "visual_constraints": merge_constraints(
+                    scene["visual_constraints"],
+                    shot.get("visual_constraints"),
+                ),
+            }
             for shot in scene["shots"]
         ]
         scene = _validate_generated_scene(scene, allowed_ids)
@@ -525,10 +583,17 @@ def generate_draft(
     if is_remote("script"):
         committed_read(db)
         from lifereel_api.modules.script.freshness import remote_guard
-        result = call("script", "script.generate", tenant_id, {
-            "request": payload.model_dump(mode="json"), "update_brief": update_brief,
-            "freshness": remote_guard.get(),
-        })
+
+        result = call(
+            "script",
+            "script.generate",
+            tenant_id,
+            {
+                "request": payload.model_dump(mode="json"),
+                "update_brief": update_brief,
+                "freshness": remote_guard.get(),
+            },
+        )
         committed_read(db)
         return get_project(db, tenant_id, UUID(result["project_id"]))
     # One update can be retried, but a new update of the same chapter is a new charge.
@@ -545,6 +610,7 @@ def generate_draft(
         fingerprint = update_fingerprint(payload)
         from lifereel_api.architecture.topology import distributed
         from lifereel_api.modules.script.models import ScriptGenerationReceipt
+
         if distributed():
             receipt = db.get(ScriptGenerationReceipt, (tenant_id, request_id))
             if receipt:
@@ -572,7 +638,8 @@ def generate_draft(
         statement = select(MemoryClaim.chapter_id).where(
             MemoryClaim.tenant_id == tenant_id,
             MemoryClaim.subject_id == person.id,
-            MemoryClaim.review_status.not_in(["disputed", "private"]),
+            MemoryClaim.current_source(),
+            MemoryClaim.review_status.not_in(["disputed", "private", "superseded"]),
         )
         if payload.chapter_id:
             statement = statement.where(MemoryClaim.chapter_id == payload.chapter_id)
@@ -639,7 +706,9 @@ def _generate_draft(
 
     subject_name = subject.preferred_name or subject.display_name
     default_title = f"{subject_name}的岁月片段"
-    usable_claims = [item for item in claims if item.review_status not in {"disputed", "private"}]
+    usable_claims = [
+        item for item in claims if item.review_status not in {"disputed", "private", "superseded"}
+    ]
     if not usable_claims:
         raise ApiError(status.HTTP_409_CONFLICT, ErrorCode.SCRIPT_MEMORIES_REQUIRED)
 
@@ -668,24 +737,41 @@ def _generate_draft(
             "chapter_profile": profile,
             "update_mode": "replace_current_chapter",
         }
-        current_scene = db.scalar(select(ScriptScene).join(ScriptProject).where(
-            ScriptProject.tenant_id == tenant_id, ScriptProject.subject_id == subject.id,
-            ScriptProject.status != "superseded", ScriptScene.chapter_id == chapter_id,
-        ))
+        current_scene = db.scalar(
+            select(ScriptScene)
+            .join(ScriptProject)
+            .where(
+                ScriptProject.tenant_id == tenant_id,
+                ScriptProject.subject_id == subject.id,
+                ScriptProject.status != "superseded",
+                ScriptScene.chapter_id == chapter_id,
+            )
+        )
         if current_scene:
-            current_shots = list(db.scalars(select(ScriptShot).where(
-                ScriptShot.scene_id == current_scene.id,
-            ).order_by(ScriptShot.order_index)))
+            current_shots = list(
+                db.scalars(
+                    select(ScriptShot)
+                    .where(
+                        ScriptShot.scene_id == current_scene.id,
+                    )
+                    .order_by(ScriptShot.order_index)
+                )
+            )
             chapter_brief["current_script"] = {
-                "heading": current_scene.heading, "plot": current_scene.plot,
-                "dialogues": current_scene.dialogues, "narration": current_scene.narration,
+                "heading": current_scene.heading,
+                "plot": current_scene.plot,
+                "dialogues": current_scene.dialogues,
+                "narration": current_scene.narration,
                 "visual_prompt": current_scene.visual_prompt,
                 "visual_constraints": current_scene.visual_constraints,
                 "story_skeleton": current_scene.story_skeleton,
                 "shots": [
-                    {"visual_prompt": shot.visual_prompt, "shot_type": shot.shot_type,
-                     "duration_seconds": shot.duration_seconds,
-                     "visual_constraints": shot.visual_constraints}
+                    {
+                        "visual_prompt": shot.visual_prompt,
+                        "shot_type": shot.shot_type,
+                        "duration_seconds": shot.duration_seconds,
+                        "visual_constraints": shot.visual_constraints,
+                    }
                     for shot in current_shots
                 ],
             }
@@ -694,11 +780,19 @@ def _generate_draft(
         )
         # Applies to mock as well, including old claims created before document
         # extraction had a budget. Never silently drop all claims after number 40.
-        _script_input({
-            "claims": [{"claim_id": str(claim.id), "claim_text": claim.claim_text,
-                        "source_quote": claim.source_quote} for claim in selected],
-            "update_brief": chapter_brief,
-        })
+        _script_input(
+            {
+                "claims": [
+                    {
+                        "claim_id": str(claim.id),
+                        "claim_text": claim.claim_text,
+                        "source_quote": claim.source_quote,
+                    }
+                    for claim in selected
+                ],
+                "update_brief": chapter_brief,
+            }
+        )
         if settings.llm_provider == "openai-compatible":
             title, generated, generation_model = _llm_scenes(
                 subject,
@@ -717,7 +811,8 @@ def _generate_draft(
                 user_visual_constraints(
                     chapter_brief.get("script_instructions"),
                     (chapter_brief.get("turn_intent") or {}).get("instructions")
-                    if isinstance(chapter_brief.get("turn_intent"), dict) else None,
+                    if isinstance(chapter_brief.get("turn_intent"), dict)
+                    else None,
                 ),
             )
         else:
@@ -731,9 +826,13 @@ def _generate_draft(
             validated = _validate_generated_scene(scene_payload, {str(c.id) for c in selected})
             scene_payloads.append({**validated, "chapter_id": chapter_id})
     # Re-read scalar values, bypassing cached ORM objects after a long model call.
-    current_claims = list(db.scalars(
-        claim_statement.order_by(MemoryClaim.created_at).execution_options(populate_existing=True),
-    ))
+    current_claims = list(
+        db.scalars(
+            claim_statement.order_by(MemoryClaim.created_at).execution_options(
+                populate_existing=True
+            ),
+        )
+    )
     if not is_current.get()() or fingerprint(current_claims) != source_fingerprint:
         raise ApiError(409, ErrorCode.SCRIPT_EDIT_CONFLICT)
     project = db.scalar(
@@ -835,14 +934,20 @@ def _generate_draft(
     )
     from lifereel_api.architecture.topology import distributed
     from lifereel_api.modules.script.models import ScriptGenerationReceipt
+
     if distributed() and payload.idempotency_key:
-        db.add(ScriptGenerationReceipt(
-            tenant_id=tenant_id, request_id=payload.idempotency_key,
-            fingerprint=update_fingerprint(payload), project_id=project.id,
-        ))
+        db.add(
+            ScriptGenerationReceipt(
+                tenant_id=tenant_id,
+                request_id=payload.idempotency_key,
+                fingerprint=update_fingerprint(payload),
+                project_id=project.id,
+            )
+        )
     for key in billing_keys or []:
         if distributed():
             from lifereel_api.modules.billing.commands import enqueue_transition
+
             enqueue_transition(db, tenant_id, key, True, str(project.id))
             continue
         charge = db.scalar(
@@ -866,23 +971,31 @@ def update_scene(db, tenant_id, project_id, scene_id, payload: ScriptSceneUpdate
         db.refresh(project)
         if project.version_number != payload.expected_version:
             raise ApiError(409, ErrorCode.SCRIPT_EDIT_CONFLICT)
-        scene = db.scalar(select(ScriptScene).where(
-            ScriptScene.id == scene_id, ScriptScene.project_id == project_id,
-            ScriptScene.tenant_id == tenant_id,
-        ))
+        scene = db.scalar(
+            select(ScriptScene).where(
+                ScriptScene.id == scene_id,
+                ScriptScene.project_id == project_id,
+                ScriptScene.tenant_id == tenant_id,
+            )
+        )
         if scene is None:
             raise ApiError(409, ErrorCode.SCRIPT_EDIT_CONFLICT)
-        busy = db.scalar(select(InterviewTurnWorkflow.id).join(InterviewSession).where(
-            InterviewSession.subject_id == project.subject_id,
-            InterviewTurnWorkflow.tenant_id == tenant_id,
-            InterviewTurnWorkflow.status.in_(["queued", "running"]),
-        ).limit(1))
+        busy = db.scalar(
+            select(InterviewTurnWorkflow.id)
+            .join(InterviewSession)
+            .where(
+                InterviewSession.subject_id == project.subject_id,
+                InterviewTurnWorkflow.tenant_id == tenant_id,
+                InterviewTurnWorkflow.status.in_(["queued", "running"]),
+            )
+            .limit(1)
+        )
         if busy:
             raise ApiError(409, ErrorCode.SCRIPT_EDIT_BUSY)
-        if (payload.shots and sum(shot.duration_seconds for shot in payload.shots)
-                != payload.duration_seconds) or any(
-            not line.speaker.strip() or not line.text.strip() for line in payload.dialogues
-        ):
+        if (
+            payload.shots
+            and sum(shot.duration_seconds for shot in payload.shots) != payload.duration_seconds
+        ) or any(not line.speaker.strip() or not line.text.strip() for line in payload.dialogues):
             raise ApiError(422, ErrorCode.SCRIPT_CONTENT_INVALID)
         scene.heading = payload.heading
         scene.plot = payload.plot or None
@@ -894,16 +1007,30 @@ def update_scene(db, tenant_id, project_id, scene_id, payload: ScriptSceneUpdate
             payload.story_skeleton.model_dump() if payload.story_skeleton else None
         )
         scene.duration_seconds = payload.duration_seconds
-        old_shots = list(db.scalars(select(ScriptShot).where(ScriptShot.scene_id == scene.id)
-                                   .order_by(ScriptShot.order_index)))
+        old_shots = list(
+            db.scalars(
+                select(ScriptShot)
+                .where(ScriptShot.scene_id == scene.id)
+                .order_by(ScriptShot.order_index)
+            )
+        )
         db.execute(delete(ScriptShot).where(ScriptShot.scene_id == scene.id))
         for index, shot in enumerate(payload.shots):
             previous = old_shots[index] if index < len(old_shots) else None
-            sources = previous.source_claim_ids if (
-                previous and previous.visual_prompt == shot.visual_prompt
-            ) else []
-            db.add(ScriptShot(tenant_id=tenant_id, scene_id=scene.id, order_index=index + 1,
-                              **shot.model_dump(), source_claim_ids=sources))
+            sources = (
+                previous.source_claim_ids
+                if (previous and previous.visual_prompt == shot.visual_prompt)
+                else []
+            )
+            db.add(
+                ScriptShot(
+                    tenant_id=tenant_id,
+                    scene_id=scene.id,
+                    order_index=index + 1,
+                    **shot.model_dump(),
+                    source_claim_ids=sources,
+                )
+            )
         project.version_number += 1
         project.status = "draft"
         db.commit()

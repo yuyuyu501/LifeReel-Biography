@@ -105,6 +105,9 @@ export function AppShell({
       await api.logout();
     } finally {
       queryClient.clear();
+      try {
+        Object.keys(sessionStorage).filter(key => key.startsWith("lifereel:draft:")).forEach(key => sessionStorage.removeItem(key));
+      } catch { /* Optional local drafts must not prevent signing out. */ }
       navigate("/login", { replace: true });
     }
   }

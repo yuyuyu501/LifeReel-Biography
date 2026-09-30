@@ -16,6 +16,10 @@ class TurnIntent(BaseModel):
 
 
 def classify_turn(message: str) -> dict:
+    from lifereel_api.modules.interview.planning import control
+
+    if control(message) != "continue":
+        return {"action": "interview", "has_new_facts": False, "instructions": ""}
     settings = get_settings()
     if settings.llm_provider == "mock":
         regenerate = any(word in message for word in ("重新生成", "重写剧本"))

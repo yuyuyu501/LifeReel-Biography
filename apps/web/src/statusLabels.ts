@@ -11,6 +11,7 @@ const labels = {
   cancelled: "已取消",
   open: "待处理",
   resolved: "已解决",
+  superseded: "来源已修订",
   published: "已发布",
   withdrawn: "已撤回",
   granted: "已授权",

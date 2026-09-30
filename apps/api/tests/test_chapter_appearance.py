@@ -115,7 +115,8 @@ def test_redraw_reaches_video_request_and_is_reused_across_segments_and_runs(
     assert client.post(endpoint).json()["status"] == "running"
     assert client.post(endpoint).json()["status"] == "completed"
     assert redraw_calls == [SOURCE]
-    assert requests[1]["content"][1]["role"] == "first_frame"
+    assert requests[1]["content"][1]["role"] == "reference_image"
+    assert requests[1]["content"][1] == requests[0]["content"][1]
     for request in requests:
         prompt = request["content"][0]["text"]
         assert "人物相似度优先于风格化" in prompt

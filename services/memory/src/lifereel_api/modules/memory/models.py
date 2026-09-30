@@ -44,11 +44,30 @@ class MemoryClaim(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     )
     claim_text: Mapped[str] = mapped_column(Text)
     source_quote: Mapped[str] = mapped_column(Text)
+    source_revision: Mapped[int] = mapped_column(Integer, default=1, server_default="1")
     claim_type: Mapped[str] = mapped_column(String(48), default="recollection")
     confidence: Mapped[float] = mapped_column(Float, default=1.0)
     review_status: Mapped[str] = mapped_column(String(32), default="unreviewed")
     extraction_provider: Mapped[str] = mapped_column(String(80), default="rule")
     extraction_model: Mapped[str | None] = mapped_column(String(180), nullable=True)
+
+    @classmethod
+    def current_source(cls):
+        """A queued/failed correction must not expose facts extracted from an older answer."""
+        from sqlalchemy import or_, select
+
+        from lifereel_api.modules.interview.models import InterviewRound
+
+        return or_(
+            cls.source_round_id.is_(None),
+            select(InterviewRound.id)
+            .where(
+                InterviewRound.id == cls.source_round_id,
+                InterviewRound.tenant_id == cls.tenant_id,
+                InterviewRound.answer_version == cls.source_revision,
+            )
+            .exists(),
+        )
 
 
 class MemoryEntity(UUIDPrimaryKeyMixin, TimestampMixin, Base):

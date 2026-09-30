@@ -10,7 +10,7 @@ from uuid import UUID, uuid4
 from sqlalchemy.orm import Session
 
 from lifereel_api.modules.evidence.storage import private_storage
-from lifereel_api.modules.production import appearance
+from lifereel_api.modules.production import appearance, quality
 from lifereel_api.modules.production.continuation import prepare_original, save_tail
 from lifereel_api.modules.production.media import (
     assemble_videos,
@@ -43,6 +43,10 @@ def advance(db: Session, run: ProductionRun) -> ProviderOutput | None:
     assert_retry_allowed(run)
     manifest = copy.deepcopy(run.output_manifest or {})
     config = manifest["generation_config"]
+    from lifereel_api.modules.production.regeneration import copy_next
+
+    if copy_next(db, run, manifest):
+        return None
     if not appearance.prepare(db, run, manifest):
         return None
     if not manifest.get("plan"):
@@ -60,7 +64,9 @@ def advance(db: Session, run: ProductionRun) -> ProviderOutput | None:
             )
             text = json.dumps(response, ensure_ascii=False)
             payload = {
-                **diagnostic, "response": text[:64000], "truncated": len(text) > 64000,
+                **diagnostic,
+                "response": text[:64000],
+                "truncated": len(text) > 64000,
             }
             try:
                 private_storage().put(key, json.dumps(payload, ensure_ascii=False).encode("utf-8"))
@@ -73,7 +79,9 @@ def advance(db: Session, run: ProductionRun) -> ProviderOutput | None:
             checkpoint(db, run, manifest)
 
         manifest["plan"] = plan_video(
-            manifest["script_snapshot"], manifest.get("subject", {}), on_failure=record_failure,
+            manifest["script_snapshot"],
+            manifest.get("subject", {}),
+            on_failure=record_failure,
             has_portrait=photo is not None,
         )
         manifest["segments"] = [
@@ -110,7 +118,29 @@ def advance(db: Session, run: ProductionRun) -> ProviderOutput | None:
                         photo = initial_photo_reference(db, run)
                         if photo is not None:
                             segment["reference_asset_id"] = str(photo.id)
-                    if index == 0 and manifest.get("reference_package", {}).get("schema") == 2:
+                    if config.get("identity_lock_version") == 1 and manifest.get(
+                        "reference_package", {}
+                    ).get("image_references"):
+                        reference_options = quality.identity_inputs(
+                            db,
+                            run,
+                            manifest,
+                            provider,
+                            storage,
+                            index,
+                        )
+                        segment["reference_kind"] = "chapter_identity"
+                        segment["identity_reference_ids"] = manifest["reference_package"][
+                            "image_references"
+                        ]
+                        segment["identity_reference_hashes"] = manifest["reference_package"][
+                            "source_hashes"
+                        ]
+                    elif (
+                        index == 0
+                        and manifest.get("reference_package", {}).get("schema") == 2
+                        and manifest.get("reference_package", {}).get("image_references")
+                    ):
                         reference_options = appearance.inputs(db, run, manifest)
                         segment["reference_kind"] = config.get("reference_style", "original")
                     elif segment.get("reference_asset_id"):
@@ -122,13 +152,19 @@ def advance(db: Session, run: ProductionRun) -> ProviderOutput | None:
                         segment["reference_kind"] = "uploaded_image"
                     elif index:
                         frame, reference_options, source = prepare_original(
-                            provider, storage, run, index - 1, segments[index - 1],
+                            provider,
+                            storage,
+                            run,
+                            index - 1,
+                            segments[index - 1],
                         )
-                        segment.update({
-                            "reference_kind": source["kind"],
-                            "reference_sha256": source["sha256"],
-                            "reference_source_task_id": source["source_task_id"],
-                        })
+                        segment.update(
+                            {
+                                "reference_kind": source["kind"],
+                                "reference_sha256": source["sha256"],
+                                "reference_source_task_id": source["source_task_id"],
+                            }
+                        )
                     if frame:
                         segment["reference_sha256"] = hashlib.sha256(frame).hexdigest()
                     prompt = (
@@ -160,11 +196,16 @@ def advance(db: Session, run: ProductionRun) -> ProviderOutput | None:
                             "续接片段不随镜头推进逐步简化五官或增强卡通程度。"
                         )
                     if reference_options.get("reference_images"):
-                        prompt += "本章形象参考图片按顺序为图片1起，保持人物和场景设计一致。"
+                        prompt += (
+                            "图片1为本章固定人物参考，同一人物的头脸比例、五官相对位置、发际线和辨识特征"
+                            "在每段保持稳定；其他照片用于场景或物件。人物身份不随景别变化。"
+                            "若有上一段原始尾帧，它只辅助动作衔接，不能取代固定人物参考。"
+                            "镜头可切换环境、动作、物件和构图，不必始终是人物面对镜头口播。"
+                            "服装和年龄仅依据本章明确资料；不得根据姓名或职业推断性别。"
+                        )
                     if reference_options.get("reference_audio"):
                         prompt += (
-                            "参考音频用于声音的语气、节奏和环境质感，"
-                            "口播内容仍严格使用本段剧本。"
+                            "参考音频用于声音的语气、节奏和环境质感，口播内容仍严格使用本段剧本。"
                         )
                     if reference_options.get("reference_video_url"):
                         prompt = (
@@ -221,14 +262,23 @@ def advance(db: Session, run: ProductionRun) -> ProviderOutput | None:
                 info = probe_video(clip, config["generate_audio"])
                 if abs(info["duration_seconds"] - segment["duration_seconds"]) > 1:
                     raise VideoProviderError("VIDEO_DURATION_MISMATCH")
-                key = (
-                    f"LifeReel-Biography/generated/{run.tenant_id}/{run.id}/"
-                    f"segment-{index}.mp4"
-                )
+                key = f"LifeReel-Biography/generated/{run.tenant_id}/{run.id}/segment-{index}.mp4"
                 storage.put(key, output.content)
+                segment["sha256"] = hashlib.sha256(output.content).hexdigest()
+                segment["review_frames"] = quality.collect_review_frames(
+                    storage,
+                    run,
+                    index,
+                    clip,
+                    segment["duration_seconds"],
+                )
                 if output.last_frame:
                     save_tail(
-                        storage, run, index, segment, output.last_frame,
+                        storage,
+                        run,
+                        index,
+                        segment,
+                        output.last_frame,
                         output.parameters["last_frame_mime"],
                     )
                 segment.update(
@@ -239,8 +289,12 @@ def advance(db: Session, run: ProductionRun) -> ProviderOutput | None:
                         "parameters": output.parameters,
                     }
                 )
-                manifest["completed_segments"] = index + 1
-                manifest["stage"] = "assembling" if index + 1 == len(segments) else "generating"
+                manifest["completed_segments"] = sum(s["status"] == "completed" for s in segments)
+                manifest["stage"] = (
+                    "assembling"
+                    if manifest["completed_segments"] == len(segments)
+                    else "generating"
+                )
                 checkpoint(db, run, manifest)
                 return None
             finally:
@@ -253,6 +307,17 @@ def advance(db: Session, run: ProductionRun) -> ProviderOutput | None:
         content, info = assemble_videos(paths, directory, config)
         if abs(info["duration_seconds"] - manifest["target_duration_seconds"]) > len(paths):
             raise VideoProviderError("VIDEO_DURATION_MISMATCH")
+        duplicate_pairs = [
+            [a, b]
+            for a in range(len(segments))
+            for b in range(a + 1, len(segments))
+            if segments[a].get("sha256") and segments[a]["sha256"] == segments[b].get("sha256")
+        ]
+        manifest["quality_review"] = {
+            **manifest.get("quality_review", {}),
+            "duplicate_video_segments": duplicate_pairs,
+            "review_frames_available": sum(len(s.get("review_frames", [])) for s in segments),
+        }
         manifest["stage"] = "completed"
         checkpoint(db, run, manifest)
         return ProviderOutput(

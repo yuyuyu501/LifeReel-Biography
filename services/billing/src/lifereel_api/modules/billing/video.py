@@ -83,6 +83,8 @@ def settle_run(db, run, success: bool) -> None:
     }
     segments = manifest.get("segments") or []
     for segment in segments:
+        if segment.get("reused"):
+            continue
         if segment.get("task_id"):
             expected_ids.add(segment["task_id"])
         expected_ids.update(segment.get("previous_task_ids") or [])

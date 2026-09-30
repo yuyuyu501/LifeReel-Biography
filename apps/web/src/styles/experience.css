@@ -1,0 +1,132 @@
+.chapter-navigation {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 18px;
+  border-bottom: 1px solid var(--line);
+}
+.chapter-navigation select {
+  flex: 1;
+  min-width: 100px;
+  max-width: 260px;
+  padding: 7px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: white;
+}
+.answer-revision {
+  margin-left: auto;
+  width: min(100%, 680px);
+  text-align: right;
+  font-size: 13px;
+}
+.answer-revision details,
+.answer-editor {
+  text-align: left;
+}
+.answer-editor {
+  background: white;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 14px;
+  display: grid;
+  gap: 10px;
+}
+.answer-editor textarea {
+  min-height: 110px;
+}
+.answer-editor small,
+.interview-progress small,
+.material-guidance {
+  color: var(--muted-foreground);
+  line-height: 1.6;
+}
+.experience-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+.interview-progress {
+  padding: 8px 18px;
+  font-size: 13px;
+  border-top: 1px solid var(--line);
+}
+.interview-progress p {
+  margin: 0 0 3px;
+}
+.material-guidance {
+  font-size: 12px;
+  padding: 8px 18px;
+}
+.material-guidance summary {
+  cursor: pointer;
+}
+.getting-started {
+  margin: 16px 0;
+  padding: 20px;
+  border: 1px solid var(--line);
+  background: var(--green-soft);
+  border-radius: 10px;
+}
+.getting-started h2 {
+  font-size: 19px;
+  margin: 8px 0;
+}
+.getting-started p {
+  line-height: 1.7;
+  margin: 8px 0 14px;
+}
+.new-message-button {
+  align-self: center;
+  margin: 4px;
+}
+.shot-preview-list {
+  display: grid;
+  gap: 12px;
+  margin: 12px 0;
+}
+.shot-preview-list article {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 12px;
+}
+.shot-preview-list p {
+  white-space: pre-wrap;
+  line-height: 1.6;
+}
+.shot-preview {
+  margin: 16px 0;
+}
+.shot-preview article {
+  margin: 12px 0;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+.shot-preview p {
+  white-space: pre-wrap;
+  line-height: 1.6;
+}
+.shot-review-frames {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.shot-review-frames figure {
+  margin: 0;
+  max-width: 240px;
+}
+.shot-review-frames img {
+  max-width: 100%;
+  border-radius: 6px;
+}
+.shot-preview video {
+  width: 100%;
+  max-height: 320px;
+}
+.shot-preview summary {
+  cursor: pointer;
+  margin: 12px 0;
+}

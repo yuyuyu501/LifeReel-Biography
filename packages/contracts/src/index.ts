@@ -46,6 +46,8 @@ export interface InterviewRound {
   question_intent: string | null;
   question_source: string | null;
   answer_text: string | null;
+  answer_version?: number;
+  answer_revisions?: Array<{ version: number; text: string; revised_at: string }>;
   source_asset_id: UUID | null;
   transcript_status: string;
   created_at: string;
@@ -176,6 +178,7 @@ export interface InterviewWorkspace {
   assets: SourceAsset[];
   script: ScriptProject | null;
   latest_workflow: InterviewTurnWorkflow | null;
+  progress?: { stage: string; elapsed_seconds: number; sample_count: number; estimated_seconds: [number, number] | null };
 }
 
 export interface MemoryClaim {
@@ -380,12 +383,14 @@ export interface ProductionRun {
     scene_id?: UUID | null;
     script_version?: number;
     script_snapshot?: ScriptScene[];
-    stage?: "preparing_references" | "planning" | "generating" | "assembling" | "completed";
-    generation_config?: { reference_style?: "original" | "color_redraw"; reference_prompt_version?: string | null };
+    stage?: "preparing_references" | "copying_segments" | "planning" | "generating" | "assembling" | "completed";
+    generation_config?: { mode?: string; model?: string; identity_lock_version?: number; reference_style?: "original" | "color_redraw"; reference_prompt_version?: string | null };
     completed_segments?: number;
     planning_diagnostics?: Array<{ attempt: number; diagnostic_id: string; issues: Array<{ code: string; field: string }> }>;
     plan?: { continuity?: string; voice?: string };
-    segments?: Array<{ status: string; duration_seconds: number; narration: string; visual_prompt?: string; prompt?: string }>;
+    segments?: Array<{ status: string; duration_seconds: number; narration: string; visual_prompt?: string; prompt?: string; reused?: boolean; identity_reference_ids?: string[]; review_frames?: Array<{ position: number; at_seconds: number }> }>;
+    quality_review?: { duplicate_video_segments?: number[][]; shot_warnings?: Array<{ shot_index: number; code: string }>; identity_verification?: string };
+    regeneration?: { source_run_id: string; segment_index: number };
     target_duration_seconds?: number;
     billing_quote?: { amount_cents: number; target_seconds: number; version: string; title: string };
     billing?: { status: "pending" | "settled"; reserved_cents: number; charged_cents?: number };

@@ -80,7 +80,10 @@ RELATIONSHIP_LABELS = {
 
 
 def _extract_claim(
-    text: str, source_kind: str, *, question: str = "",
+    text: str,
+    source_kind: str,
+    *,
+    question: str = "",
 ) -> tuple[str, str, float, str, str | None]:
     settings = get_settings()
     # Preserve full-source semantics: a truncated prefix is not a completed analysis.
@@ -96,7 +99,8 @@ def _extract_claim(
     client = MemoryClient(
         settings.openai_compatible_base_url or "",
         settings.openai_compatible_api_key or "",
-        model, stage="claim",
+        model,
+        stage="claim",
     )
     if not client.capabilities().configured:
         raise ApiError(
@@ -113,8 +117,12 @@ def _extract_claim(
             '{"claim_text":"...","claim_type":"recollection|event|relationship|place|time",'
             '"confidence":0.0}。',
             json.dumps(
-                {"source_kind": source_kind, "source_text": text,
-                 "question_context": question[:2000]}, ensure_ascii=False
+                {
+                    "source_kind": source_kind,
+                    "source_text": text,
+                    "question_context": question[:2000],
+                },
+                ensure_ascii=False,
             ),
         )
     except json.JSONDecodeError as exc:
@@ -167,7 +175,8 @@ def _extract_memory_structure(
     client = MemoryClient(
         settings.openai_compatible_base_url or "",
         settings.openai_compatible_api_key or "",
-        model, stage="graph",
+        model,
+        stage="graph",
     )
     if not client.capabilities().configured:
         raise ApiError(
@@ -184,12 +193,22 @@ def _extract_memory_structure(
         }
         for claim in claims
     ]
-    serialized = json.dumps({"claims": payload, "previous_conflicts": [
-        {"conflict_key": conflict.conflict_key, "claim_ids": conflict.claim_ids,
-         "description": conflict.description, "status": conflict.status}
-        for conflict in previous_conflicts or []
-        if set(conflict.claim_ids) <= allowed_claim_ids
-    ]}, ensure_ascii=False)
+    serialized = json.dumps(
+        {
+            "claims": payload,
+            "previous_conflicts": [
+                {
+                    "conflict_key": conflict.conflict_key,
+                    "claim_ids": conflict.claim_ids,
+                    "description": conflict.description,
+                    "status": conflict.status,
+                }
+                for conflict in previous_conflicts or []
+                if set(conflict.claim_ids) <= allowed_claim_ids and conflict.status != "superseded"
+            ],
+        },
+        ensure_ascii=False,
+    )
     require_memory_input(serialized)
     try:
         result = client.chat_json(
@@ -332,7 +351,8 @@ def _generate_biography(claims: list[MemoryClaim]) -> str:
     client = MemoryClient(
         settings.openai_compatible_base_url or "",
         settings.openai_compatible_api_key or "",
-        model, stage="biography",
+        model,
+        stage="biography",
     )
     if not client.capabilities().configured:
         raise ApiError(
@@ -368,7 +388,11 @@ def _generate_biography(claims: list[MemoryClaim]) -> str:
 
 
 def list_claims(db: Session, tenant_id: UUID, subject_id: UUID | None = None) -> list[MemoryClaim]:
-    statement = select(MemoryClaim).where(MemoryClaim.tenant_id == tenant_id)
+    statement = select(MemoryClaim).where(
+        MemoryClaim.current_source(),
+        MemoryClaim.tenant_id == tenant_id,
+        MemoryClaim.review_status != "superseded",
+    )
     if subject_id:
         statement = statement.where(MemoryClaim.subject_id == subject_id)
     return list(db.scalars(statement.order_by(MemoryClaim.created_at.desc())))
@@ -462,9 +486,14 @@ def _compile_entities_and_timeline_ai(
         )
     subject_id = next(iter(subject_ids))
     claims_by_id = {str(claim.id): claim for claim in claims}
-    existing_conflicts = list(db.scalars(select(MemoryConflict).where(
-        MemoryConflict.tenant_id == tenant_id, MemoryConflict.subject_id == subject_id,
-    )))
+    existing_conflicts = list(
+        db.scalars(
+            select(MemoryConflict).where(
+                MemoryConflict.tenant_id == tenant_id,
+                MemoryConflict.subject_id == subject_id,
+            )
+        )
+    )
     entities, timeline, conflicts, _ = _extract_memory_structure(claims, existing_conflicts)
 
     # The model returns a complete snapshot for one person. Replacing the old snapshot
@@ -539,8 +568,11 @@ def _compile_entities_and_timeline_ai(
                 status.HTTP_502_BAD_GATEWAY,
                 ErrorCode.MEMORY_LLM_RESPONSE_INVALID,
             )
-        matching = [c for c in existing_conflicts if set(c.claim_ids) == set(item["claim_ids"])
-                    and c.conflict_key == item["conflict_key"]]
+        matching = [
+            c
+            for c in existing_conflicts
+            if set(c.claim_ids) == set(item["claim_ids"]) and c.conflict_key == item["conflict_key"]
+        ]
         if matching:
             for conflict in matching:
                 conflict.description = item["description"]
@@ -566,6 +598,8 @@ def _detect_year_conflicts(db: Session, tenant_id: UUID, subject_ids: set[UUID])
                     MemoryClaim.tenant_id == tenant_id,
                     MemoryClaim.subject_id == subject_id,
                     MemoryClaim.claim_text.contains("出生"),
+                    MemoryClaim.current_source(),
+                    MemoryClaim.review_status.not_in(["private", "disputed", "superseded"]),
                 )
             )
         )
@@ -616,10 +650,14 @@ def compile_memories(
         committed_read(db)
         result = call("memory", "memory.compile", tenant_id, payload.model_dump(mode="json"))
         committed_read(db)
-        claims = list(db.scalars(select(MemoryClaim).where(
-            MemoryClaim.tenant_id == tenant_id,
-            MemoryClaim.id.in_([UUID(key) for key in result["claim_ids"]]),
-        )))
+        claims = list(
+            db.scalars(
+                select(MemoryClaim).where(
+                    MemoryClaim.tenant_id == tenant_id,
+                    MemoryClaim.id.in_([UUID(key) for key in result["claim_ids"]]),
+                )
+            )
+        )
         return result["created"], result["updated"], claims
     session_statement = select(InterviewSession).where(InterviewSession.tenant_id == tenant_id)
     if payload.interview_session_id:
@@ -651,7 +689,15 @@ def compile_memories(
         if session_ids
         else []
     )
-    rounds = [item for item in rounds if item.question_source != "script_request"]
+    rounds = [
+        item
+        for item in rounds
+        if item.question_source
+        not in {
+            "script_request",
+            "conversation_control",
+        }
+    ]
     round_ids = [item.id for item in rounds]
     existing_round_ids = (
         set(
@@ -708,7 +754,35 @@ def compile_memories(
     workflow = recovery.current_workflow(db, tenant_id)
     created = 0
     for round_ in rounds:
-        if round_.id in existing_round_ids:
+        if round_.answer_version > 1 and round_.source_asset_id and round_.answer_revisions:
+            original_text = round_.answer_revisions[0]["text"].strip()
+            old_claims = db.scalars(
+                select(MemoryClaim)
+                .join(
+                    EvidenceObservation, EvidenceObservation.id == MemoryClaim.source_observation_id
+                )
+                .join(SourceAsset, SourceAsset.id == EvidenceObservation.source_asset_id)
+                .where(
+                    MemoryClaim.tenant_id == tenant_id,
+                    SourceAsset.id == round_.source_asset_id,
+                    SourceAsset.kind.in_(["audio", "video"]),
+                    EvidenceObservation.text == original_text,
+                )
+            )
+            for old_claim in old_claims:
+                _invalidate_derived_source(db, tenant_id, old_claim)
+                old_claim.review_status = "superseded"
+        previous = (
+            db.scalar(
+                select(MemoryClaim).where(
+                    MemoryClaim.tenant_id == tenant_id,
+                    MemoryClaim.source_round_id == round_.id,
+                )
+            )
+            if round_.id in existing_round_ids
+            else None
+        )
+        if previous and previous.source_revision == round_.answer_version:
             continue
         source_quote = (round_.answer_text or "").strip()
         if not source_quote:
@@ -717,12 +791,26 @@ def compile_memories(
         claim_text, claim_type, confidence, provider, model = _extract_claim(
             source_quote, "interview_round"
         )
+        if previous:
+            _invalidate_derived_source(db, tenant_id, previous)
+            previous.claim_text = claim_text
+            previous.source_quote = source_quote
+            previous.source_revision = round_.answer_version
+            previous.claim_type = claim_type
+            previous.confidence = confidence
+            previous.extraction_provider = provider
+            previous.extraction_model = model
+            if previous.review_status != "private":
+                previous.review_status = "unreviewed"
+            created += 1
+            continue
         db.add(
             MemoryClaim(
                 tenant_id=tenant_id,
                 subject_id=session.subject_id,
                 interview_session_id=session.id,
                 source_round_id=round_.id,
+                source_revision=round_.answer_version,
                 chapter_id=session.chapter_id,
                 source_observation_id=None,
                 claim_text=claim_text,
@@ -740,6 +828,26 @@ def compile_memories(
             db.commit()
 
     for observation, asset in observations:
+        corrected_transcript = (
+            any(
+                r.source_asset_id == asset.id
+                and r.answer_version > 1
+                and r.answer_revisions
+                and r.answer_revisions[0]["text"].strip() == observation.text.strip()
+                for r in rounds
+            )
+            if asset.kind in {"audio", "video"}
+            else False
+        )
+        if corrected_transcript:
+            for old in db.scalars(
+                select(MemoryClaim).where(
+                    MemoryClaim.tenant_id == tenant_id,
+                    MemoryClaim.source_observation_id == observation.id,
+                )
+            ):
+                old.review_status = "superseded"
+            continue
         if observation.id in existing_observation_ids:
             continue
         source_quote = observation.text.strip()
@@ -775,7 +883,9 @@ def compile_memories(
             db.commit()
     db.flush()
 
-    claim_statement = select(MemoryClaim).where(MemoryClaim.tenant_id == tenant_id)
+    claim_statement = select(MemoryClaim).where(
+        MemoryClaim.tenant_id == tenant_id, MemoryClaim.current_source()
+    )
     subject_ids = {item.subject_id for item in sessions}
     if payload.subject_id:
         subject_ids.add(payload.subject_id)
@@ -788,20 +898,29 @@ def compile_memories(
     compiled = list(db.scalars(claim_statement.order_by(MemoryClaim.created_at)))
     settings = get_settings()
     claims_by_subject = {
-        subject_id: [claim for claim in compiled if claim.subject_id == subject_id
-                     and claim.review_status not in {"private", "disputed"}]
+        subject_id: [
+            claim
+            for claim in compiled
+            if claim.subject_id == subject_id
+            and claim.review_status not in {"private", "disputed", "superseded"}
+        ]
         for subject_id in {claim.subject_id for claim in compiled}
     }
     if settings.llm_provider == "mock":
-        _compile_entities_and_timeline_rules(db, tenant_id, compiled)
+        _compile_entities_and_timeline_rules(
+            db, tenant_id, [c for items in claims_by_subject.values() for c in items]
+        )
         _detect_year_conflicts(db, tenant_id, {item.subject_id for item in compiled})
     elif settings.llm_provider == "openai-compatible":
         for subject_id, subject_claims in claims_by_subject.items():
             if not subject_claims:
                 for model in (MemoryEntity, TimelineAnchor):
-                    db.execute(delete(model).where(
-                        model.tenant_id == tenant_id, model.subject_id == subject_id,
-                    ))
+                    db.execute(
+                        delete(model).where(
+                            model.tenant_id == tenant_id,
+                            model.subject_id == subject_id,
+                        )
+                    )
                 subject = db.get(Person, subject_id)
                 if subject is not None and subject.tenant_id == tenant_id:
                     subject.biography_note = ""
@@ -817,7 +936,10 @@ def compile_memories(
                 )
             )
             if subject is not None and not recovery.completed(
-                workflow, subject_id, "biography", digest,
+                workflow,
+                subject_id,
+                "biography",
+                digest,
             ):
                 subject.biography_note = _generate_biography(subject_claims)
                 recovery.save(db, workflow, subject_id, "biography", digest)
@@ -839,10 +961,44 @@ def review_claim(db: Session, tenant_id: UUID, claim_id: UUID, review_status: st
     )
     if claim is None:
         raise ApiError(status.HTTP_404_NOT_FOUND, ErrorCode.MEMORY_CLAIM_NOT_FOUND)
+    if claim.review_status == "superseded":
+        raise ApiError(409, ErrorCode.MEMORY_REVIEW_STATUS_INVALID)
     claim.review_status = review_status
     db.commit()
     db.refresh(claim)
     return claim
+
+
+def _invalidate_derived_source(db, tenant_id, claim):
+    db.execute(
+        delete(TimelineAnchor).where(
+            TimelineAnchor.tenant_id == tenant_id,
+            TimelineAnchor.claim_id == claim.id,
+        )
+    )
+    for entity in db.scalars(
+        select(MemoryEntity).where(
+            MemoryEntity.tenant_id == tenant_id,
+            MemoryEntity.subject_id == claim.subject_id,
+        )
+    ):
+        if str(claim.id) in entity.source_claim_ids:
+            remaining = [key for key in entity.source_claim_ids if key != str(claim.id)]
+            if remaining:
+                entity.source_claim_ids = remaining
+            else:
+                db.delete(entity)
+    # These conflicts refer to the previous source version. Fresh analysis can reopen
+    # a still-present conflict, but an omitted obsolete conflict cannot remain open.
+    for conflict in db.scalars(
+        select(MemoryConflict).where(
+            MemoryConflict.tenant_id == tenant_id,
+            MemoryConflict.subject_id == claim.subject_id,
+            MemoryConflict.status == "open",
+        )
+    ):
+        if str(claim.id) in conflict.claim_ids:
+            conflict.status = "superseded"
 
 
 def memory_overview(db: Session, tenant_id: UUID, subject_id: UUID) -> MemoryOverview:
@@ -899,7 +1055,12 @@ def list_timeline(db: Session, tenant_id: UUID, subject_id: UUID) -> list[Timeli
     return list(
         db.scalars(
             select(TimelineAnchor)
-            .where(TimelineAnchor.tenant_id == tenant_id, TimelineAnchor.subject_id == subject_id)
+            .join(MemoryClaim, MemoryClaim.id == TimelineAnchor.claim_id)
+            .where(
+                MemoryClaim.current_source(),
+                TimelineAnchor.tenant_id == tenant_id,
+                TimelineAnchor.subject_id == subject_id,
+            )
             .order_by(TimelineAnchor.year, TimelineAnchor.created_at)
         )
     )
@@ -929,7 +1090,7 @@ def memory_graph(
     claims = {
         str(claim.id): claim
         for claim in list_claims(db, tenant_id, subject_id)
-        if claim.review_status not in {"disputed", "private"}
+        if claim.review_status not in {"disputed", "private", "superseded"}
     }
     entities = list_entities(db, tenant_id, subject_id)[:24]
     timeline = list_timeline(db, tenant_id, subject_id)[-12:]

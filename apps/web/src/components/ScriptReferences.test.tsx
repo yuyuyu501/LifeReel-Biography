@@ -17,6 +17,18 @@ function setup() {
   const client = new QueryClient({defaultOptions:{queries:{retry:false}}});
   render(<QueryClientProvider client={client}><ScriptReferences project={project} scene={project.scenes[0]} /></QueryClientProvider>);
 }
+
+test("explicit portrait selection is saved first for every shot", async () => {
+  const portrait={...photo,id:"portrait",original_filename:"人物照片.png"};
+  vi.mocked(api.listEvidence).mockResolvedValue([photo,portrait]);
+  setup();
+  await waitFor(()=>expect(screen.getByRole("button",{name:"编辑本章形象"})).toBeEnabled());
+  fireEvent.click(screen.getByRole("button",{name:"编辑本章形象"}));
+  fireEvent.click(await screen.findByRole("checkbox",{name:"人物照片.png"}));
+  fireEvent.click(screen.getAllByRole("radio",{name:"设为固定人物参考"})[1]);
+  fireEvent.click(screen.getByRole("button",{name:"保存"}));
+  await waitFor(()=>expect(api.updateScriptReferences).toHaveBeenCalledWith("project","scene",3,["portrait","photo"]));
+});
 test("shows automatic references and saves an explicit empty selection", async () => {
   setup();
   expect(await screen.findByRole("img", {name: "本章照片.png"})).toBeVisible();

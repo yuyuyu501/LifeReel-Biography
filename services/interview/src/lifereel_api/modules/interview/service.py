@@ -14,6 +14,7 @@ from lifereel_api.core.processing_limits import require_memory_input
 from lifereel_api.modules.billing.usage import track_usage
 from lifereel_api.modules.evidence.models import SourceAsset
 from lifereel_api.modules.identity.models import Person
+from lifereel_api.modules.interview import planning
 from lifereel_api.modules.interview.chapter_prompts import get_chapter_prompt_profile
 from lifereel_api.modules.interview.models import Chapter, InterviewRound, InterviewSession
 from lifereel_api.modules.interview.schemas import InterviewRoundCreate, InterviewStart
@@ -86,6 +87,7 @@ def _llm_follow_up(
     memory_filters = [
         MemoryClaim.tenant_id == tenant_id,
         MemoryClaim.subject_id == session.subject_id,
+        MemoryClaim.current_source(),
         MemoryClaim.review_status.in_(["verified", "unreviewed"]),
     ]
     if session.chapter_id is not None:
@@ -95,9 +97,16 @@ def _llm_follow_up(
             select(MemoryClaim)
             .where(*memory_filters)
             .order_by(MemoryClaim.created_at.desc())
-            .limit(8)
+            .limit(60)
         )
     )
+    revised = next(
+        (r for r in answered if str(r.id) == (assessment or {}).get("revised_round_id")), None
+    )
+    focus_answer = (
+        revised.answer_text if revised else (answered[-1].answer_text if answered else "")
+    )
+    memories = planning.relevant_memories(memories, focus_answer or "")
     conflicts = _chapter_conflicts(db, tenant_id, session.subject_id, session.chapter_id)[:4]
     context = {
         "subject": {
@@ -111,12 +120,15 @@ def _llm_follow_up(
             "profile": profile,
         },
         "recent_rounds": [
-            {"question": item.question_text, "answer": item.answer_text} for item in answered[-6:]
+            {"question": item.question_text, "answer": item.answer_text} for item in answered[-12:]
         ],
         "known_memories": [item.claim_text for item in memories],
         "open_conflicts": [item.description for item in conflicts],
         "answered_questions": [item.question_text for item in answered],
         "chapter_assessment": assessment,
+        "revised_answer": focus_answer if revised else None,
+        "conversation_control": planning.control(focus_answer),
+        "asked_intents": [r.question_intent for r in answered[-20:]],
     }
     keywords = "、".join(profile["keywords"])
     excluded = "、".join(profile["excluded_topics"]) or "无"
@@ -129,12 +141,12 @@ def _llm_follow_up(
         "为false说明资料仍不足，应具体解释缺少什么，不能谎称生成成功。"
         "无论用户是否要求重写，只要ready_for_script为false，这就是正常采访而不是错误："
         "先承接用户刚讲的内容，再自然说明还需要哪一点细节才能写成本章剧本，"
-        "并据reason和missing_topics只提出一个具体问题；不要展示错误码、校验或故障措辞。"
+        "据reason和missing_topics自然追问一个细节，不每次解释成稿条件；不要展示错误码。"
         "用户明确不愿继续时尊重其意愿，不强行追问。"
         "有重要缺口时，只问一个本章内最有价值的问题；用户提到越界内容时可以简短承接，"
         "但不得继续展开其他章节。不得臆造事实、重复 answered_questions 中的问题、"
         "暗示所谓正确答案，或施压回答隐私。用户不提供的信息要尊重，不反复追问。"
-        "当本章信息已经齐全、用户希望暂告一段落或没有值得追问的新问题时，"
+        "仅当用户明确希望暂告一段落时，"
         "请根据已讲述的具体内容，简短回应并自然收束，允许用户以后继续补充。"
         "此时 next_question 仍须填写这段给用户的回应，intent 使用 meaning，"
         "不必强行写成问句，不得输出空对象、空字符串、null 或仅一个符号。"
@@ -156,10 +168,14 @@ def _llm_follow_up(
         retry_hint = (
             "\n上次返回未通过格式校验。请重新阅读上下文，严格输出必填的 next_question "
             "和 intent。如果已无信息缺口，请给出非空的自然收束回应，不得返回 {}。"
-            if attempt else ""
+            if attempt
+            else ""
         )
         try:
-            result = client.chat_json(system + retry_hint, json.dumps(context, ensure_ascii=False))
+            result = client.chat_json(
+                system + planning.PLANNER_GUIDANCE + retry_hint,
+                json.dumps(context, ensure_ascii=False),
+            )
         except json.JSONDecodeError:
             continue
         except ApiError:
@@ -171,19 +187,20 @@ def _llm_follow_up(
             ) from exc
         if not isinstance(result, dict):
             continue
-        question = result.get("next_question")
-        intent = result.get("intent")
-        if not isinstance(question, str) or not isinstance(intent, str):
-            continue
-        question = question.strip().strip('"“” ')
-        intent = intent.strip()
-        if (
-            2 <= len(question) <= 240
-            and any(char.isalnum() for char in question)
-            and intent in allowed_intents
-            and question not in context["answered_questions"]
-        ):
-            return {"question": question, "intent": intent}
+        for candidate in planning.candidates(result):
+            question = candidate.get("next_question")
+            intent = candidate.get("intent")
+            if not isinstance(question, str) or not isinstance(intent, str):
+                continue
+            question = question.strip().strip('"“” ')
+            intent = intent.strip()
+            if (
+                2 <= len(question) <= 240
+                and any(char.isalnum() for char in question)
+                and intent in allowed_intents
+                and not planning.repeated(question, context["answered_questions"])
+            ):
+                return {"question": question, "intent": intent}
     raise ApiError(status.HTTP_502_BAD_GATEWAY, ErrorCode.INTERVIEW_LLM_RESPONSE_INVALID)
 
 
@@ -342,6 +359,10 @@ def answer_round(
         if asset is None:
             raise ApiError(status.HTTP_404_NOT_FOUND, ErrorCode.EVIDENCE_ASSET_NOT_FOUND)
     require_memory_input(answer_text)
+    if round_.answer_text:
+        if round_.answer_text == answer_text:
+            return round_
+        raise ApiError(409, ErrorCode.INTERVIEW_TURN_STATE_INVALID)
     round_.answer_text = answer_text
     round_.source_asset_id = source_asset_id
     round_.answered_at = datetime.now(UTC)
@@ -363,6 +384,23 @@ def suggest_next_question(
     assert_no_call(db, tenant_id, session_id)
     session = get_session(db, tenant_id, session_id)
     answered = [item for item in session.rounds if item.answer_text]
+    revised_id = (assessment or {}).get("revised_round_id")
+    revised = next((r for r in answered if str(r.id) == revised_id), None)
+    last_control = (
+        "continue" if revised else planning.control(answered[-1].answer_text if answered else "")
+    )
+    if last_control == "pause":
+        return {
+            "question_text": "好的，我们先聊到这里。您的讲述已保存，之后可以继续补充或选择下一章。",
+            "question_intent": "meaning",
+            "question_source": "user_pause",
+        }
+    if last_control == "skip":
+        return {
+            "question_text": "好的，这件事我们先跳过。您也可以选一张那时的照片，聊聊照片里的场景。",
+            "question_intent": "meaning",
+            "question_source": "user_boundary",
+        }
     if not answered:
         known_memory = db.scalar(
             select(MemoryClaim.id).where(
@@ -413,9 +451,6 @@ def suggest_next_question(
             f"之前有一处时间信息还不太一致：{open_conflict.description}。您愿意再确认一下吗？"
         )
         intent = "conflict_resolution"
-    elif len(answered) >= 6:
-        question = "今天聊到这些很珍贵。最后，您最希望家人从这段经历中记住什么？"
-        intent = "meaning"
     elif not any(char.isdigit() for char in last_answer) and len(answered) >= 2:
         question = "这件事大约发生在哪一年，或者当时您多大？记不清具体年份也没关系。"
         intent = "timeline_anchor"
