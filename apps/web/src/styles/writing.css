@@ -1,0 +1,149 @@
+.writing-create,
+.writing-actions {
+  padding: 24px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: var(--surface, #fff);
+  margin: 24px 0;
+}
+.writing-create {
+  display: flex;
+  align-items: end;
+  gap: 18px;
+  flex-wrap: wrap;
+}
+.writing-create label {
+  display: grid;
+  gap: 8px;
+  flex: 1;
+  min-width: 180px;
+}
+.writing-create select {
+  min-height: 40px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 12px;
+  background: transparent;
+}
+.writing-create > p {
+  width: 100%;
+  margin: 0;
+  color: var(--muted-foreground);
+}
+.writing-shelf {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(245px, 1fr));
+  gap: 24px;
+}
+.writing-cover {
+  display: block;
+  padding: 32px 28px;
+  border: 1px solid #d8cdbb;
+  border-left: 7px solid #876d50;
+  border-radius: 5px 16px 16px 5px;
+  background: #f8f3e9;
+  color: #493d30;
+  text-decoration: none;
+}
+.writing-cover h2 {
+  margin: 24px 0 16px;
+  font-size: 22px;
+}
+.writing-cover span {
+  font-size: 13px;
+}
+.writing-back,
+.writing-export {
+  color: #2563eb;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.writing-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}
+.writing-buttons > span {
+  font-size: 13px;
+  color: var(--muted-foreground);
+}
+.writing-export {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.writing-warning {
+  padding: 14px 24px;
+  margin: 0;
+  background: #fff7e8;
+  color: #855a23;
+  line-height: 1.7;
+}
+.writing-empty {
+  padding: 50px 28px;
+  color: var(--muted-foreground);
+  text-align: center;
+  line-height: 1.8;
+}
+.writing-prose {
+  max-width: 760px;
+  margin: 30px auto;
+  line-height: 2;
+}
+.writing-prose h3 {
+  font-family: "Noto Serif SC", "Songti SC", serif;
+  font-size: 24px;
+  margin-bottom: 28px;
+}
+.writing-prose p {
+  white-space: pre-wrap;
+  text-indent: 2em;
+  margin: 0 0 18px;
+  font-size: 17px;
+  overflow-wrap: anywhere;
+}
+.writing-editor {
+  display: grid;
+  gap: 20px;
+  margin: 24px 0;
+}
+.writing-editor label {
+  display: grid;
+  gap: 8px;
+}
+.writing-editor textarea {
+  width: 100%;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  line-height: 1.9;
+  resize: vertical;
+}
+.writing-history {
+  display: grid;
+  gap: 8px;
+  margin: 16px 0;
+}
+.writing-history button {
+  padding: 8px 12px;
+  text-align: left;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+.writing-history button[aria-pressed="true"] {
+  background: #edf3ff;
+  border-color: #6b93d6;
+}
+@media (max-width: 760px) {
+  .writing-create {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .writing-page .manuscript-header {
+    gap: 16px;
+  }
+  .writing-prose p {
+    font-size: 16px;
+  }
+}

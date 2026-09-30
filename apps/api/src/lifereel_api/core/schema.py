@@ -9,6 +9,7 @@ SERVICE_SCHEMAS = (
     "interview",
     "memory",
     "script",
+    "book",
     "media",
     "billing",
     "tasks",

@@ -6,6 +6,7 @@ ROUTERS = {
     "interview": ("interview.router", "interview.voice_router", "orchestration.router"),
     "memory": ("memory.router",),
     "script": ("script.router",),
+    "book": ("book.router",),
     "media": ("evidence.router", "restoration.router", "production.router", "publication.router"),
     "billing": ("billing.router",),
     "tasks": ("jobs.router",),

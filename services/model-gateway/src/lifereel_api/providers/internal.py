@@ -10,7 +10,8 @@ from lifereel_api.providers import seedream, siliconflow
 from lifereel_api.providers.openai_compatible import OpenAICompatibleClient
 from lifereel_api.providers.rpc import decode_bytes, encode_bytes
 
-CALLERS = {"interview", "worker-interview", "memory", "script", "media", "worker-media"}
+CALLERS = {"interview", "worker-interview", "memory", "script", "media", "worker-media",
+           "book", "worker-book"}
 
 
 class Payload(BaseModel):

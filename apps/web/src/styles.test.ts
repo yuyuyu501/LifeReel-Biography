@@ -28,7 +28,8 @@ describe("stylesheet organization", () => {
       "./styles/components.css",
       "./styles/asset-preview.css",
     ]);
-    expect(modules).toHaveLength(17);
+    expect(modules).toHaveLength(18);
+    expect(modules).toContain("./styles/writing.css");
     expect(modules).toContain("./styles/experience.css");
     expect(new Set(modules).size).toBe(modules.length);
     expect(

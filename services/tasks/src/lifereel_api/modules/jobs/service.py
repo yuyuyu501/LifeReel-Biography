@@ -95,7 +95,9 @@ def retry_job(
     if distributed() and service_name() == "tasks":
         from lifereel_api.architecture.internal import call
 
-        owner = "interview" if job.kind == "interview.turn.process" else "media"
+        owner = {"interview.turn.process": "interview", "book.chapter.generate": "book"}.get(
+            job.kind, "media"
+        )
         call(
             owner,
             "jobs.retry",
@@ -108,6 +110,12 @@ def retry_job(
         )
         db.expire_all()
         return get_job(db, tenant_id, job_id)
+    if job.kind == "book.chapter.generate":
+        from lifereel_api.modules.book.service import retry
+
+        if reference_asset_id or resume_original:
+            raise ApiError(409, ErrorCode.JOB_RETRY_NOT_ALLOWED)
+        return retry(db, job)
     if job.kind == "photo.restoration":
         from lifereel_api.modules.restoration.service import retry
 

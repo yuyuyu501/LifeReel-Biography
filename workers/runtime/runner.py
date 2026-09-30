@@ -16,13 +16,14 @@ from lifereel_api.modules.jobs.dispatch import claim_job
 
 
 def run(role):
-    if role not in {"interview", "media"}:
+    if role not in {"interview", "media", "book"}:
         raise ValueError("INVALID_WORKER_ROLE")
     os.environ["LIFEREEL_SERVICE"] = f"worker-{role}"
     register_models()
     settings = get_settings()
-    lane = "interview" if role == "interview" else "video"
-    count = settings.interview_concurrency if role == "interview" else settings.video_concurrency
+    lane = {"interview": "interview", "media": "video", "book": "book"}[role]
+    count = {"interview": settings.interview_concurrency,
+             "media": settings.video_concurrency, "book": 1}[role]
     stop = Event()
     state = {}
     mutex = Lock()

@@ -4,7 +4,7 @@ from typing import Final, Literal
 
 ServiceName = Literal[
     "edge", "identity", "model_gateway", "interview", "memory", "script",
-    "media", "billing", "notification", "worker", "tasks", "storage",
+    "media", "billing", "notification", "worker", "tasks", "storage", "book",
 ]
 
 SERVICE_CATALOG: Final[dict[ServiceName, dict[str, object]]] = {
@@ -37,6 +37,11 @@ SERVICE_CATALOG: Final[dict[ServiceName, dict[str, object]]] = {
         "description": "Projects, scenes, shots, references and versions",
         "modules": ("script",),
         "runtime": "script",
+    },
+    "book": {
+        "description": "Evidence-based prose books, chapter versions and export",
+        "modules": ("book",),
+        "runtime": "book + worker-book",
     },
     "media": {
         "description": "Evidence, image restoration and video production",

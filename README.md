@@ -73,7 +73,9 @@ docker compose -f compose.production.yaml run --rm --no-deps migrate alembic cur
 
 `migrate` 在服务启动前自动执行迁移与幂等初始化；迁移失败时业务服务不会启动。各服务 `/docs` 仅在内部网络开放。
 
-生产 Compose 包含 Web、Gateway、八个后端服务、两个 Worker、PostgreSQL 和 Redis。Worker 直接执行各自领域任务，不回调旧 API 执行。服务间通过签名 HTTP 与事务 Outbox/Inbox 协作；仍共享一个 PostgreSQL 数据库、ORM 和统一版本的基础运行库。46 张业务表按服务分入八个 Schema，媒体文件本体仍在 OSS；见 [数据库分类说明](docs/database-schemas.md)。生产模式只创建 `.env` 指定的首位管理员。
+生产 Compose 包含 Web、Gateway、九个后端服务、三个 Worker、PostgreSQL 和 Redis。Worker 直接执行各自领域任务，不回调旧 API 执行。服务间通过签名 HTTP 与事务 Outbox/Inbox 协作；仍共享一个 PostgreSQL 数据库、ORM 和统一版本的基础运行库。49 张业务表按服务分入九个 Schema，媒体文件本体仍在 OSS；见 [数据库分类说明](docs/database-schemas.md)。生产模式只创建 `.env` 指定的首位管理员。
+
+Web“写书”入口提供人生书架、按章写作、正文编辑、版本记录与整书 TXT/Markdown 导出。独立 `services/book` 和 `workers/book` 根据更正后的当前记忆生成每章约 1000 字的纪实正文；资料不足时提示补充，不虚构经历凑字数。来源更新后旧稿标记待重写，生成失败保留历史稿件。详见 [写书服务说明](docs/book-writing.md)。
 
 ### 3. 验证
 

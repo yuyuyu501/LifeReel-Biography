@@ -26,6 +26,7 @@ class EventEnvelope(BaseModel):
 def event_type_for_job(kind: str) -> str:
     return {
         "interview.turn.process": "interview.turn.queued",
+        "book.chapter.generate": "book.chapter.queued",
         "production.render": "media.production.queued",
         "production.cleanup": "media.cleanup.queued",
         "evidence.photo_redraw": "media.photo_redraw.queued",

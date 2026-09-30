@@ -52,6 +52,7 @@ packages = ["src/lifereel_api"]
 "../../services/interview/src/lifereel_api/modules/orchestration" = "lifereel_api/modules/orchestration"
 "../../services/memory/src/lifereel_api/modules/memory" = "lifereel_api/modules/memory"
 "../../services/script/src/lifereel_api/modules/script" = "lifereel_api/modules/script"
+"../../services/book/src/lifereel_api/modules/book" = "lifereel_api/modules/book"
 "../../services/media/src/lifereel_api/modules/evidence" = "lifereel_api/modules/evidence"
 "../../services/media/src/lifereel_api/modules/restoration" = "lifereel_api/modules/restoration"
 "../../services/media/src/lifereel_api/modules/production" = "lifereel_api/modules/production"

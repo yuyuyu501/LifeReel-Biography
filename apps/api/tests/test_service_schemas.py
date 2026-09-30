@@ -43,12 +43,16 @@ OWNERS = {
 
 
 def test_all_models_match_frozen_schema_inventory():
-    assert set(SERVICE_SCHEMAS) == set(migration.TABLES_BY_SCHEMA)
-    assert {table.name: table.schema for table in Base.metadata.tables.values()} == OWNERS
+    # 0040 stays frozen; newly owned tables are added by the later book migration.
+    current_owners = {**OWNERS, **dict.fromkeys(
+        ("books", "book_chapters", "book_revisions"), "book"
+    )}
+    assert set(SERVICE_SCHEMAS) == set(migration.TABLES_BY_SCHEMA) | {"book"}
+    assert {table.name: table.schema for table in Base.metadata.tables.values()} == current_owners
     for table in Base.metadata.tables.values():
         for foreign_key in table.foreign_keys:
             assert foreign_key.target_fullname.count(".") == 2
-            assert foreign_key.column.table.schema == OWNERS[foreign_key.column.table.name]
+            assert foreign_key.column.table.schema == current_owners[foreign_key.column.table.name]
     assert SourceAsset.__table__.c.storage_key.type.length == 512
 
 

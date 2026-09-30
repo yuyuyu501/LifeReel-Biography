@@ -1,6 +1,6 @@
 # 单库服务 Schema 与媒体存储
 
-保留现有 lifereel 数据库、用户名、密码、端口和备份流程；业务表按服务分类到八个 Schema。
+保留现有 lifereel 数据库、用户名、密码、端口和备份流程；49 张业务表按服务分类到九个 Schema。
 public 保留 alembic_version 和数据库扩展。Schema 分类本身不构成权限隔离，本轮不增加多套数据库账号。
 
 | Schema | 管理的数据表 |
@@ -9,6 +9,7 @@ public 保留 alembic_version 和数据库扩展。Schema 分类本身不构成�
 | interview | chapters, interview_rounds, interview_sessions, interview_turn_workflows, interview_voice_calls |
 | memory | memory_claims, memory_conflicts, memory_entities, timeline_anchors |
 | script | script_generation_receipts, script_projects, script_scenes, script_shots |
+| book | books, book_chapters, book_revisions |
 | media | chapter_reference_packages, evidence_observations, evidence_uploads, generated_assets, production_runs, publications, restoration_photos, source_assets, transcript_segments, transcript_versions, transcripts |
 | billing | billing_charges, billing_commands, provider_usage, recharge_orders, wallet_ledger, wallets |
 | tasks | job_deliveries, jobs, outbox_events |
@@ -29,3 +30,5 @@ media 表包含素材标识、storage_key、MIME、大小、哈希、来源、�
 迁移前停止所有业务写入并备份整库、环境、旧镜像。先执行新版本迁移，再启动新服务。若回退到 0039 的旧应用，必须先停止新服务，用新迁移工具执行 alembic downgrade 20260929_0039，把表移回 public，核对数据后再启动旧镜像；不能只切换旧镜像。回退使用 DROP SCHEMA RESTRICT，遇到用户新增对象会拒绝，不执行 CASCADE。
 
 SQLite 单元测试通过 schema_translate_map 将命名空间映射到默认库；真实分类、外键与迁移必须由隔离 PostgreSQL 回归覆盖。
+
+0043 新增独立 book Schema 及书籍、章节、历史版本三张表，不改动已有业务表数据。正文是文本，保存在数据库中；本次不向 OSS 写入书稿文件。回退 0043 时若已有书籍数据会拒绝删除，必须保留备份并单独处理，不能直接丢弃用户书稿。

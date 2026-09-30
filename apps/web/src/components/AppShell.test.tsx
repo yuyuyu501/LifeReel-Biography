@@ -25,7 +25,7 @@ test("separates numbered workflow steps from personal information", () => {
     within(workflow)
       .getAllByRole("link")
       .map((link) => link.textContent),
-  ).toEqual(["家人01", "采访02", "剧本03", "影像04"]);
+  ).toEqual(["家人01", "采访02", "剧本03", "写书04", "影像05"]);
   expect(
     within(profile)
       .getAllByRole("link")

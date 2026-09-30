@@ -7,6 +7,7 @@ import { InterviewsPage } from "./pages/InterviewsPage";
 import { MemoriesPage } from "./pages/MemoriesPage";
 import { PeoplePage } from "./pages/PeoplePage";
 import { ScriptBookPage } from "./pages/ScriptBookPage";
+import { BooksPage, BookWritingPage } from "./pages/BooksPage";
 import { ScriptLibraryPage } from "./pages/ScriptLibraryPage";
 import { StudioPage } from "./pages/StudioPage";
 import { WalletPage } from "./pages/WalletPage";
@@ -55,6 +56,8 @@ function ProtectedApp() {
         <Route path="/memories" element={<MemoriesPage />} />
         <Route path="/scripts" element={<ScriptLibraryPage />} />
         <Route path="/scripts/:subjectId" element={<ScriptBookPage />} />
+        <Route path="/books" element={<BooksPage />} />
+        <Route path="/books/:bookId" element={<BookWritingPage />} />
         <Route path="/studio" element={<StudioPage />} />
         <Route path="/photo-restoration" element={<PhotoRestorationPage />} />
         <Route path="/wallet" element={<WalletPage />} />

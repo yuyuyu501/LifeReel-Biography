@@ -19,7 +19,8 @@ from lifereel_api.modules.jobs.events import JobDelivery
 from lifereel_api.modules.jobs.models import Job
 from lifereel_api.modules.production.locking import execution_lock
 
-KINDS = {"interview": "interview.turn.process", "video": "production.render"}
+KINDS = {"interview": "interview.turn.process", "video": "production.render",
+         "book": "book.chapter.generate"}
 ACTIVE = ("queued", "running")
 
 
@@ -44,7 +45,7 @@ Db = Annotated[Session, Depends(get_db)]
 
 
 class ClaimRequest(BaseModel):
-    lane: Literal["interview", "video"]
+    lane: Literal["interview", "video", "book"]
 
 
 class LeaseRequest(BaseModel):
@@ -62,12 +63,13 @@ def claim_job(db: Session, lane: str):
         if lane == "video"
         else [kind]
     )
-    limit = settings.interview_concurrency if lane == "interview" else settings.video_concurrency
+    limit = {"interview": settings.interview_concurrency,
+             "video": settings.video_concurrency, "book": 1}[lane]
     # Serialise only admission to each lane, not its jobs or their AI calls.
     if db.get_bind().dialect.name == "postgresql":
         db.execute(
             text("SELECT pg_advisory_xact_lock(:key)"),
-            {"key": 910001 if lane == "interview" else 910002},
+            {"key": {"interview": 910001, "video": 910002, "book": 910003}[lane]},
         )
     active = db.scalar(
         select(func.count())
@@ -165,7 +167,8 @@ def execute_claim(db: Session, job_id: UUID, token: UUID):
         if job.status not in ACTIVE:
             return {"status": job.status}
         if distributed():
-            expected = "worker-interview" if job.kind == KINDS["interview"] else "worker-media"
+            expected = {KINDS["interview"]: "worker-interview",
+                        KINDS["book"]: "worker-book"}.get(job.kind, "worker-media")
             if service_name() != expected:
                 raise ApiError(403, ErrorCode.AUTH_READ_ONLY)
         try:
@@ -174,7 +177,11 @@ def execute_claim(db: Session, job_id: UUID, token: UUID):
                 (job.tenant_id, "image", str(job.id))
                 if job.kind in {"evidence.photo_redraw", "photo.restoration"} else None
             )
-            if job.kind == KINDS["interview"]:
+            if job.kind == KINDS["book"]:
+                from lifereel_api.modules.book.service import execute as write_chapter
+
+                write_chapter(db, job.tenant_id, job.id)
+            elif job.kind == KINDS["interview"]:
                 interviews.execute_turn(
                     db, job.tenant_id, UUID(job.payload["workflow_id"]), recover_interrupted=True
                 )

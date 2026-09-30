@@ -8,6 +8,8 @@ from lifereel_api.modules.billing import service, tokens, usage
 from lifereel_api.modules.billing.models import BillingCommand, Charge, UsageEvent
 
 BUSINESS = {
+    "book",
+    "worker-book",
     "identity",
     "interview",
     "worker-interview",

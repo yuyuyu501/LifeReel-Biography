@@ -5,7 +5,7 @@ MODULES = (
     "auth.models", "identity.models", "governance.models", "interview.models",
     "billing.models", "evidence.models", "jobs.models", "jobs.events", "memory.models",
     "production.models", "production.reference_models", "publication.models",
-    "restoration.models", "script.models",
+    "restoration.models", "script.models", "book.models",
 )
 
 

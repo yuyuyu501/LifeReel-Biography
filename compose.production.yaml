@@ -175,6 +175,19 @@ services:
       LIFEREEL_SERVICE: script
     mem_limit: 384m
 
+  book:
+    <<: *backend
+    image: lifereel/book:${LIFEREEL_RELEASE:-local}
+    build:
+      context: .
+      dockerfile: services/book/Dockerfile
+      additional_contexts:
+        backend-runtime: service:migrate
+    environment:
+      <<: *backend-env
+      LIFEREEL_SERVICE: book
+    mem_limit: 256m
+
   media:
     <<: *backend
     image: lifereel/media:${LIFEREEL_RELEASE:-local}
@@ -243,6 +256,26 @@ services:
       DB_POOL_SIZE: "4"
       DB_MAX_OVERFLOW: "8"
     mem_limit: 384m
+    stop_grace_period: 90s
+    healthcheck:
+      test: ["CMD", "python", "-c", "import time; from pathlib import Path; assert time.time()-float(Path('/tmp/lifereel-worker-heartbeat').read_text()) < 60"]
+      interval: 15s
+      timeout: 5s
+      start_period: 30s
+      retries: 5
+
+  worker-book:
+    <<: *backend
+    image: lifereel/worker-book:${LIFEREEL_RELEASE:-local}
+    build:
+      context: .
+      dockerfile: workers/book/Dockerfile
+      additional_contexts:
+        backend-runtime: service:migrate
+    environment:
+      <<: *backend-env
+      LIFEREEL_SERVICE: worker-book
+    mem_limit: 256m
     stop_grace_period: 90s
     healthcheck:
       test: ["CMD", "python", "-c", "import time; from pathlib import Path; assert time.time()-float(Path('/tmp/lifereel-worker-heartbeat').read_text()) < 60"]

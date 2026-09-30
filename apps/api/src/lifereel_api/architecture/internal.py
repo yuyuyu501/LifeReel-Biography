@@ -19,6 +19,7 @@ from lifereel_api.core.errors import ApiError, ErrorCode
 HANDLERS = {
     "memory": "lifereel_api.modules.memory.internal",
     "script": "lifereel_api.modules.script.internal",
+    "book": "lifereel_api.modules.book.internal",
     "media": "lifereel_api.modules.evidence.internal",
     "billing": "lifereel_api.modules.billing.internal",
     "model-gateway": "lifereel_api.providers.internal",
@@ -26,7 +27,7 @@ HANDLERS = {
     "interview": "lifereel_api.modules.interview.internal",
     "tasks": "lifereel_api.modules.jobs.internal",
 }
-CALLERS = frozenset(ROUTERS) | {"worker-interview", "worker-media"}
+CALLERS = frozenset(ROUTERS) | {"worker-interview", "worker-media", "worker-book"}
 
 
 class Envelope(BaseModel):

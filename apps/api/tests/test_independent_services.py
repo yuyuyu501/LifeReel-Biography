@@ -44,6 +44,7 @@ def test_owned_routes_and_independent_entrypoints():
         "interview": "/v1/interviews",
         "memory": "/v1/memories",
         "script": "/v1/scripts",
+        "book": "/v1/books",
         "media": "/v1/production/runs",
         "billing": "/v1/wallet",
         "tasks": "/v1/jobs",

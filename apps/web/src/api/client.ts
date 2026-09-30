@@ -66,7 +66,7 @@ export type RestorationHistory = {
 export const API_BASE_URL =
   import.meta.env.VITE_API_BASE_URL ?? "";
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
+export async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const isFormData = init?.body instanceof FormData;
   let response: Response;
   try {
