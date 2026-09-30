@@ -2,6 +2,8 @@
 
 范围：落实 2026-09-29 体验讨论与实施计划。人物一致性按用户澄清，指同一人物跨镜头保持稳定形象。
 
+本报告前半部分保留 09:50 版本的历史验收记录。“修改回答”入口随后已按用户要求移除；当前行为及本轮测试数量以末尾“对话纠错调整”为准。
+
 ## 实现结果
 
 | 反馈 | 本次实现 |
@@ -70,8 +72,14 @@
 
 线上此前出现的整理失败原因为模型返回“195”作为时间线年份，而校验器只接受1800年之后的公历年份；现已改为保留事件并将该时间标为待确认。
 
-本次修复验证：完整 PostgreSQL 回归 732 passed、3 skipped；对话纠错定向回归 16 passed；Web 175 passed；GitHub CI 36663864166 六组全部成功。运行代码提交为 ef5c5d19c08e92ea22618efc7f192de33aabaefb。
+本次修复验证：后端全量收集 751 项，首次执行 730 passed、21 skipped；随后在本机专用 PostgreSQL 容器中补跑缺少数据库配置的 18 项，全部通过。按测试用例去重后的最终结果为 748 passed、3 skipped；三个剩余跳过是 SQLite 下不适用的 PostgreSQL 事务/约束分支，对应 PostgreSQL 分支已通过。对话纠错 16 项包含在上述 748 项中，不重复计数。Web 25 个文件、175 项通过；构建通过，lint 无错误、仅两个既有 Fast Refresh 警告。GitHub CI 36663864166 的 api、web、worker、compose、nginx、services-integration 六组全部成功。运行代码提交为 ef5c5d19c08e92ea22618efc7f192de33aabaefb。
 
-部署迁移为 20260929_0041 → 20260930_0042，8 个业务 Schema、46 张业务表、4,322 条记录核验保留；既有回答修订历史保留，新 fact_overrides 字段默认值正确。14 个容器健康，公网 /ready 返回 200。备份为 /opt/LifeReel-backups/experience-20260930-ef5c5d19c08e-retry2。前两次过窄断言触发自动回滚，第三次调整为保留既有修订历史后成功。
+部署迁移为 20260929_0041 → 20260930_0042，8 个业务 Schema、46 张业务表。迁移快照核验覆盖 4,322 条记录的已比较字段；该快照排除了 answer_version、answer_revisions、source_revision 和新增 fact_overrides，不把它描述为所有历史列的独立逐列哈希核验。迁移仅增加 fact_overrides，既有回答修订记录保留，新字段默认值正确。14 个常驻容器健康，迁移容器退出码为 0，公网 /ready 返回 200。备份为 /opt/LifeReel-backups/experience-20260930-ef5c5d19c08e-retry2，环境文件权限 600，数据库备份哈希复核一致，旧镜像保留。
 
-部署原始证据保存在服务器 /opt/lifereel-experience-release-20260930-ef5c5d19c08e，并下载至本机 tmp/experience-qa/。
+前两次发布验证先后因“所有既有回答版本必须等于 1”和“快照未排除新增列”的错误断言触发自动回滚；原始失败日志保留，未修改用户历史来满足断言。第三次修正验证后成功。原发布机器记录的 previous_commit 沿用了旧值 96eae1f；实际上一运行版本为 8990386，上一 checkout 为 c61dfd8。另存 provenance-correction.json 更正该元数据，保留原件。
+
+独立重新读取本地发布 Web 镜像，9 个文件的聚合指纹为 cda8b828e679f5791fb264ea9a28d73f75d63b63bc7b9900a1d356358559c1eb；与生产容器一致，公网首页及引用的三个 JS/CSS 资源逐一匹配本地镜像哈希。后端 162 个运行源码文件的指纹及实际容器镜像 ID 同时核验。报告更新为纯文档提交，推送后使用校验过的同提交 Git bundle 快进服务器；不为文档变化重启服务，最终 checkout 和实际运行版本分别记录。
+
+本轮新增和最终证据保存于本机 tmp/dialogue-qa/，包含全量及 PostgreSQL 补跑 XML、测试去重统计、独立 Web 指纹、CI、部署、运行及最终 checkout 核验；原始部署包仍在 tmp/experience-qa/。服务器证据目录为 /opt/lifereel-experience-release-20260930-ef5c5d19c08e。
+
+本轮使用隔离数据库和模拟模型验证“后续聊天 → 更正当前事实 → 更新现有剧本”的完整处理链，不宣称真实付费模型输出质量已经端到端验收。未调用付费 AI、短信、支付、视频，也未自动重试用户此前失败的任务；实时语音人工验收仍按约定跳过。
