@@ -10,6 +10,7 @@ from lifereel_api.core.config import get_settings
 from lifereel_api.core.errors import ApiError, ErrorCode
 from lifereel_api.modules.interview.chapter_prompts import get_chapter_prompt_profile
 from lifereel_api.modules.interview.models import Chapter, InterviewRound
+from lifereel_api.modules.memory.facts import fact_evidence, fact_text
 from lifereel_api.modules.memory.models import MemoryClaim
 from lifereel_api.providers.openai_compatible import OpenAICompatibleClient
 
@@ -19,7 +20,7 @@ def _rule_missing_topics(
     rounds: list[InterviewRound],
     chapter: Chapter | None,
 ) -> list[str]:
-    text = "\n".join(claim.claim_text for claim in claims)
+    text = "\n".join(fact_text(claim) for claim in claims)
     intents = {item.question_intent for item in rounds if item.answer_text}
     generic_checks = [
         ("时间", any(char.isdigit() for char in text) or "timeline" in intents),
@@ -93,7 +94,7 @@ def assess_chapter(
     context = {
         "chapter": profile,
         "claims": [
-            {"claim_text": claim.claim_text, "source_quote": claim.source_quote}
+            fact_evidence(claim)
             for claim in claims[-40:]
         ],
         "answered_rounds": [

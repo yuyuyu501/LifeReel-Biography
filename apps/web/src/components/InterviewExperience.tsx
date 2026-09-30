@@ -1,136 +1,28 @@
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation } from "@tanstack/react-query";
 import type {
   Chapter,
   InterviewRound,
   InterviewSession,
   InterviewWorkspace,
 } from "@lifereel/contracts";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../api/client";
 import { errorMessage } from "../api/errors";
 import { Button } from "./ui/button";
-import { Textarea } from "./ui/textarea";
 
-export function AnswerRevision({
-  round,
-  sessionId,
-  disabled,
-  onEditingChange,
-}: {
-  round: InterviewRound;
-  sessionId: string;
-  disabled: boolean;
-  onEditingChange: (editing: boolean) => void;
-}) {
-  const [editing, setEditing] = useState(false);
-  const [text, setText] = useState(round.answer_text ?? "");
-  const request = useRef<{ text: string; key: string } | null>(null);
-  const cache = useQueryClient();
-  const revision = useMutation({
-    mutationFn: () => {
-      if (request.current?.text !== text)
-        request.current = { text, key: crypto.randomUUID() };
-      return api.createInterviewTurn(sessionId, {
-        action: "revise_answer",
-        round_id: round.id,
-        expected_version: round.answer_version ?? 1,
-        answer_text: text,
-        asset_ids: [],
-        idempotency_key: request.current.key,
-      });
-    },
-    onSuccess: async () => {
-      setEditing(false);
-      onEditingChange(false);
-      request.current = null;
-      await cache.invalidateQueries({
-        queryKey: ["interview-workspace", sessionId],
-      });
-      await cache.invalidateQueries({ queryKey: ["interviews"] });
-      await cache.invalidateQueries({ queryKey: ["scripts"] });
-      await Promise.all(
-        [
-          "memories",
-          "memory-overview",
-          "memory-graph",
-          "memory-timeline",
-          "memory-conflicts",
-        ].map((key) => cache.invalidateQueries({ queryKey: [key] })),
-      );
-    },
-  });
+export function AnswerHistory({ round }: { round: InterviewRound }) {
+  if (!round.answer_revisions?.length) return null;
   return (
     <div className="answer-revision">
-      {editing ? (
-        <div className="answer-editor">
-          <label htmlFor={"revision-" + round.id}>修改这条回答</label>
-          <Textarea
-            id={"revision-" + round.id}
-            value={text}
-            onChange={(e) => setText(e.target.value)}
-            disabled={revision.isPending}
-          />
-          <small>
-            请保留这条回答中仍正确的内容。原文会保留，记忆和本章剧本将按修订重新整理；已有视频不会自动重做。
-          </small>
-          <div className="experience-actions">
-            <Button
-              type="button"
-              disabled={
-                disabled ||
-                revision.isPending ||
-                !text.trim() ||
-                text.trim() === round.answer_text
-              }
-              onClick={() => revision.mutate()}
-            >
-              {revision.isPending ? "正在保存修订" : "保存并重新整理"}
-            </Button>
-            <Button
-              type="button"
-              variant="outline"
-              disabled={revision.isPending}
-              onClick={() => {
-                setEditing(false);
-                onEditingChange(false);
-                revision.reset();
-              }}
-            >
-              取消修改
-            </Button>
-          </div>
-          {revision.isError && (
-            <p role="alert">{errorMessage(revision.error)}</p>
-          )}
-        </div>
-      ) : (
-        <Button
-          type="button"
-          variant="link"
-          size="sm"
-          disabled={disabled}
-          aria-label={"修改第" + round.round_index + "条回答"}
-          onClick={() => {
-            setText(round.answer_text ?? "");
-            setEditing(true);
-            onEditingChange(true);
-            revision.reset();
-          }}
-        >
-          修改回答
-        </Button>
-      )}
-      {Boolean(round.answer_revisions?.length) && (
-        <details>
-          <summary>已修订 · 查看原文</summary>
-          {round.answer_revisions?.map((item) => (
-            <p key={item.version}>
-              <small>第 {item.version} 版</small> {item.text}
-            </p>
-          ))}
-        </details>
-      )}
+      <details>
+        <summary>查看历史原文</summary>
+        {round.answer_revisions.map((item) => (
+          <p key={item.version}>
+            <small>第 {item.version} 版</small> {item.text}
+          </p>
+        ))}
+      </details>
     </div>
   );
 }

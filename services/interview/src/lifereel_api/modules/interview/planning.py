@@ -3,6 +3,8 @@
 import re
 from difflib import SequenceMatcher
 
+from lifereel_api.modules.memory.facts import fact_text
+
 
 def control(text):
     value = re.sub(r"[\s，。！？,.!?]", "", text or "")
@@ -40,7 +42,7 @@ def relevant_memories(memories, text, limit=12):
     ranked = sorted(
         enumerate(memories),
         key=lambda pair: (
-            sum(word in pair[1].claim_text for word in tokens),
+            sum(word in fact_text(pair[1]) for word in tokens),
             -pair[0],
         ),
         reverse=True,
@@ -67,7 +69,7 @@ PLANNER_GUIDANCE = (
     "避免反复套用'有什么感受/难忘经历'。不要求最低字数或固定轮数，不每次提为了写剧本。"
     "人名、地名、年份存在歧义时先简短确认，不偷偷纠正、不把推测当事实。"
     "年代、地区背景仅用于设计问题，不能假设用户经历了某事件。"
-    "有revised_answer时以它为准；承接更正后的事实，不沿旧信息继续询问。"
+    "用户通过后续对话明确更正时，以最新明确事实和known_memories为准，不沿旧信息继续询问。有revised_answer时以它为准。不能在script_updated=false时宣称剧本已修改完成。"
     "规划最多三个不同切入点，在同一次返回中逐一判断是否已被回答；只选有新信息价值的。"
     "除next_question和intent外，可以返回candidates数组，每项含next_question、intent、"
     "focus（待补细节）、already_answered（语义上已问过或已有答案则true）。"

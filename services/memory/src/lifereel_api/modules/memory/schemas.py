@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class MemoryCompileRequest(BaseModel):
@@ -20,7 +20,8 @@ class MemoryClaimRead(BaseModel):
     source_round_id: UUID | None
     source_observation_id: UUID | None
     chapter_id: UUID | None
-    claim_text: str
+    claim_text: str = Field(validation_alias="current_text")
+    fact_overrides: list[dict] = Field(default_factory=list)
     source_quote: str
     claim_type: str
     confidence: float

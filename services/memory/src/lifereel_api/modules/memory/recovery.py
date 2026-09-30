@@ -133,12 +133,13 @@ def fingerprint(claims):
     from lifereel_api.core.config import get_settings
 
     settings = get_settings()
-    source = [(str(c.id), c.claim_text, c.source_quote, c.review_status) for c in claims]
+    source = [(str(c.id), c.current_text, c.source_quote, c.review_status,
+               c.fact_overrides) for c in claims]
     return hashlib.sha256(
         json.dumps(
             [
                 VERSION,
-                "event-corrections-v1",
+                "dialogue-fact-corrections-v2",
                 settings.model_for("memory"),
                 settings.openai_compatible_base_url,
                 source,

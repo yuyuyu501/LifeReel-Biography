@@ -18,6 +18,7 @@ from lifereel_api.modules.interview import planning
 from lifereel_api.modules.interview.chapter_prompts import get_chapter_prompt_profile
 from lifereel_api.modules.interview.models import Chapter, InterviewRound, InterviewSession
 from lifereel_api.modules.interview.schemas import InterviewRoundCreate, InterviewStart
+from lifereel_api.modules.memory.facts import fact_text
 from lifereel_api.modules.memory.models import MemoryClaim, MemoryConflict
 from lifereel_api.providers.openai_compatible import OpenAICompatibleClient
 
@@ -122,7 +123,7 @@ def _llm_follow_up(
         "recent_rounds": [
             {"question": item.question_text, "answer": item.answer_text} for item in answered[-12:]
         ],
-        "known_memories": [item.claim_text for item in memories],
+        "known_memories": [fact_text(item) for item in memories],
         "open_conflicts": [item.description for item in conflicts],
         "answered_questions": [item.question_text for item in answered],
         "chapter_assessment": assessment,

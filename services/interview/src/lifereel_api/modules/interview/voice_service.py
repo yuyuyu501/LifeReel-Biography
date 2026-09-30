@@ -143,11 +143,12 @@ def attach(tenant_id: UUID, user_id: UUID | None, call_id: UUID) -> tuple[str, s
         rounds = interviews.get_session(db, tenant_id, session.id).rounds
         memories = list(
             db.scalars(
-                select(MemoryClaim.claim_text)
+                select(MemoryClaim)
                 .where(
                     MemoryClaim.tenant_id == tenant_id,
                     MemoryClaim.subject_id == session.subject_id,
                     MemoryClaim.chapter_id == session.chapter_id,
+                    MemoryClaim.current_source(),
                     MemoryClaim.review_status.in_(("verified", "unreviewed")),
                 )
                 .order_by(MemoryClaim.created_at.desc())
@@ -161,7 +162,7 @@ def attach(tenant_id: UUID, user_id: UUID | None, call_id: UUID) -> tuple[str, s
                     {"question": r.question_text[:240], "answer": (r.answer_text or "")[:600]}
                     for r in rounds[-6:]
             ],
-            "memories": [text[:300] for text in memories],
+            "memories": [claim.current_text[:300] for claim in memories],
         }
         greeting = (
             rounds[-1].question_text

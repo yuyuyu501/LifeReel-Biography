@@ -21,6 +21,7 @@ from lifereel_api.modules.interview.chapter_prompts import (
     get_chapter_prompt_profile,
 )
 from lifereel_api.modules.interview.models import Chapter, InterviewSession, InterviewTurnWorkflow
+from lifereel_api.modules.memory.facts import fact_evidence, fact_text
 from lifereel_api.modules.memory.models import MemoryClaim
 from lifereel_api.modules.production.locking import execution_lock
 from lifereel_api.modules.script.constraints import (
@@ -190,14 +191,14 @@ def _rule_scenes(
     # draft instead of truncating evidence or persisting an unreadable workspace.
     spoken_size = len(introduction) + max(0, len(claims) - 1) * 2
     for claim in claims:
-        spoken_size += len(claim.claim_text.rstrip("。")) + 1
+        spoken_size += len(fact_text(claim).rstrip("。")) + 1
         require_budget(
             spoken_size,
             2000,
             stage="script_mock_output",
             code=ErrorCode.SCRIPT_MOCK_OUTPUT_TOO_LARGE,
         )
-    memories = "\n\n".join(claim.claim_text.rstrip("。") + "。" for claim in claims)
+    memories = "\n\n".join(fact_text(claim).rstrip("。") + "。" for claim in claims)
     constraints = normalize_constraints(visual_constraints)
     visual_prompt = (
         f"围绕“{chapter_title}”的纪实电影画面，符合人物年代与地域；"
@@ -267,8 +268,7 @@ def _llm_scenes(
     evidence_pack = [
         {
             "claim_id": str(claim.id),
-            "claim_text": claim.claim_text,
-            "source_quote": claim.source_quote,
+            **fact_evidence(claim),
             "confidence": claim.confidence,
             "review_status": claim.review_status,
         }
@@ -301,6 +301,10 @@ def _llm_scenes(
             "证据融合为一份完整、连续的当前章节稿件，而不是新增草稿、场景或片段列表。"
             "使用第一人称、自然口语和克制情感；新信息应融入原有叙事并改善连贯性。"
             "update_brief.current_script是当前稿件，可能包含用户手动修改，应保留其表达偏好；"
+            "当前稿件和历史对话也可能含用户本次指出的错误。人物事实以evidence_pack中的"
+            "当前claim_text和correction_evidence为准，不能因保留旧稿而保留已更正的错误。"
+            "后续对话给出正确事实时，须在剧情、每个分镜、所有台词和场景描述中一致修改，"
+            "保留不受影响的内容，不要求用户改写历史回答。输出前检查四部分没有沿用旧值。"
             "update_brief.script_instructions是用户本次重写要求，只用于调整叙事、分镜、台词或场景，"
             "不得当作人物生平事实，不得越过本章主题或证据边界。仍须完整返回四部分。"
             "本章短视频总时长必须在15至30秒之间，根据最终旁白实际字数、自然停顿和"
@@ -785,8 +789,7 @@ def _generate_draft(
                 "claims": [
                     {
                         "claim_id": str(claim.id),
-                        "claim_text": claim.claim_text,
-                        "source_quote": claim.source_quote,
+                        **fact_evidence(claim),
                     }
                     for claim in selected
                 ],

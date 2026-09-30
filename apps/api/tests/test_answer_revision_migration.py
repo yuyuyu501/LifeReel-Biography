@@ -71,6 +71,9 @@ def test_populated_revision_upgrade_defaults_and_rollback(postgres):  # noqa: F8
             {"id": answer},
         ).one()
         assert result == ("1998年入学", 1, [])
+        assert db.scalar(
+            text("SELECT fact_overrides FROM memory.memory_claims WHERE id=:id"), {"id": claim}
+        ) == []
         assert (
             db.scalar(
                 text("SELECT source_revision FROM memory.memory_claims WHERE id=:id"), {"id": claim}

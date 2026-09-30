@@ -1,5 +1,6 @@
 """Bounded, schema-validated memory calls. Never log private model output."""
 
+import copy
 import json
 import logging
 import re
@@ -37,7 +38,7 @@ class Entity(Output):
 
 
 class Anchor(Output):
-    year: int | None = Field(ge=1800, le=2200)
+    year: int | None = Field(ge=1, le=2200)
     time_text: Text
     event_text: Text
     precision: Literal["year", "relative", "approximate"]
@@ -59,11 +60,21 @@ class Correction(Output):
     conflict_keys: list[Text] = Field(default_factory=list)
 
 
+class FactCorrection(Output):
+    target_claim_id: Text
+    correction_claim_id: Text
+    old_text: Text = Field(max_length=240)
+    new_text: Text = Field(max_length=240)
+    evidence_quote: Text
+    conflict_keys: list[Text] = Field(default_factory=list)
+
+
 class Structure(Output):
     entities: list[Entity]
     timeline: list[Anchor]
     conflicts: list[Conflict]
     corrections: list[Correction] = Field(default_factory=list)
+    fact_corrections: list[FactCorrection] = Field(default_factory=list)
 
 
 class Biography(Output):
@@ -74,6 +85,31 @@ SCHEMAS = {"claim": Claim, "graph": Structure, "biography": Biography}
 
 
 def validate(stage, result, user):
+    if stage == "graph" and isinstance(result, dict):
+        result = copy.deepcopy(result)
+        sources = {c["claim_id"]: c for c in json.loads(user)["claims"]}
+        for anchor in result.get("timeline", []):
+            if not isinstance(anchor, dict):
+                continue
+            year = anchor.get("year")
+            source = sources.get(anchor.get("source_claim_id"), {})
+            evidence = source.get("source_quote") or source.get("claim_text", "")
+            # Providers sometimes use 0 for unknown dates or put an age in year.
+            # Preserve the event and its relative time; never invent a calendar year.
+            if type(year) is int and (
+                year == 0 or (
+                    0 < year < 1800
+                    and not re.search(rf"(?<!\d){year}\s*年(?!龄|纪)", evidence)
+                )
+            ):
+                anchor["year"] = None
+                if anchor.get("precision") == "year":
+                    anchor["precision"] = "relative"
+                date_token = rf"(?<!\d){year}年"
+                if re.search(date_token, anchor.get("time_text", "")):
+                    anchor["time_text"] = "时间待确认"
+                if isinstance(anchor.get("event_text"), str):
+                    anchor["event_text"] = re.sub(date_token, "年份待确认", anchor["event_text"])
     parsed = SCHEMAS[stage].model_validate(result).model_dump()
     if stage == "graph":
         sources = json.loads(user)["claims"]
@@ -91,6 +127,35 @@ def validate(stage, result, user):
         removed = set()
         by_id = {item["claim_id"]: item for item in sources}
         order = {item["claim_id"]: i for i, item in enumerate(sources)}
+        projected = {key: item.get("claim_text", "") for key, item in by_id.items()}
+        prior = {item["conflict_key"]: item
+                 for item in json.loads(user).get("previous_conflicts", [])}
+        for i, correction in enumerate(parsed["fact_corrections"]):
+            old_id, new_id = correction["target_claim_id"], correction["correction_claim_id"]
+            if (old_id not in allowed or new_id not in allowed or order[new_id] <= order[old_id]
+                    or by_id[old_id].get("chapter_id") != by_id[new_id].get("chapter_id")):
+                raise ValueError(f"fact_corrections.{i}: invalid_sources")
+            quote, old, new = (correction[k] for k in ("evidence_quote", "old_text", "new_text"))
+            evidence = by_id[new_id].get("source_quote") or by_id[new_id].get("claim_text", "")
+            if (quote not in evidence or new not in quote or old == new
+                    or projected[old_id].count(old) != 1
+                    or not re.search(
+                        r"更正|纠正|修正|说错|记错|写错|不对|有误|错了|正确|才对|应该是|"
+                        r"实际|其实|应为|改为|改成|不是.{0,80}(?:而是|是)", quote,
+                    )
+                    or re.search(r"可能|也许|大概|不确定|记不清|或许|好像", quote)):
+                raise ValueError(f"fact_corrections.{i}: explicit_grounded_correction_required")
+            projected[old_id] = projected[old_id].replace(old, new, 1)
+            for key in correction["conflict_keys"]:
+                conflict = next((c for c in parsed["conflicts"] if c["conflict_key"] == key), None)
+                if conflict is None and key in prior:
+                    conflict = {k: prior[key][k]
+                                for k in ("conflict_key", "description", "claim_ids")}
+                    parsed["conflicts"].append(conflict)
+                if (conflict is None or old_id not in conflict["claim_ids"]
+                        or not set(conflict["claim_ids"]) <= allowed):
+                    raise ValueError(f"fact_corrections.{i}: invalid_conflict_reference")
+                conflict["status"] = "resolved"
         for i, correction in enumerate(parsed["corrections"]):
             old_index, new_index = (correction[k] for k in (
                 "old_timeline_index", "new_timeline_index",

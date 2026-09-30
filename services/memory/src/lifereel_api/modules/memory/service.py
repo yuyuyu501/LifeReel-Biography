@@ -16,6 +16,7 @@ from lifereel_api.modules.evidence.models import EvidenceObservation, SourceAsse
 from lifereel_api.modules.identity.models import Person
 from lifereel_api.modules.interview.models import InterviewRound, InterviewSession
 from lifereel_api.modules.memory import recovery
+from lifereel_api.modules.memory.facts import apply_corrections, fact_evidence, fact_text
 from lifereel_api.modules.memory.models import (
     MemoryClaim,
     MemoryConflict,
@@ -159,7 +160,7 @@ def _extract_claim(
 def _extract_memory_structure(
     claims: list[MemoryClaim],
     previous_conflicts: list[MemoryConflict] | None = None,
-) -> tuple[list[dict], list[dict], list[dict], str]:
+) -> tuple[list[dict], list[dict], list[dict], str, list[dict]]:
     """Ask the memory model for graph entities and timeline anchors.
 
     The mock provider deliberately keeps the deterministic extractor for tests. In a real
@@ -187,8 +188,7 @@ def _extract_memory_structure(
     payload = [
         {
             "claim_id": str(claim.id),
-            "claim_text": claim.claim_text,
-            "source_quote": claim.source_quote,
+            **fact_evidence(claim),
             "chapter_id": str(claim.chapter_id) if claim.chapter_id else None,
         }
         for claim in claims
@@ -224,6 +224,16 @@ def _extract_memory_structure(
             "conflict_keys只列出本次更正解决的具体conflict_key，不能关闭同一来源的其他冲突。"
             "同一冲突沿用previous_conflicts中的conflict_key，保留已解决更正的处理结果。"
             "不能把不同事件或不同章节合并。模糊回忆不能当成更正。其他事件仍须保留。"
+            "对于用户后续对话明确更正的任意事实（人名、地点、职业、关系、年份等），"
+            "使用fact_corrections，不要求用户修改旧回答，也不要求把旧值再说一遍。"
+            "每项包含target_claim_id（较早来源）、correction_claim_id（较晚的用户更正来源）、"
+            "old_text（目标claim_text中唯一出现的最小错误片段）、new_text（更正原文中的准确片段）、"
+            "evidence_quote（包含正确值的用户原句）、conflict_keys（仅本次明确解决的旧冲突）。"
+            "只更换这个错误片段，不能整段覆盖仍正确的其他事实；不确定的新说法不能直接覆盖。"
+            "图谱和timeline应直接使用更正后的事实，不重复输出旧事件。纯措辞修改不属于事实更正。"
+            "若只有旧剧本写错而现有记忆已正确，fact_corrections留空，不虚构待更正来源。"
+            "year必须是原文明示的公历年份；年龄、次数、未知年份必须用null，不用0。"
+            "时间线只记录本人的经历，不将读过的古文的创作年代当成本人的生活年份。"
             "严格输出 JSON："
             '{"entities":[{"name":"...","normalized_name":"...",'
             '"entity_type":"person|place|organization","relationship":"...",'
@@ -302,7 +312,7 @@ def _extract_memory_structure(
         year = item.get("year")
         if source_claim_id not in allowed_claim_ids or not event_text or not time_text:
             raise ApiError(status.HTTP_502_BAD_GATEWAY, ErrorCode.MEMORY_LLM_RESPONSE_INVALID)
-        if year is not None and (not isinstance(year, int) or year < 1800 or year > 2200):
+        if year is not None and (not isinstance(year, int) or year < 1 or year > 2200):
             raise ApiError(status.HTTP_502_BAD_GATEWAY, ErrorCode.MEMORY_LLM_RESPONSE_INVALID)
         if precision not in {"year", "relative", "approximate"}:
             raise ApiError(status.HTTP_502_BAD_GATEWAY, ErrorCode.MEMORY_LLM_RESPONSE_INVALID)
@@ -336,7 +346,7 @@ def _extract_memory_structure(
                 "status": item.get("status", "open"),
             }
         )
-    return entities, timeline, conflicts, model
+    return entities, timeline, conflicts, model, result.get("fact_corrections", [])
 
 
 def _generate_biography(claims: list[MemoryClaim]) -> str:
@@ -364,7 +374,7 @@ def _generate_biography(claims: list[MemoryClaim]) -> str:
             '不得补充事实，不得提及素材、模型、项目或输入格式。只输出 JSON：{"biography":"..."}。',
             json.dumps(
                 [
-                    {"claim_text": claim.claim_text, "source_quote": claim.source_quote}
+                    fact_evidence(claim)
                     for claim in claims[-20:]
                 ],
                 ensure_ascii=False,
@@ -421,7 +431,7 @@ def _compile_entities_and_timeline_rules(
 
     for claim in claims:
         for name, entity_type in ENTITY_WORDS.items():
-            if name not in claim.claim_text:
+            if name not in fact_text(claim):
                 continue
             entity_key = (claim.subject_id, entity_type, name)
             entity = entities_by_key.get(entity_key)
@@ -452,11 +462,11 @@ def _compile_entities_and_timeline_rules(
         )
         if existing_anchor:
             continue
-        year_match = YEAR_PATTERN.search(claim.claim_text)
+        year_match = YEAR_PATTERN.search(fact_text(claim))
         time_words = [
             word
             for word in ("小时候", "后来", "结婚后", "退休后", "现在")
-            if word in claim.claim_text
+            if word in fact_text(claim)
         ]
         if year_match or time_words:
             time_text = year_match.group(0) if year_match else time_words[0]
@@ -467,7 +477,7 @@ def _compile_entities_and_timeline_rules(
                     claim_id=claim.id,
                     year=int(year_match.group(1)) if year_match else None,
                     time_text=time_text,
-                    event_text=claim.claim_text,
+                    event_text=fact_text(claim),
                     precision="year" if year_match else "relative",
                 )
             )
@@ -494,7 +504,10 @@ def _compile_entities_and_timeline_ai(
             )
         )
     )
-    entities, timeline, conflicts, _ = _extract_memory_structure(claims, existing_conflicts)
+    entities, timeline, conflicts, _, corrections = _extract_memory_structure(
+        claims, existing_conflicts
+    )
+    apply_corrections(claims, corrections)
 
     # The model returns a complete snapshot for one person. Replacing the old snapshot
     # also removes stale entities and events when later interview turns correct a memory.
@@ -562,6 +575,8 @@ def _compile_entities_and_timeline_ai(
             )
         )
 
+    resolved_keys = {key for claim in claims for patch in claim.fact_overrides or []
+                     for key in patch.get("conflict_keys", [])}
     for item in conflicts:
         if any(claims_by_id[claim_id].subject_id != subject_id for claim_id in item["claim_ids"]):
             raise ApiError(
@@ -576,7 +591,9 @@ def _compile_entities_and_timeline_ai(
         if matching:
             for conflict in matching:
                 conflict.description = item["description"]
-                conflict.status = item["status"]
+                conflict.status = (
+                    "resolved" if item["conflict_key"] in resolved_keys else item["status"]
+                )
             continue
         db.add(
             MemoryConflict(
@@ -605,7 +622,7 @@ def _detect_year_conflicts(db: Session, tenant_id: UUID, subject_ids: set[UUID])
         )
         years: dict[int, list[MemoryClaim]] = {}
         for claim in birth_claims:
-            for sentence in BIRTH_SENTENCE_SPLIT_PATTERN.split(claim.claim_text):
+            for sentence in BIRTH_SENTENCE_SPLIT_PATTERN.split(fact_text(claim)):
                 if "出生" not in sentence or NON_SUBJECT_BIRTH_PATTERN.search(sentence):
                     continue
                 for value in YEAR_PATTERN.findall(sentence):
@@ -789,7 +806,7 @@ def compile_memories(
             continue
         session = sessions_by_id[round_.session_id]
         claim_text, claim_type, confidence, provider, model = _extract_claim(
-            source_quote, "interview_round"
+            source_quote, "interview_round", question=round_.question_text or ""
         )
         if previous:
             _invalidate_derived_source(db, tenant_id, previous)
@@ -928,6 +945,7 @@ def compile_memories(
             digest = recovery.fingerprint(subject_claims)
             if not recovery.completed(workflow, subject_id, "graph", digest):
                 _compile_entities_and_timeline_ai(db, tenant_id, subject_claims)
+                digest = recovery.fingerprint(subject_claims)
                 recovery.save(db, workflow, subject_id, "graph", digest)
             subject = db.scalar(
                 select(Person).where(
@@ -970,6 +988,15 @@ def review_claim(db: Session, tenant_id: UUID, claim_id: UUID, review_status: st
 
 
 def _invalidate_derived_source(db, tenant_id, claim):
+    claim.fact_overrides = []
+    for target in db.scalars(select(MemoryClaim).where(
+        MemoryClaim.tenant_id == tenant_id, MemoryClaim.subject_id == claim.subject_id,
+    )):
+        patches = target.fact_overrides or []
+        stale = next((i for i, p in enumerate(patches)
+                      if p["correction_claim_id"] == str(claim.id)), None)
+        if stale is not None:
+            target.fact_overrides = patches[:stale]
     db.execute(
         delete(TimelineAnchor).where(
             TimelineAnchor.tenant_id == tenant_id,
@@ -1097,7 +1124,7 @@ def memory_graph(
     subject_node_id = f"subject:{subject.id}"
     subject_name = subject.preferred_name or subject.display_name
     subject_description = subject.biography_note or next(
-        (claim.claim_text[:500] for claim in claims.values()), None
+        (fact_text(claim)[:500] for claim in claims.values()), None
     )
     nodes = [
         MemoryGraphNode(
@@ -1117,7 +1144,7 @@ def memory_graph(
             continue
         node_id = f"entity:{entity.id}"
         entity_node_ids[entity.id] = node_id
-        description = "\n".join(claims[claim_id].claim_text for claim_id in source_ids[:2])
+        description = "\n".join(fact_text(claims[claim_id]) for claim_id in source_ids[:2])
         nodes.append(
             MemoryGraphNode(
                 id=node_id,

@@ -27,6 +27,7 @@ from lifereel_api.modules.interview.models import (
 from lifereel_api.modules.interview.schemas import InterviewRoundCreate, InterviewTurnCreate
 from lifereel_api.modules.jobs import service as job_service
 from lifereel_api.modules.memory import recovery as memory_recovery
+from lifereel_api.modules.memory.facts import fact_evidence, fact_text
 from lifereel_api.modules.memory.models import MemoryClaim
 from lifereel_api.modules.orchestration.progress import (
     pipeline_signature,
@@ -34,7 +35,7 @@ from lifereel_api.modules.orchestration.progress import (
     record_stage,
 )
 from lifereel_api.modules.script import service as script_service
-from lifereel_api.modules.script.models import ScriptProject
+from lifereel_api.modules.script.models import ScriptProject, ScriptScene
 from lifereel_api.modules.script.schemas import (
     ScriptGenerateRequest,
     ScriptProjectRead,
@@ -342,7 +343,7 @@ def _rule_missing_topics(
     rounds: list[InterviewRound],
     chapter: Chapter | None,
 ) -> list[str]:
-    text = "\n".join(claim.claim_text for claim in claims)
+    text = "\n".join(fact_text(claim) for claim in claims)
     intents = {item.question_intent for item in rounds if item.answer_text}
     generic_checks = [
         ("时间", any(char.isdigit() for char in text) or "timeline" in intents),
@@ -416,7 +417,7 @@ def _assess_chapter(
     context = {
         "chapter": profile,
         "claims": [
-            {"claim_text": claim.claim_text, "source_quote": claim.source_quote}
+            fact_evidence(claim)
             for claim in claims[-40:]
         ],
         "answered_rounds": [
@@ -732,6 +733,24 @@ def _execute_turn(
 
         intent = workflow.script_brief.get("turn_intent")
         if intent is None:
+            current_scene = db.scalar(
+                select(ScriptScene).join(ScriptProject).where(
+                    ScriptProject.tenant_id == tenant_id,
+                    ScriptProject.subject_id == session.subject_id,
+                    ScriptProject.status != "superseded",
+                    ScriptScene.chapter_id == session.chapter_id,
+                )
+            )
+            intent_context = {
+                "recent_user_messages": [
+                    r.answer_text[-2000:] for r in session.rounds[-8:]
+                    if r.answer_text and r.id != source_round.id
+                ],
+                "current_script": {
+                    "plot": current_scene.plot, "narration": current_scene.narration,
+                    "dialogues": current_scene.dialogues,
+                } if current_scene else None,
+            }
             intent = (
                 {"action": "interview", "has_new_facts": True, "instructions": ""}
                 if workflow.script_brief.get("requested_action") == "revise_answer"
@@ -741,7 +760,7 @@ def _execute_turn(
                     "instructions": source_round.answer_text or "",
                 }
                 if workflow.script_brief.get("requested_action") == "regenerate_script"
-                else classify_turn(source_round.answer_text or "")
+                else classify_turn(source_round.answer_text or "", context=intent_context)
             )
             workflow.script_brief = {**workflow.script_brief, "turn_intent": intent}
             if not intent["has_new_facts"]:
@@ -798,6 +817,7 @@ def _execute_turn(
         assessment = {
             **assessment,
             "script_action": intent["action"],
+            "is_correction": intent.get("is_correction", False),
             "revised_round_id": str(source_round.id)
             if workflow.script_brief.get("revision_request")
             else None,
@@ -808,7 +828,7 @@ def _execute_turn(
             "chapter_profile": profile,
             "new_facts": [
                 {
-                    "text": claim.claim_text,
+                    "text": fact_text(claim),
                     "source_type": (
                         "interview_round" if claim.source_round_id else "evidence_observation"
                     ),
@@ -836,7 +856,16 @@ def _execute_turn(
                 reply_error = exc
         project = None
         scenes = []
-        if chapter_claims and assessment["ready_for_script"] and dialogue_control == "continue":
+        correcting_existing = intent.get("is_correction") and db.scalar(
+            select(ScriptScene.id).join(ScriptProject).where(
+                ScriptProject.tenant_id == tenant_id,
+                ScriptProject.subject_id == session.subject_id,
+                ScriptProject.status != "superseded",
+                ScriptScene.chapter_id == session.chapter_id,
+            )
+        ) is not None
+        if (chapter_claims and (assessment["ready_for_script"] or correcting_existing)
+                and dialogue_control == "continue"):
             record_stage(db, workflow, "updating_script")
             project, scenes, _ = ScriptSkill.generate(
                 db,

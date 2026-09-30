@@ -9,7 +9,7 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { beforeEach, expect, test, vi } from "vitest";
 import { api } from "../api/client";
-import { AnswerRevision } from "./InterviewExperience";
+import { AnswerHistory } from "./InterviewExperience";
 import { GettingStarted } from "./GettingStarted";
 import { ProductionQuality, ShotPreview } from "./ProductionExperience";
 import {
@@ -74,41 +74,23 @@ test("shot preview uses ordered project shots belonging to the selected scene", 
   expect(shots[1]).toHaveTextContent("织布机细节");
 });
 
-test("answer revision sends the exact source version and keeps its request key on network retry", async () => {
-  const call = vi
-    .spyOn(api, "createInterviewTurn")
-    .mockRejectedValue(new Error("offline"));
-  const round = {
-    id: "r",
-    round_index: 1,
-    answer_text: "1998年入学",
-    answer_version: 2,
-  } as InterviewRound;
+test("history remains readable without an answer-editing action", () => {
   wrap(
-    <AnswerRevision
-      round={round}
-      sessionId="session"
-      disabled={false}
-      onEditingChange={vi.fn()}
+    <AnswerHistory
+      round={
+        {
+          id: "r",
+          answer_text: "当前文本",
+          answer_revisions: [{ version: 1, text: "历史原文" }],
+        } as InterviewRound
+      }
     />,
   );
-  fireEvent.click(screen.getByRole("button", { name: "修改第1条回答" }));
-  fireEvent.change(screen.getByRole("textbox"), {
-    target: { value: "1989年入学" },
-  });
-  fireEvent.click(screen.getByRole("button", { name: "保存并重新整理" }));
-  await screen.findByRole("alert");
-  fireEvent.click(screen.getByRole("button", { name: "保存并重新整理" }));
-  await waitFor(() => expect(call).toHaveBeenCalledTimes(2));
-  expect(call.mock.calls[0][1]).toMatchObject({
-    action: "revise_answer",
-    round_id: "r",
-    expected_version: 2,
-    answer_text: "1989年入学",
-  });
-  expect(call.mock.calls[0][1].idempotency_key).toBe(
-    call.mock.calls[1][1].idempotency_key,
-  );
+  expect(
+    screen.queryByRole("button", { name: /修改/ }),
+  ).not.toBeInTheDocument();
+  expect(screen.getByText("查看历史原文")).toBeInTheDocument();
+  expect(screen.getByText("历史原文")).toBeInTheDocument();
 });
 
 test("drafts remain isolated across chapters and recover when revisiting", () => {

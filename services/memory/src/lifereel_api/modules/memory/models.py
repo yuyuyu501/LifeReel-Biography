@@ -45,11 +45,20 @@ class MemoryClaim(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     claim_text: Mapped[str] = mapped_column(Text)
     source_quote: Mapped[str] = mapped_column(Text)
     source_revision: Mapped[int] = mapped_column(Integer, default=1, server_default="1")
+    fact_overrides: Mapped[list[dict]] = mapped_column(JSON, default=list, server_default="[]")
     claim_type: Mapped[str] = mapped_column(String(48), default="recollection")
     confidence: Mapped[float] = mapped_column(Float, default=1.0)
     review_status: Mapped[str] = mapped_column(String(32), default="unreviewed")
     extraction_provider: Mapped[str] = mapped_column(String(80), default="rule")
     extraction_model: Mapped[str | None] = mapped_column(String(180), nullable=True)
+
+    @property
+    def current_text(self):
+        text = self.claim_text
+        for correction in self.fact_overrides or []:
+            if correction["target_revision"] == self.source_revision:
+                text = text.replace(correction["old_text"], correction["new_text"], 1)
+        return text
 
     @classmethod
     def current_source(cls):
