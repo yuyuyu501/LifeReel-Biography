@@ -40,4 +40,18 @@
 
 ## 发布记录
 
-本文件随实现提交保存本地验收结论。实际部署提交、备份目录、迁移与运行镜像核验由发布脚本写入 deployment-results.json 和 runtime-final.json；只有这些核验成功后才宣布发布完成。
+2026-09-30 09:50（北京时间）正式部署完成。
+
+- 运行代码提交：`8990386896dc5e4386a77c39626e01c43f5b4841`；功能实现为 `9f3fea2af9a063dfe0f89b32d194098e6103eac4`，随后两次提交仅修正 Ruff 模块分类和测试签名密钥的隔离配置。13 个镜像的运行源码与该发布提交一致。
+- [GitHub CI 36656478899](https://github.com/yuyuyu501/LifeReel-Biography/actions/runs/36656478899)：api、web、worker、compose、nginx、services-integration 六组全部成功，包含 Linux 后端回归及 PostgreSQL 升级和模型一致性检查。
+- CI 暴露并修复：worker 的 execution 包缺少 first-party 分类；小程序登录测试依赖开发机私有环境中的签名密钥。测试改用合成密钥，未放宽生产密钥校验。本地另外启动的 Linux 全套复现因文件系统等待缓慢，在 GitHub Linux 全套通过后停止，不计入通过数量。
+- 服务器使用已推送提交的 Git bundle，校验 bundle/镜像归档哈希后，从干净 checkout 快进更新；没有直接修改生产应用源码。
+- 部署前活动任务、实时语音和运行中模型调用均为 0；保留旧版本 `96eae1ff02ec90e423ec96bd86d730735cbaaffd` 的运行镜像，短暂关闭入口后备份、迁移和切换。
+- 备份：`/opt/LifeReel-backups/experience-20260930-8990386896dc`。包含数据库、权限为 600 的环境文件、旧 Compose、回滚镜像清单和迁移前数据哈希；数据库备份已通过 pg_restore 目录校验。
+- 迁移：`20260929_0040 → 20260929_0041`；8 个业务 Schema、46 张业务表，4,293 条原有记录的迁移前后哈希一致；新版本字段默认值正确，alembic check 无模型差异。
+- 运行：14 个常驻容器健康，迁移容器退出码为 0；应用镜像 ID、161 个后端运行文件指纹及 9 个 Web 构建文件指纹与验收产物一致，未发生 OOM 或容器重启。
+- 公网：`https://bianjiaigc.com/ready` 返回 200，8 个服务全部就绪；首页及引用的 JavaScript/CSS 均返回 200。
+
+部署原始证据保存在服务器 `/opt/lifereel-experience-release-20260930-8990386896dc`，并下载至本机 `tmp/experience-qa/`：deployment-results.json、runtime-final.json、deploy.log、public-final.json、ci-final.json。备份及原始证据不提交 Git。
+
+本报告及计划的完成状态在部署核验后单独作纯文档提交，同步至 GitHub 和服务器。该文档提交不改变运行代码，也不触发无意义的服务重启；最终 checkout 一致性与相对运行提交仅含文档的差异清单，另存于 checkout-final.json。
