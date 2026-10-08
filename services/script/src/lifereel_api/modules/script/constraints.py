@@ -58,14 +58,22 @@ def normalize_constraints(
         items = value.get(key)
         if isinstance(items, list):
             cleaned = [str(item).strip() for item in items if str(item).strip()]
-            base[key] = list(dict.fromkeys(cleaned))[:16]
+            base[key] = list(dict.fromkeys([*base.get(key, []), *cleaned]))[:16]
     notes = value.get("notes")
     if isinstance(notes, str) and notes.strip():
-        base["notes"] = notes.strip()[:500]
+        base["notes"] = "；".join(
+            dict.fromkeys(note for note in (base.get("notes"), notes.strip()) if note)
+        )[:500]
     if base.get("face_policy") == NO_IDENTIFIABLE_FACE:
-        base["forbidden_elements"] = list(dict.fromkeys([
-            *base.get("forbidden_elements", []), "可辨识正脸", "可辨识侧脸",
-        ]))[:16]
+        base["forbidden_elements"] = list(
+            dict.fromkeys(
+                [
+                    *base.get("forbidden_elements", []),
+                    "可辨识正脸",
+                    "可辨识侧脸",
+                ]
+            )
+        )[:16]
         if not base.get("notes"):
             base["notes"] = "使用空镜、背影、手部特写或遮挡构图，避免可辨识面部。"
     return base

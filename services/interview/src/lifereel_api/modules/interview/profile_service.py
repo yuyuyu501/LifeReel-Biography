@@ -217,19 +217,21 @@ def evaluate(db, profile):
     scoped_sections = scope.get("sections", []) if isinstance(scope, dict) else []
     relevant_themes = [t for t in themes if not scoped_sections or t["section"] in scoped_sections]
     selected = scoped_sections or [s["key"] for s in SECTIONS if s["key"] not in {"A", "L"}]
+    suppressed_sections = {
+        FIELD_MAP[r.field_key]["section"]
+        for r in rows
+        if r.field_key.endswith(".applicability") and r.state in {"not_applicable", "declined"}
+    }
     applicable = []
     for section_key in selected:
-        section_rows = [r for r in rows if FIELD_MAP[r.field_key]["section"] == section_key]
-        skipped = any(
-            r.field_key.endswith(".applicability") and r.state in {"not_applicable", "declined"}
-            for r in section_rows
-        )
-        if not skipped:
+        if section_key not in suppressed_sections:
             applicable.append(section_key)
     complete = bool(relevant_themes) and set(applicable) <= {t["section"] for t in relevant_themes}
     state = "ready" if complete else "partial_ready" if relevant_themes else "not_ready"
     handled = {r.field_key for r in rows if r.state != "empty"}
-    missing = [f for f in FIELDS if f["key"] not in handled]
+    missing = [
+        f for f in FIELDS if f["key"] not in handled and f["section"] not in suppressed_sections
+    ]
     return {
         "status": state,
         "profile_version": profile.version_number,

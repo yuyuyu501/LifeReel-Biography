@@ -1,7 +1,7 @@
 import json
 
 TEMPLATE_VERSION = "life-profile-2026-10-08-v1"
-RULE_VERSION = "life-readiness-v1"
+RULE_VERSION = "life-readiness-v2"
 SECTIONS = json.loads(r"""[
   {
     "title": "基本信息与讲述范围",

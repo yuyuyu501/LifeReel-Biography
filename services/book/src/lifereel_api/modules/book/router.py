@@ -73,11 +73,14 @@ def export(book_id: UUID, db: Db, tenant: Tenant, format: Literal["txt", "md"] =
     service.require_profile_sources(db, model)
     book = service.read(db, tenant, book_id)
     if model.profile_id:
+        from lifereel_api.modules.book.profile_sources import profile_read
+
+        profile = profile_read(db, tenant, profile_id=model.profile_id)
         for chapter in book.chapters:
-            if chapter.current and service.source(db, model, chapter.chapter_id).get(
-                "restricted_entry_ids"
-            ):
-                raise ApiError(409, ErrorCode.PROFILE_USE_RESTRICTED)
+            if chapter.current:
+                service.require_revision_sources(db, model, chapter.current, profile=profile)
+                if service.source(db, model, chapter.chapter_id).get("restricted_entry_ids"):
+                    raise ApiError(409, ErrorCode.PROFILE_USE_RESTRICTED)
     if not any(ch.current for ch in book.chapters):
         raise ApiError(409, ErrorCode.BOOK_EMPTY)
     lines = [("# " if format == "md" else "") + book.title, "", "目录"]

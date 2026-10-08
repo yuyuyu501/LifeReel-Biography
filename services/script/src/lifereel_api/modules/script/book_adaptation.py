@@ -305,7 +305,7 @@ def generate(db, tenant, payload):
                             duration_seconds=shot.duration_seconds,
                             source_claim_ids=list(map(str, shot.source_revision_ids)),
                             visual_constraints=merge_constraints(
-                                shot.visual_constraints.model_dump(), required
+                                scene_row.visual_constraints, shot.visual_constraints.model_dump()
                             ),
                         )
                     )

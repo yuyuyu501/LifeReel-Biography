@@ -30,22 +30,58 @@ def export_rows(profile, include_private=False, sections=None):
     return rows
 
 
-def markdown(profile, include_private=False, sections=None):
-    rows = export_rows(profile, include_private, sections)
+def overview(profile, include_private=False, sections=None):
+    visible = [
+        anonymized(e) if not include_private else e
+        for e in profile["entries"]
+        if include_private or e["use_scope"] != "internal"
+    ]
     name = next(
         (
-            anonymized(e)["value"]
-            for e in profile["entries"]
-            if e["field_key"] == "identity.preferred_name" and e["use_scope"] != "internal"
+            e["value"]
+            for e in visible
+            if e["field_key"] == "identity.preferred_name" and e["state"] == "filled"
         ),
         "人生资料",
     )
+    scope = next(
+        (
+            value_text(e["value"])
+            for e in visible
+            if e["field_key"] == "scope.coverage" and e["state"] == "filled"
+        ),
+        "未提供可导出的选材范围",
+    )
+    selected = set(sections or [s["key"] for s in profile["sections"]])
+    readiness = profile["readiness"]
+    return [
+        ("人物称呼", str(name)),
+        ("资料版本", str(profile["version_number"])),
+        ("模板版本", profile["template_version"]),
+        ("导出日期", datetime.now(UTC).date().isoformat()),
+        ("选材范围", scope),
+        ("导出类别", "、".join(s["title"] for s in profile["sections"] if s["key"] in selected)),
+        ("范围", "包含内部资料" if include_private else "可用于作品的资料"),
+        (
+            "可写主题",
+            "、".join(t["title"] for t in readiness["themes"] if t["section"] in selected)
+            or "尚无可写主题",
+        ),
+        (
+            "仍缺内容",
+            "、".join(f["label"] for f in readiness["missing_fields"] if f["section"] in selected)
+            or "当前导出类别没有待补充字段；这不代表素材一定足够",
+        ),
+    ]
+
+
+def markdown(profile, include_private=False, sections=None):
+    rows = export_rows(profile, include_private, sections)
+    details = overview(profile, include_private, sections)
     lines = [
-        f"# {name}的人生资料",
+        f"# {details[0][1]}的人生资料",
         "",
-        f"资料版本：{profile['version_number']}",
-        f"模板版本：{profile['template_version']}",
-        f"导出日期：{datetime.now(UTC).date().isoformat()}",
+        *[f"{key}：{value}" for key, value in details],
         "此文件是资料快照，修改后不会自动回写网站。",
         "",
     ]
@@ -69,8 +105,13 @@ def markdown(profile, include_private=False, sections=None):
                 source = entry["source"]
                 lines.extend(
                     [
+                        f"记录 ID：{entry['id']}",
+                        f"条目版本：{entry['version_number']}",
+                        f"确定性：{entry['certainty']}",
                         f"使用范围：{entry['use_scope']}",
                         f"来源：{source.get('type', '')} / {source.get('id', '')}",
+                        f"来源版本：{source.get('version', '')}",
+                        f"来源摘要：{source.get('quote', '')}",
                     ]
                 )
     return "\n".join(lines)
@@ -82,10 +123,8 @@ def xlsx(profile, include_private=False, sections=None):
     info = book.active
     info.title = "说明与概况"
     info.append(["项目", "内容"])
-    info.append(["资料版本", str(profile["version_number"])])
-    info.append(["模板版本", profile["template_version"]])
-    info.append(["导出日期", datetime.now(UTC).date().isoformat()])
-    info.append(["范围", "包含内部资料" if include_private else "可用于作品的资料"])
+    for key, value in overview(profile, include_private, sections):
+        info.append([key, value])
     info.append(["说明", "此文件是导出快照，修改后不会自动回写网站。未知信息不代表没有发生。"])
     sheet = book.create_sheet("资料总表")
     sheet.append(

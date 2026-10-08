@@ -33,6 +33,7 @@ def sources(db, tenant, data):
             raise ApiError(404, ErrorCode.BOOK_CHAPTER_NOT_FOUND)
         revision, chapter, book = found
         service.require_profile_sources(db, book)
+        service.require_revision_sources(db, book, revision)
         snapshot = service.source(db, book, chapter.chapter_id or chapter.id)
         if snapshot.get("restricted_entry_ids"):
             raise ApiError(409, ErrorCode.PROFILE_USE_RESTRICTED)

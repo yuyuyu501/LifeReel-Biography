@@ -496,3 +496,43 @@ def require_profile_sources(db, book):
             )
         ):
             raise ApiError(409, ErrorCode.BOOK_SOURCE_CHANGED)
+
+
+def require_revision_sources(db, book, revision, *, profile=None):
+    """Directory changes cannot remove the permissions on a saved draft's sources."""
+    if not book.profile_id:
+        return
+    from lifereel_api.modules.book.profile_sources import profile_read
+    from lifereel_api.modules.interview.profile_service import anonymized, value_text
+
+    if not isinstance(revision, BookRevision):
+        revision = db.scalar(
+            select(BookRevision).where(
+                BookRevision.id == revision.id,
+                BookRevision.tenant_id == book.tenant_id,
+            )
+        )
+    if revision is None:
+        raise ApiError(404, ErrorCode.BOOK_CHAPTER_NOT_FOUND)
+    if profile is None:
+        profile = profile_read(db, book.tenant_id, profile_id=book.profile_id)
+    entries = {e["id"]: e for e in profile["entries"]}
+    saved = {c["id"]: c for c in revision.source_snapshot.get("claims", [])}
+    for source_id in revision.source_claim_ids:
+        entry = entries.get(source_id)
+        if (
+            entry is None
+            or entry["state"] != "filled"
+            or entry["certainty"] in {"pending", "disputed"}
+            or entry["use_scope"] == "internal"
+        ):
+            raise ApiError(409, ErrorCode.PROFILE_USE_RESTRICTED)
+        if entry["use_scope"] == "pseudonym":
+            public = anonymized(entry)
+            previous = saved.get(source_id, {})
+            if (
+                previous.get("use_scope") != "pseudonym"
+                or previous.get("text") != value_text(public["value"])
+                or previous.get("source_quote", "") != public["source"].get("quote", "")
+            ):
+                raise ApiError(409, ErrorCode.PROFILE_USE_RESTRICTED)
