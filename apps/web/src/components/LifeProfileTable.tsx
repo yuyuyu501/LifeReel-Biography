@@ -4,8 +4,6 @@ import type {
   ProfileField,
   ProfileChange,
   ProfileState,
-  ProfileUse,
-  ProfileCertainty,
   ProfileValue,
 } from "@lifereel/contracts";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -22,16 +20,15 @@ import {
   Heart,
   History,
   House,
-  Info,
   Leaf,
   ListFilter,
-  LockKeyhole,
   MessagesSquare,
   MessageSquare,
   Pencil,
   Plus,
   Signpost,
   Star,
+  Trash2,
   UserRound,
   UsersRound,
   X,
@@ -45,13 +42,11 @@ import { ErrorNotice } from "./QueryState";
 import { Button } from "./ui/button";
 import {
   DropdownMenu,
-  DropdownMenuCheckboxItem,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
-  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "./ui/dropdown-menu";
 import { Textarea } from "./ui/textarea";
@@ -63,13 +58,6 @@ const profileStates: Record<ProfileState, string> = {
   deferred: "暂时跳过",
   declined: "不愿回答",
   not_applicable: "不适用",
-};
-const certaintyNames: Record<ProfileCertainty, string> = {
-  reported: "明确陈述",
-  confirmed: "已确认",
-  uncertain: "记不清",
-  disputed: "待澄清",
-  pending: "待整理",
 };
 const eventFields = [
   ["title", "经历名称"],
@@ -137,11 +125,9 @@ export function LifeProfileTable({
     version: number;
     request: string;
   } | null>(null);
-  const [includePrivate, setIncludePrivate] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
-  const [filter, setFilter] = useState<"all" | "empty" | "pending">("all");
+  const [filter, setFilter] = useState<"all" | "empty">("all");
   const [category, setCategory] = useState("all");
-  const [expandedEntries, setExpandedEntries] = useState<string[]>([]);
   const [expandedValues, setExpandedValues] = useState<string[]>([]);
   const editingField = draft?.field.key;
   const editingEntry = draft?.entry?.id;
@@ -162,12 +148,12 @@ export function LifeProfileTable({
     enabled: showHistory,
   });
   const save = useMutation({
-    mutationFn: () =>
+    mutationFn: (override?: ProfileChange) =>
       profilesApi.patch(
         profile.id,
         draft!.version,
-        [draft!.change],
-        draft!.request,
+        [override || draft!.change],
+        override ? crypto.randomUUID() : draft!.request,
       ),
     onSuccess: async () => {
       setDraft(null);
@@ -192,12 +178,13 @@ export function LifeProfileTable({
         record_key:
           entry?.record_key ||
           (field.key.endsWith("[]") ? crypto.randomUUID() : "single"),
-        value: entry?.value || (field.key.endsWith("[]") ? {} : ""),
-        state: entry?.state || "filled",
-        certainty:
-          entry?.certainty === "pending"
-            ? "reported"
-            : entry?.certainty || "reported",
+        value:
+          entry?.value ??
+          (field.key.endsWith("events[]") || field.key === "materials.assets[]"
+            ? {}
+            : ""),
+        state: "filled",
+        certainty: "reported",
         use_scope: entry?.use_scope || "works",
         pseudonyms: entry?.pseudonyms || {},
       },
@@ -223,23 +210,14 @@ export function LifeProfileTable({
     profile.entries.filter(
       (entry) => entry.field_key === field.key && entry.state !== "empty",
     );
-  const needsConfirmation = (entry: ProfileEntry) =>
-    entry.state === "filled" &&
-    ["uncertain", "disputed", "pending"].includes(entry.certainty);
   const emptyCount = profile.fields.filter(
     (field) => recordsFor(field).length === 0,
   ).length;
-  const pendingCount = profile.fields.filter((field) =>
-    recordsFor(field).some(needsConfirmation),
-  ).length;
   const visibleFields = profile.fields.filter((field) => {
+    if (draft?.field.key === field.key) return true;
     if (category !== "all" && field.section !== category) return false;
     const records = recordsFor(field);
-    return filter === "empty"
-      ? records.length === 0
-      : filter === "pending"
-        ? records.some(needsConfirmation)
-        : true;
+    return filter !== "empty" || records.length === 0;
   });
   const progress = profile.readiness.total_fields
     ? Math.min(
@@ -248,6 +226,214 @@ export function LifeProfileTable({
           100,
       )
     : 0;
+  const inlineEditor = draft && (
+    <form
+      className="profile-editor"
+      ref={editor}
+      aria-label={`编辑${draft.field.label}`}
+      onSubmit={(e) => {
+        e.preventDefault();
+        if (!save.isPending && draft.version === profile.version_number)
+          save.mutate();
+      }}
+    >
+      <fieldset className="profile-editor-content" disabled={save.isPending}>
+        {structuredEvent ? (
+          [
+            ...(draft.field.key.endsWith("events[]") ? eventFields : []),
+            ...Object.keys(draft.change.value as Record<string, unknown>)
+              .filter(
+                (k) =>
+                  !(
+                    draft.field.key.endsWith("events[]") &&
+                    eventFields.some((f) => f[0] === k)
+                  ) &&
+                  !["asset_id", "kind", "event_id", "source_asset_id"].includes(
+                    k,
+                  ),
+              )
+              .map(
+                (k) =>
+                  [
+                    k,
+                    (
+                      {
+                        name: "人物名称",
+                        relationship: "关系",
+                        institution: "学校或机构",
+                        role: "角色",
+                        skill: "技能",
+                        result: "结果",
+                        description: "补充说明",
+                      } as Record<string, string>
+                    )[k] || "补充内容",
+                  ] as const,
+              ),
+          ].map(([key, label]) => (
+            <label key={key}>
+              {label}
+              <Textarea
+                value={String(
+                  (draft.change.value as Record<string, unknown>)[key] || "",
+                )}
+                onChange={(e) =>
+                  change({
+                    value: {
+                      ...(draft.change.value as Record<string, unknown>),
+                      [key]: Array.isArray(
+                        (draft.change.value as Record<string, unknown>)[key],
+                      )
+                        ? e.target.value.split(/[、,，]/).filter(Boolean)
+                        : e.target.value,
+                    },
+                  })
+                }
+              />
+            </label>
+          ))
+        ) : draft.field.key === "materials.assets[]" ? (
+          <fieldset>
+            <legend>关联已上传素材</legend>
+            <select
+              value={String(
+                (draft.change.value as Record<string, unknown>).asset_id || "",
+              )}
+              onChange={(e) => {
+                const asset = assets.data?.find((a) => a.id === e.target.value);
+                if (asset)
+                  change({
+                    value: {
+                      title: asset.original_filename,
+                      asset_id: asset.id,
+                      kind: asset.kind,
+                    },
+                  });
+              }}
+            >
+              <option value="">请选择照片、录音或文档</option>
+              {assets.data?.map((a) => (
+                <option key={a.id} value={a.id}>
+                  {a.original_filename}
+                </option>
+              ))}
+            </select>
+            <label>
+              素材说明
+              <Textarea
+                value={String(
+                  (draft.change.value as Record<string, unknown>).description ||
+                    "",
+                )}
+                onChange={(e) =>
+                  change({
+                    value: {
+                      ...(draft.change.value as Record<string, unknown>),
+                      description: e.target.value,
+                    },
+                  })
+                }
+              />
+            </label>
+          </fieldset>
+        ) : draft.field.key === "scope.coverage" ? (
+          <fieldset className="profile-coverage-options">
+            <legend>想写哪些内容</legend>
+            {profile.sections
+              .filter((s) => !["A", "L"].includes(s.key))
+              .map((s) => {
+                const selected =
+                  typeof draft.change.value === "object" &&
+                  !Array.isArray(draft.change.value)
+                    ? ((draft.change.value.sections || []) as string[])
+                    : [];
+                return (
+                  <label key={s.key}>
+                    <input
+                      type="checkbox"
+                      checked={selected.includes(s.key)}
+                      onChange={(e) =>
+                        change({
+                          value: {
+                            sections: e.target.checked
+                              ? [...selected, s.key]
+                              : selected.filter((k) => k !== s.key),
+                          },
+                        })
+                      }
+                    />
+                    {s.title}
+                  </label>
+                );
+              })}
+          </fieldset>
+        ) : (
+          <label>
+            <span className="sr-only">当前内容</span>
+            <Textarea
+              value={display(draft.change.value)}
+              onChange={(e) => change({ value: e.target.value })}
+            />
+          </label>
+        )}
+      </fieldset>
+      {draft.version !== profile.version_number && (
+        <p role="alert">
+          资料已有新版本。您的草稿保留，请核对最新内容后再保存。
+        </p>
+      )}
+      <ErrorNotice error={save.error} />
+      <div className="profile-editor-buttons">
+        <Button
+          type="submit"
+          size="sm"
+          disabled={save.isPending || draft.version !== profile.version_number}
+        >
+          {save.isPending ? "保存中……" : "保存资料"}
+        </Button>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={() => setDraft(null)}
+          disabled={save.isPending}
+        >
+          取消
+        </Button>
+        {draft.entry && (
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-sm"
+            className="profile-remove-record"
+            title="删除这条资料"
+            aria-label="删除这条资料"
+            disabled={
+              save.isPending || draft.version !== profile.version_number
+            }
+            onClick={() => save.mutate({ ...draft.change, delete: true })}
+          >
+            <Trash2 size={15} />
+          </Button>
+        )}
+        {draft.version !== profile.version_number && (
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() =>
+              setDraft({
+                ...draft,
+                version: profile.version_number,
+                request: crypto.randomUUID(),
+              })
+            }
+          >
+            已核对，按最新版本保存
+          </Button>
+        )}
+      </div>
+    </form>
+  );
   return (
     <div className="life-profile-table">
       <header className="profile-summary">
@@ -310,7 +496,6 @@ export function LifeProfileTable({
             [
               ["all", "全部", profile.fields.length],
               ["empty", "待补充", emptyCount],
-              ["pending", "待确认", pendingCount],
             ] as const
           ).map(([key, label, count]) => (
             <button
@@ -379,31 +564,15 @@ export function LifeProfileTable({
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
               <DropdownMenuItem asChild>
-                <a
-                  href={profilesApi.exportUrl(
-                    profile.id,
-                    "xlsx",
-                    includePrivate,
-                  )}
-                >
+                <a href={profilesApi.exportUrl(profile.id, "xlsx")}>
                   <Download size={15} aria-hidden="true" /> 下载表格
                 </a>
               </DropdownMenuItem>
               <DropdownMenuItem asChild>
-                <a
-                  href={profilesApi.exportUrl(profile.id, "md", includePrivate)}
-                >
+                <a href={profilesApi.exportUrl(profile.id, "md")}>
                   <Download size={15} aria-hidden="true" /> 下载 Markdown
                 </a>
               </DropdownMenuItem>
-              <DropdownMenuSeparator />
-              <DropdownMenuCheckboxItem
-                checked={includePrivate}
-                onCheckedChange={setIncludePrivate}
-                onSelect={(event) => event.preventDefault()}
-              >
-                包含内部资料
-              </DropdownMenuCheckboxItem>
             </DropdownMenuContent>
           </DropdownMenu>
         </div>
@@ -464,272 +633,9 @@ export function LifeProfileTable({
           ))}
         </div>
       )}
-      {draft && (
-        <form
-          className="profile-editor"
-          ref={editor}
-          aria-label={`编辑${draft.field.label}`}
-          onSubmit={(e) => {
-            e.preventDefault();
-            if (!save.isPending) save.mutate();
-          }}
-        >
-          <h3>
-            {draft.entry ? "编辑" : "补充"} · {draft.field.label}
-          </h3>
-          {structuredEvent ? (
-            [
-              ...eventFields,
-              ...Object.keys(draft.change.value as Record<string, unknown>)
-                .filter((k) => !eventFields.some((f) => f[0] === k))
-                .map(
-                  (k) =>
-                    [
-                      k,
-                      (
-                        {
-                          name: "人物名称",
-                          relationship: "关系",
-                          institution: "学校或机构",
-                          role: "角色",
-                          skill: "技能",
-                          result: "结果",
-                          description: "补充说明",
-                        } as Record<string, string>
-                      )[k] || "补充内容",
-                    ] as const,
-                ),
-            ].map(([key, label]) => (
-              <label key={key}>
-                {label}
-                <Textarea
-                  value={String(
-                    (draft.change.value as Record<string, unknown>)[key] || "",
-                  )}
-                  onChange={(e) =>
-                    change({
-                      value: {
-                        ...(draft.change.value as Record<string, unknown>),
-                        [key]: Array.isArray(
-                          (draft.change.value as Record<string, unknown>)[key],
-                        )
-                          ? e.target.value.split(/[、,，]/).filter(Boolean)
-                          : e.target.value,
-                      },
-                    })
-                  }
-                />
-              </label>
-            ))
-          ) : draft.field.key === "materials.assets[]" ? (
-            <fieldset>
-              <legend>关联已上传素材</legend>
-              <select
-                value={String(
-                  (draft.change.value as Record<string, unknown>).asset_id ||
-                    "",
-                )}
-                onChange={(e) => {
-                  const asset = assets.data?.find(
-                    (a) => a.id === e.target.value,
-                  );
-                  if (asset)
-                    change({
-                      value: {
-                        title: asset.original_filename,
-                        asset_id: asset.id,
-                        kind: asset.kind,
-                      },
-                    });
-                }}
-              >
-                <option value="">请选择照片、录音或文档</option>
-                {assets.data?.map((a) => (
-                  <option key={a.id} value={a.id}>
-                    {a.original_filename}
-                  </option>
-                ))}
-              </select>
-              <label>
-                素材说明
-                <Textarea
-                  value={String(
-                    (draft.change.value as Record<string, unknown>)
-                      .description || "",
-                  )}
-                  onChange={(e) =>
-                    change({
-                      value: {
-                        ...(draft.change.value as Record<string, unknown>),
-                        description: e.target.value,
-                      },
-                    })
-                  }
-                />
-              </label>
-            </fieldset>
-          ) : draft.field.key === "scope.coverage" ? (
-            <fieldset>
-              <legend>想写哪些内容</legend>
-              <p>不选择时继续整理整个人生；可以先选一部分写书。</p>
-              {profile.sections
-                .filter((s) => !["A", "L"].includes(s.key))
-                .map((s) => {
-                  const selected =
-                    typeof draft.change.value === "object" &&
-                    !Array.isArray(draft.change.value)
-                      ? ((draft.change.value.sections || []) as string[])
-                      : [];
-                  return (
-                    <label key={s.key}>
-                      <input
-                        type="checkbox"
-                        checked={selected.includes(s.key)}
-                        onChange={(e) =>
-                          change({
-                            value: {
-                              sections: e.target.checked
-                                ? [...selected, s.key]
-                                : selected.filter((k) => k !== s.key),
-                            },
-                          })
-                        }
-                      />
-                      {s.title}
-                    </label>
-                  );
-                })}
-            </fieldset>
-          ) : (
-            <label>
-              当前内容
-              <Textarea
-                value={display(draft.change.value)}
-                onChange={(e) => change({ value: e.target.value })}
-              />
-            </label>
-          )}
-          <div className="profile-editor-options">
-            <label>
-              处理状态
-              <select
-                value={draft.change.state}
-                onChange={(e) =>
-                  change({ state: e.target.value as ProfileState })
-                }
-              >
-                {Object.entries(profileStates).map(([key, name]) => (
-                  <option key={key} value={key}>
-                    {name}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label>
-              确定性
-              <select
-                value={draft.change.certainty}
-                onChange={(e) =>
-                  change({ certainty: e.target.value as ProfileCertainty })
-                }
-              >
-                {Object.entries(certaintyNames).map(([key, name]) => (
-                  <option key={key} value={key}>
-                    {name}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label>
-              使用范围
-              <select
-                value={draft.change.use_scope}
-                onChange={(e) =>
-                  change({ use_scope: e.target.value as ProfileUse })
-                }
-              >
-                <option value="works">可用于书稿和影像</option>
-                <option value="internal">只保留内部资料</option>
-                <option value="pseudonym">使用化名</option>
-              </select>
-            </label>
-          </div>
-          {draft.version !== profile.version_number && (
-            <p role="alert">
-              资料已有新版本。您的草稿保留，请核对最新内容后再保存。
-            </p>
-          )}
-          <ErrorNotice error={save.error} />
-          {draft.change.use_scope === "pseudonym" && (
-            <fieldset>
-              <legend>化名替换</legend>
-              <p>作品和默认导出使用化名，资料表保留原始称呼。</p>
-              <Textarea
-                placeholder="每行一组，例如：真实称呼=书中化名"
-                defaultValue={Object.entries(draft.change.pseudonyms || {})
-                  .map(([a, b]) => `${a}=${b}`)
-                  .join("\n")}
-                onChange={(e) =>
-                  change({
-                    pseudonyms: Object.fromEntries(
-                      e.target.value
-                        .split("\n")
-                        .filter((line) => line.includes("="))
-                        .map((line) => {
-                          const pos = line.indexOf("=");
-                          return [line.slice(0, pos), line.slice(pos + 1)];
-                        }),
-                    ),
-                  })
-                }
-              />
-            </fieldset>
-          )}
-          {draft.entry && (
-            <label className="profile-editor-check">
-              <input
-                type="checkbox"
-                checked={!!draft.change.delete}
-                onChange={(e) => change({ delete: e.target.checked })}
-              />
-              移除此条资料，保留修改历史
-            </label>
-          )}
-          <div className="profile-editor-buttons">
-            <Button type="submit" disabled={save.isPending}>
-              {save.isPending ? "保存中……" : "保存资料"}
-            </Button>
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => setDraft(null)}
-              disabled={save.isPending}
-            >
-              取消
-            </Button>
-            {draft.version !== profile.version_number && (
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() =>
-                  setDraft({
-                    ...draft,
-                    version: profile.version_number,
-                    request: crypto.randomUUID(),
-                  })
-                }
-              >
-                已核对，按最新版本保存
-              </Button>
-            )}
-          </div>
-        </form>
-      )}
       {visibleFields.length === 0 && (
         <p className="profile-filter-empty" role="status">
-          {filter === "pending"
-            ? "此分类没有待确认的资料"
-            : "此分类没有待补充的资料"}
+          此分类没有待补充的资料
         </p>
       )}
       {profile.sections
@@ -771,16 +677,27 @@ export function LifeProfileTable({
               {visibleFields
                 .filter((f) => f.section === section.key)
                 .map((field) => {
-                  const records = recordsFor(field).filter(
-                    (entry) => filter !== "pending" || needsConfirmation(entry),
-                  );
+                  const records = recordsFor(field);
                   return (
                     <div className="profile-field" key={field.key}>
                       <header>
-                        <strong title={field.priority}>{field.label}</strong>
+                        <strong>{field.label}</strong>
                       </header>
                       {(records.length ? records : [undefined]).map(
                         (entry, i) => {
+                          if (
+                            draft?.field.key === field.key &&
+                            draft.entry?.id === entry?.id
+                          ) {
+                            return (
+                              <div
+                                className="profile-record is-editing"
+                                key={entry?.id || i}
+                              >
+                                {inlineEditor}
+                              </div>
+                            );
+                          }
                           const content = entry
                             ? display(entry.value) || profileStates[entry.state]
                             : "待补充";
@@ -823,54 +740,8 @@ export function LifeProfileTable({
                                     <ChevronDown size={12} aria-hidden="true" />
                                   </button>
                                 )}
-                                {entry &&
-                                  (needsConfirmation(entry) ||
-                                    entry.use_scope !== "works") && (
-                                    <div className="profile-record-flags">
-                                      {needsConfirmation(entry) && (
-                                        <span className="profile-pending-flag">
-                                          {certaintyNames[entry.certainty]}
-                                        </span>
-                                      )}
-                                      {entry.use_scope !== "works" && (
-                                        <span>
-                                          <LockKeyhole
-                                            size={12}
-                                            aria-hidden="true"
-                                          />
-                                          {entry.use_scope === "internal"
-                                            ? "内部资料"
-                                            : "使用化名"}
-                                        </span>
-                                      )}
-                                    </div>
-                                  )}
                               </div>
                               <div className="profile-field-actions">
-                                {entry && (
-                                  <Button
-                                    variant="ghost"
-                                    size="icon-sm"
-                                    title="来源与权限"
-                                    className="size-7"
-                                    aria-label={`查看${field.label}的来源与权限`}
-                                    aria-expanded={expandedEntries.includes(
-                                      entry.id,
-                                    )}
-                                    aria-controls={`profile-entry-${entry.id}`}
-                                    onClick={() =>
-                                      setExpandedEntries((current) =>
-                                        current.includes(entry.id)
-                                          ? current.filter(
-                                              (id) => id !== entry.id,
-                                            )
-                                          : [...current, entry.id],
-                                      )
-                                    }
-                                  >
-                                    <Info size={15} />
-                                  </Button>
-                                )}
                                 <Button
                                   variant="ghost"
                                   size="icon-sm"
@@ -900,52 +771,17 @@ export function LifeProfileTable({
                                   </Button>
                                 )}
                               </div>
-                              {entry && expandedEntries.includes(entry.id) && (
-                                <dl
-                                  className="profile-record-metadata"
-                                  id={`profile-entry-${entry.id}`}
-                                >
-                                  <div>
-                                    <dt>状态</dt>
-                                    <dd>
-                                      {profileStates[entry.state]} ·{" "}
-                                      {certaintyNames[entry.certainty]}
-                                    </dd>
-                                  </div>
-                                  <div>
-                                    <dt>使用范围</dt>
-                                    <dd>
-                                      {entry.use_scope === "internal"
-                                        ? "只用于内部资料"
-                                        : entry.use_scope === "pseudonym"
-                                          ? "使用化名"
-                                          : "可用于书稿和影像"}
-                                    </dd>
-                                  </div>
-                                  <div>
-                                    <dt>来源</dt>
-                                    <dd>
-                                      {entry.source.type === "manual"
-                                        ? "手动填写"
-                                        : entry.source.type === "person"
-                                          ? "人物档案"
-                                          : entry.source.type === "legacy_claim"
-                                            ? "历史采访"
-                                            : "采访证据"}
-                                    </dd>
-                                  </div>
-                                  {entry.source.quote && (
-                                    <div>
-                                      <dt>原文</dt>
-                                      <dd>{entry.source.quote}</dd>
-                                    </div>
-                                  )}
-                                </dl>
-                              )}
                             </div>
                           );
                         },
                       )}
+                      {draft?.field.key === field.key &&
+                        !draft.entry &&
+                        records.length > 0 && (
+                          <div className="profile-record is-editing">
+                            {inlineEditor}
+                          </div>
+                        )}
                       {field.key.endsWith("[]") && records.length > 0 && (
                         <Button
                           variant="outline"

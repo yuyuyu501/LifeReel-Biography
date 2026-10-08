@@ -294,56 +294,15 @@
 .profile-value-toggle[aria-expanded="true"] svg {
   transform: rotate(180deg);
 }
-.profile-record-flags {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 6px 12px;
-  margin: 5px 0;
-  font-size: 11px;
-}
-.profile-record-flags > span {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  color: #797d85;
-}
-.profile-record-flags > .profile-pending-flag {
-  color: #a26924;
-}
 .profile-field-actions {
   display: flex;
   align-items: center;
   gap: 0;
   color: #8293a5;
 }
-.profile-field-actions button:hover,
-.profile-field-actions button[aria-expanded="true"] {
+.profile-field-actions button:hover {
   color: #28292d;
   background: #f2f3f5;
-}
-.profile-record-metadata {
-  grid-column: 1 / -1;
-  padding: 10px 0 0;
-  margin: 8px 0 2px;
-  border-top: 1px dashed #e4e5e7;
-  font-size: 11px;
-  line-height: 1.7;
-}
-.profile-record-metadata > div {
-  display: grid;
-  grid-template-columns: 56px minmax(0, 1fr);
-  gap: 8px;
-  padding: 3px 0;
-}
-.profile-record-metadata dt {
-  color: #92969d;
-}
-.profile-record-metadata dd {
-  margin: 0;
-  color: #62666d;
-  overflow-wrap: anywhere;
-  white-space: pre-wrap;
 }
 .profile-add-record {
   grid-column: 2;
@@ -358,35 +317,35 @@
   text-align: center;
 }
 .profile-editor {
-  padding: 1rem;
-  border: 1px solid #dedee2;
-  border-radius: 6px;
-  background: #fafafa;
-  margin: 1rem 0;
+  grid-column: 1 / -1;
+  min-width: 0;
+  padding: 2px 0 7px;
+  margin: 0;
 }
 .profile-editor label {
   display: grid;
-  gap: 0.35rem;
-  margin: 0.6rem 0;
-  font-size: 0.85rem;
+  gap: 5px;
+  margin: 0 0 10px;
+  color: #657688;
+  font-size: 12px;
 }
 .profile-editor textarea {
-  min-height: 4rem;
+  min-height: 72px;
+  color: #263849;
+  background: #fff;
+  font-size: 13px;
+  line-height: 1.75;
+  resize: vertical;
 }
-.profile-editor .profile-editor-check {
-  display: flex;
-  align-items: center;
-  gap: 7px;
+.profile-editor-content {
+  padding: 0;
+  margin: 0;
+  border: 0;
 }
-.profile-editor-options {
-  display: flex;
-  gap: 0.7rem;
-  flex-wrap: wrap;
+.profile-editor input[type="checkbox"] {
+  flex: 0 0 auto;
 }
-.profile-editor-options label {
-  flex: 1 1 8rem;
-}
-.profile-editor fieldset label {
+.profile-editor .profile-coverage-options label {
   display: flex;
   align-items: center;
   gap: 0.5rem;
@@ -395,7 +354,15 @@
   display: flex;
   flex-wrap: wrap;
   gap: 0.5rem;
-  margin-top: 0.8rem;
+  align-items: center;
+  margin-top: 4px;
+}
+.profile-editor-buttons .profile-remove-record {
+  margin-left: auto;
+  color: #8995a1;
+}
+.profile-remove-record:hover {
+  color: #ba4242;
 }
 .profile-editor select {
   min-width: 0;
