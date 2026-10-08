@@ -302,20 +302,18 @@ export function InterviewWorkspace({
     : scriptSynchronized
       ? "已同步"
       : "最新内容尚未同步";
-  const profileSaved =
-    Boolean(workspace.data.profile) &&
-    !workflowError &&
-    (workflow?.status === "completed" ||
-      voice.updateStatus === "人生资料已更新");
+  const profileSaved = Boolean(workspace.data.profile) && !workflowError;
   const syncStatus = workflowRunning
     ? "正在整理"
-    : profileSaved
-      ? "资料已保存"
-      : scriptSynchronized
-        ? "已经同步"
-        : workflowError
-          ? "尚未同步"
-          : "等待内容";
+    : workspace.data.profile && workflow?.status === "failed"
+      ? "整理失败，已有资料已保存"
+      : profileSaved
+        ? "资料已保存"
+        : scriptSynchronized
+          ? "已经同步"
+          : workflowError
+            ? "尚未同步"
+            : "等待内容";
 
   return (
     <div className="page interview-room interview-workspace-page">
@@ -680,7 +678,11 @@ export function InterviewWorkspace({
           >
             <div className="pane-heading profile-pane-heading">
               <h2>人生资料表</h2>
-              <small>{syncStatus}</small>
+              <small
+                className={`profile-save-status${workflowRunning ? " is-running" : workflow?.status === "failed" ? " is-error" : ""}`}
+              >
+                {syncStatus}
+              </small>
             </div>
             <div className="live-script-scroll">
               <LifeProfileTable

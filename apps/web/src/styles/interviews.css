@@ -287,6 +287,9 @@
   padding: 0 26px 28px;
   scrollbar-gutter: stable;
 }
+.live-script-pane:has(.profile-pane-heading) > .live-script-scroll {
+  padding: 0;
+}
 .script-pane-actions {
   display: flex;
   align-items: center;
@@ -329,6 +332,7 @@
   min-width: 0;
   max-width: 55%;
   height: 32px;
+  min-height: 32px;
   padding: 0 24px 0 8px;
   border: 1px solid #e4e4e8;
   border-radius: 5px;
@@ -344,6 +348,26 @@
   color: var(--muted-foreground);
   font-size: 10px;
   white-space: nowrap;
+}
+.pane-heading > .profile-save-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: #6c7077;
+  font-size: 11px;
+}
+.profile-save-status::before {
+  content: "";
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: #388575;
+}
+.profile-save-status.is-running::before {
+  background: #b38239;
+}
+.profile-save-status.is-error::before {
+  background: #b83e36;
 }
 .conversation-pane .conversation {
   min-height: 0;

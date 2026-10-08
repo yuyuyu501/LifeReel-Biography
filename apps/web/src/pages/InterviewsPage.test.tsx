@@ -59,6 +59,7 @@ const history = {
   chapter_id: "chapter-1",
   started_at: "2026-09-07T00:00:00Z",
 };
+let workflow: { status: string; error_code?: string } | null = null;
 function response(payload: unknown) {
   return { ok: true, status: 200, json: async () => payload } as Response;
 }
@@ -81,6 +82,7 @@ function page() {
   );
 }
 beforeEach(() => {
+  workflow = null;
   localStorage.clear();
   sessionStorage.clear();
   vi.stubGlobal(
@@ -116,7 +118,7 @@ beforeEach(() => {
             : profile,
           assets: [],
           script: null,
-          latest_workflow: null,
+          latest_workflow: workflow,
         });
       }
       if (path.endsWith("/v1/interviews")) return response([history]);
@@ -139,11 +141,28 @@ test("opens the AI conversation and editable profile together without a chapter"
     screen.getByRole("textbox", { name: "说说这段往事" }),
   ).toBeInTheDocument();
   expect(screen.getByText("林奶奶，您想从哪段经历说起？")).toBeInTheDocument();
+  expect(screen.getByText("资料已保存")).toBeInTheDocument();
+  expect(screen.queryByText("等待内容")).not.toBeInTheDocument();
   const sent = vi
     .mocked(fetch)
     .mock.calls.find(([, init]) => init?.method === "POST")!;
   expect(JSON.parse(String(sent[1]?.body))).toEqual({ subject_id: person.id });
 });
+
+test.each(["queued", "running", "failed"])(
+  "keeps %s profile workflows visible even with existing saved data",
+  async (status) => {
+    workflow = { status };
+    page();
+    await screen.findByRole("heading", { name: "人生资料表" });
+    expect(
+      screen.getByText(
+        status === "failed" ? "整理失败，已有资料已保存" : "正在整理",
+        { selector: "small.profile-save-status" },
+      ),
+    ).toBeInTheDocument();
+  },
+);
 test("switching people loads their own life profile", async () => {
   page();
   await screen.findByText("人生资料表");

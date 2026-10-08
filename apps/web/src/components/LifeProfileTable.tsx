@@ -11,8 +11,12 @@ import type {
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ArrowRight,
+  BookOpen,
+  ChevronDown,
   Download,
   History,
+  Info,
+  LockKeyhole,
   MessageSquare,
   Pencil,
   Plus,
@@ -23,6 +27,14 @@ import { api } from "../api/client";
 import { profilesApi } from "../api/profiles";
 import { ErrorNotice } from "./QueryState";
 import { Button } from "./ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuCheckboxItem,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "./ui/dropdown-menu";
 import { Textarea } from "./ui/textarea";
 
 const profileStates: Record<ProfileState, string> = {
@@ -94,6 +106,10 @@ export function LifeProfileTable({
   } | null>(null);
   const [includePrivate, setIncludePrivate] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
+  const [filter, setFilter] = useState<"all" | "empty" | "pending">("all");
+  const [category, setCategory] = useState("all");
+  const [expandedEntries, setExpandedEntries] = useState<string[]>([]);
+  const [expandedValues, setExpandedValues] = useState<string[]>([]);
   const editingField = draft?.field.key;
   const editingEntry = draft?.entry?.id;
   const editing = Boolean(draft);
@@ -170,60 +186,175 @@ export function LifeProfileTable({
     !["scope.coverage", "materials.assets[]"].includes(draft.field.key) &&
     !Array.isArray(draft.change.value) &&
     typeof draft.change.value === "object";
+  const recordsFor = (field: ProfileField) =>
+    profile.entries.filter(
+      (entry) => entry.field_key === field.key && entry.state !== "empty",
+    );
+  const needsConfirmation = (entry: ProfileEntry) =>
+    entry.state === "filled" &&
+    ["uncertain", "disputed", "pending"].includes(entry.certainty);
+  const emptyCount = profile.fields.filter(
+    (field) => recordsFor(field).length === 0,
+  ).length;
+  const pendingCount = profile.fields.filter((field) =>
+    recordsFor(field).some(needsConfirmation),
+  ).length;
+  const visibleFields = profile.fields.filter((field) => {
+    if (category !== "all" && field.section !== category) return false;
+    const records = recordsFor(field);
+    return filter === "empty"
+      ? records.length === 0
+      : filter === "pending"
+        ? records.some(needsConfirmation)
+        : true;
+  });
+  const progress = profile.readiness.total_fields
+    ? Math.min(
+        100,
+        (profile.readiness.processed_fields / profile.readiness.total_fields) *
+          100,
+      )
+    : 0;
   return (
     <div className="life-profile-table">
       <header className="profile-summary">
-        <span className="eyebrow">
-          人生资料 · 第 {profile.version_number} 版
-        </span>
         {heading && <h2>人生资料表</h2>}
-        <p>
-          {profile.readiness.processed_fields} /{" "}
-          {profile.readiness.total_fields} 项已处理
+        <div className="profile-summary-topline">
+          <div>
+            <span className="profile-version">
+              第 {profile.version_number} 版
+            </span>
+            <p className="profile-completion">
+              <strong>{profile.readiness.processed_fields}</strong>
+              <span>/ {profile.readiness.total_fields} 项已处理</span>
+            </p>
+          </div>
+          <Link
+            to={`/books?subject=${profile.subject_id}`}
+            className="profile-book-link"
+          >
+            <BookOpen size={15} aria-hidden="true" />
+            前往写书 <ArrowRight size={14} aria-hidden="true" />
+          </Link>
+        </div>
+        <div
+          className="profile-completion-track"
+          role="progressbar"
+          aria-label="人生资料完成度"
+          aria-valuemin={0}
+          aria-valuemax={profile.readiness.total_fields || 1}
+          aria-valuenow={profile.readiness.processed_fields}
+        >
+          <span style={{ width: `${progress}%` }} />
+        </div>
+        <p className="profile-readiness" role="status">
+          {profile.readiness.message}
         </p>
-        <p role="status">{profile.readiness.message}</p>
         {profile.readiness.themes.length > 0 && (
-          <ul>
-            {profile.readiness.themes.map((theme) => (
-              <li key={theme.section}>
-                {theme.title}：{theme.reason}
-              </li>
-            ))}
-          </ul>
+          <details className="profile-themes">
+            <summary>
+              <ChevronDown size={14} aria-hidden="true" />
+              {profile.readiness.themes.length} 个可写主题
+            </summary>
+            <ul>
+              {profile.readiness.themes.map((theme) => (
+                <li key={theme.section}>
+                  {theme.title}：{theme.reason}
+                </li>
+              ))}
+            </ul>
+          </details>
         )}
-        <Link
-          to={`/books?subject=${profile.subject_id}`}
-          className="profile-next"
-        >
-          前往写书 <ArrowRight size={14} aria-hidden="true" />
-        </Link>
       </header>
-      <div className="profile-export">
-        <a href={profilesApi.exportUrl(profile.id, "xlsx", includePrivate)}>
-          <Download size={15} aria-hidden="true" /> 下载表格
-        </a>
-        <a href={profilesApi.exportUrl(profile.id, "md", includePrivate)}>
-          <Download size={15} aria-hidden="true" /> 下载 Markdown
-        </a>
-        <label>
-          <input
-            type="checkbox"
-            checked={includePrivate}
-            onChange={(e) => setIncludePrivate(e.target.checked)}
-          />
-          包含内部资料
-        </label>
-        <Button
-          variant="ghost"
-          size="sm"
-          title="修改历史"
-          aria-label="修改历史"
-          aria-pressed={showHistory}
-          onClick={() => setShowHistory(!showHistory)}
+      <div className="profile-toolbar">
+        <div className="profile-filters" role="group" aria-label="资料筛选">
+          {(
+            [
+              ["all", "全部", profile.fields.length],
+              ["empty", "待补充", emptyCount],
+              ["pending", "待确认", pendingCount],
+            ] as const
+          ).map(([key, label, count]) => (
+            <button
+              type="button"
+              key={key}
+              aria-pressed={filter === key}
+              disabled={!!draft}
+              onClick={() => setFilter(key)}
+            >
+              {label}
+              <span>{count}</span>
+            </button>
+          ))}
+        </div>
+        <div className="profile-tools">
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            title="修改历史"
+            aria-label="修改历史"
+            aria-pressed={showHistory}
+            onClick={() => setShowHistory(!showHistory)}
+          >
+            <History size={16} />
+          </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                title="导出资料"
+                aria-label="导出资料"
+              >
+                <Download size={16} />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem asChild>
+                <a
+                  href={profilesApi.exportUrl(
+                    profile.id,
+                    "xlsx",
+                    includePrivate,
+                  )}
+                >
+                  <Download size={15} aria-hidden="true" /> 下载表格
+                </a>
+              </DropdownMenuItem>
+              <DropdownMenuItem asChild>
+                <a
+                  href={profilesApi.exportUrl(profile.id, "md", includePrivate)}
+                >
+                  <Download size={15} aria-hidden="true" /> 下载 Markdown
+                </a>
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuCheckboxItem
+                checked={includePrivate}
+                onCheckedChange={setIncludePrivate}
+                onSelect={(event) => event.preventDefault()}
+              >
+                包含内部资料
+              </DropdownMenuCheckboxItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
+      </div>
+      <div className="profile-category-row">
+        <select
+          aria-label="资料分类"
+          value={category}
+          disabled={!!draft}
+          onChange={(event) => setCategory(event.target.value)}
         >
-          <History size={16} />
-          <span className="sr-only">修改历史</span>
-        </Button>
+          <option value="all">全部分类</option>
+          {profile.sections.map((section) => (
+            <option key={section.key} value={section.key}>
+              {section.title}
+            </option>
+          ))}
+        </select>
+        <span>{visibleFields.length} 项资料</span>
       </div>
       {showHistory && (
         <div className="profile-history">
@@ -482,7 +613,7 @@ export function LifeProfileTable({
             </fieldset>
           )}
           {draft.entry && (
-            <label>
+            <label className="profile-editor-check">
               <input
                 type="checkbox"
                 checked={!!draft.change.delete}
@@ -521,99 +652,234 @@ export function LifeProfileTable({
           </div>
         </form>
       )}
-      {profile.sections.map((section) => (
-        <details
-          key={section.key}
-          className="profile-section"
-          open={section.key === "A"}
-        >
-          <summary>
-            {section.title}
-            <span>
-              {
-                profile.entries.filter(
-                  (e) =>
-                    e.state !== "empty" &&
-                    profile.fields.find((f) => f.key === e.field_key)
-                      ?.section === section.key,
-                ).length
-              }{" "}
-              条资料
-            </span>
-          </summary>
-          {profile.fields
-            .filter((f) => f.section === section.key)
-            .map((field) => {
-              const records = profile.entries.filter(
-                (e) => e.field_key === field.key && e.state !== "empty",
-              );
-              return (
-                <div className="profile-field" key={field.key}>
-                  <header>
-                    <strong>{field.label}</strong>
-                    <small>{field.priority}</small>
-                  </header>
-                  {(records.length ? records : [undefined]).map((entry, i) => (
-                    <div key={entry?.id || i} className="profile-record">
-                      <p>
-                        {entry
+      {visibleFields.length === 0 && (
+        <p className="profile-filter-empty" role="status">
+          {filter === "pending"
+            ? "此分类没有待确认的资料"
+            : "此分类没有待补充的资料"}
+        </p>
+      )}
+      {profile.sections
+        .filter((section) =>
+          visibleFields.some((field) => field.section === section.key),
+        )
+        .map((section) => (
+          <details
+            key={`${section.key}-${filter}-${category}`}
+            className="profile-section"
+            open={section.key === "A" || filter !== "all" || category !== "all"}
+          >
+            <summary>
+              <ChevronDown size={15} aria-hidden="true" />
+              <strong>{section.title}</strong>
+              <span>
+                {
+                  profile.fields.filter(
+                    (field) =>
+                      field.section === section.key &&
+                      recordsFor(field).length > 0,
+                  ).length
+                }
+                /
+                {
+                  profile.fields.filter(
+                    (field) => field.section === section.key,
+                  ).length
+                }
+              </span>
+            </summary>
+            {visibleFields
+              .filter((f) => f.section === section.key)
+              .map((field) => {
+                const records = recordsFor(field).filter(
+                  (entry) => filter !== "pending" || needsConfirmation(entry),
+                );
+                return (
+                  <div className="profile-field" key={field.key}>
+                    <header>
+                      <strong title={field.priority}>{field.label}</strong>
+                    </header>
+                    {(records.length ? records : [undefined]).map(
+                      (entry, i) => {
+                        const content = entry
                           ? display(entry.value) || profileStates[entry.state]
-                          : "待补充"}
-                      </p>
-                      {entry && (
-                        <small>
-                          {profileStates[entry.state]} ·{" "}
-                          {certaintyNames[entry.certainty]} ·{" "}
-                          {entry.use_scope === "internal"
-                            ? "只用于内部资料"
-                            : entry.use_scope === "pseudonym"
-                              ? "使用化名"
-                              : "可用于作品"}
-                          {entry.source.type &&
-                            ` · 来源：${entry.source.type === "manual" ? "手动填写" : entry.source.type === "person" ? "人物档案" : entry.source.type === "legacy_claim" ? "历史采访" : "采访证据"}`}
-                        </small>
-                      )}
-                      <div className="profile-field-actions">
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          title={entry ? "编辑资料" : "填写"}
-                          aria-label={entry ? "编辑资料" : "填写"}
-                          disabled={!!draft}
-                          onClick={() => begin(field, entry)}
-                        >
-                          {entry ? <Pencil size={15} /> : <Plus size={15} />}
-                        </Button>
-                        {onTalk && (
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            title="在聊天中补充"
-                            aria-label="在聊天中补充"
-                            disabled={busy || !!draft}
-                            onClick={() => onTalk(field)}
+                          : "待补充";
+                        const longContent =
+                          content.length > 140 ||
+                          content.split("\n").length > 3;
+                        const valueExpanded =
+                          !!entry && expandedValues.includes(entry.id);
+                        return (
+                          <div
+                            key={entry?.id || i}
+                            className={`profile-record${entry ? "" : " is-empty"}`}
                           >
-                            <MessageSquare size={15} />
-                          </Button>
-                        )}
-                      </div>
-                    </div>
-                  ))}
-                  {field.key.endsWith("[]") && records.length > 0 && (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      disabled={!!draft}
-                      onClick={() => begin(field)}
-                    >
-                      添加一条
-                    </Button>
-                  )}
-                </div>
-              );
-            })}
-        </details>
-      ))}
+                            <div className="profile-record-body">
+                              <p
+                                className={
+                                  longContent && !valueExpanded
+                                    ? "profile-value-preview"
+                                    : undefined
+                                }
+                              >
+                                {content}
+                              </p>
+                              {entry && longContent && (
+                                <button
+                                  className="profile-value-toggle"
+                                  type="button"
+                                  aria-expanded={valueExpanded}
+                                  onClick={() =>
+                                    setExpandedValues((current) =>
+                                      valueExpanded
+                                        ? current.filter(
+                                            (id) => id !== entry.id,
+                                          )
+                                        : [...current, entry.id],
+                                    )
+                                  }
+                                >
+                                  {valueExpanded ? "收起" : "展开内容"}
+                                  <ChevronDown size={12} aria-hidden="true" />
+                                </button>
+                              )}
+                              {entry &&
+                                (needsConfirmation(entry) ||
+                                  entry.use_scope !== "works") && (
+                                  <div className="profile-record-flags">
+                                    {needsConfirmation(entry) && (
+                                      <span className="profile-pending-flag">
+                                        {certaintyNames[entry.certainty]}
+                                      </span>
+                                    )}
+                                    {entry.use_scope !== "works" && (
+                                      <span>
+                                        <LockKeyhole
+                                          size={12}
+                                          aria-hidden="true"
+                                        />
+                                        {entry.use_scope === "internal"
+                                          ? "内部资料"
+                                          : "使用化名"}
+                                      </span>
+                                    )}
+                                  </div>
+                                )}
+                            </div>
+                            <div className="profile-field-actions">
+                              {entry && (
+                                <Button
+                                  variant="ghost"
+                                  size="icon-sm"
+                                  title="来源与权限"
+                                  aria-label={`查看${field.label}的来源与权限`}
+                                  aria-expanded={expandedEntries.includes(
+                                    entry.id,
+                                  )}
+                                  aria-controls={`profile-entry-${entry.id}`}
+                                  onClick={() =>
+                                    setExpandedEntries((current) =>
+                                      current.includes(entry.id)
+                                        ? current.filter(
+                                            (id) => id !== entry.id,
+                                          )
+                                        : [...current, entry.id],
+                                    )
+                                  }
+                                >
+                                  <Info size={15} />
+                                </Button>
+                              )}
+                              <Button
+                                variant="ghost"
+                                size="icon-sm"
+                                title={entry ? "编辑资料" : "填写"}
+                                aria-label={entry ? "编辑资料" : "填写"}
+                                disabled={!!draft}
+                                onClick={() => begin(field, entry)}
+                              >
+                                {entry ? (
+                                  <Pencil size={15} />
+                                ) : (
+                                  <Plus size={15} />
+                                )}
+                              </Button>
+                              {onTalk && (
+                                <Button
+                                  variant="ghost"
+                                  size="icon-sm"
+                                  title="在聊天中补充"
+                                  aria-label="在聊天中补充"
+                                  disabled={busy || !!draft}
+                                  onClick={() => onTalk(field)}
+                                >
+                                  <MessageSquare size={15} />
+                                </Button>
+                              )}
+                            </div>
+                            {entry && expandedEntries.includes(entry.id) && (
+                              <dl
+                                className="profile-record-metadata"
+                                id={`profile-entry-${entry.id}`}
+                              >
+                                <div>
+                                  <dt>状态</dt>
+                                  <dd>
+                                    {profileStates[entry.state]} ·{" "}
+                                    {certaintyNames[entry.certainty]}
+                                  </dd>
+                                </div>
+                                <div>
+                                  <dt>使用范围</dt>
+                                  <dd>
+                                    {entry.use_scope === "internal"
+                                      ? "只用于内部资料"
+                                      : entry.use_scope === "pseudonym"
+                                        ? "使用化名"
+                                        : "可用于书稿和影像"}
+                                  </dd>
+                                </div>
+                                <div>
+                                  <dt>来源</dt>
+                                  <dd>
+                                    {entry.source.type === "manual"
+                                      ? "手动填写"
+                                      : entry.source.type === "person"
+                                        ? "人物档案"
+                                        : entry.source.type === "legacy_claim"
+                                          ? "历史采访"
+                                          : "采访证据"}
+                                  </dd>
+                                </div>
+                                {entry.source.quote && (
+                                  <div>
+                                    <dt>原文</dt>
+                                    <dd>{entry.source.quote}</dd>
+                                  </div>
+                                )}
+                              </dl>
+                            )}
+                          </div>
+                        );
+                      },
+                    )}
+                    {field.key.endsWith("[]") && records.length > 0 && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="profile-add-record"
+                        disabled={!!draft}
+                        onClick={() => begin(field)}
+                      >
+                        <Plus size={14} aria-hidden="true" />
+                        添加一条
+                      </Button>
+                    )}
+                  </div>
+                );
+              })}
+          </details>
+        ))}
     </div>
   );
 }
