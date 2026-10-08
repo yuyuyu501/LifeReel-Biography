@@ -1,3 +1,4 @@
+import { resolve } from "node:path";
 import { defineConfig, type UserConfigExport } from "@tarojs/cli";
 
 const config: UserConfigExport = defineConfig({
@@ -16,6 +17,7 @@ const config: UserConfigExport = defineConfig({
     type: "webpack5",
   },
   mini: {
+    compile: { include: [resolve(__dirname, "../../../packages/contracts")] },
     postcss: {
       pxtransform: {
         enable: true,
@@ -26,6 +28,7 @@ const config: UserConfigExport = defineConfig({
     },
   },
   h5: {
+    compile: { include: [resolve(__dirname, "../../../packages/contracts")] },
     publicPath: "/",
     router: { mode: "hash" },
     postcss: {

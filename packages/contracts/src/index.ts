@@ -47,7 +47,11 @@ export interface InterviewRound {
   question_source: string | null;
   answer_text: string | null;
   answer_version?: number;
-  answer_revisions?: Array<{ version: number; text: string; revised_at: string }>;
+  answer_revisions?: Array<{
+    version: number;
+    text: string;
+    revised_at: string;
+  }>;
   source_asset_id: UUID | null;
   transcript_status: string;
   created_at: string;
@@ -130,7 +134,23 @@ export interface Job {
   updated_at: string;
 }
 
+import type { LifeProfile, LifeReadiness } from "./life-profile";
+export type { Book, BookChapter, BookRevision } from "./book";
+export { lifeProfileTemplate } from "./life-profile-template";
+export type {
+  LifeProfile,
+  LifeReadiness,
+  ProfileField,
+  ProfileEntry,
+  ProfileChange,
+  ProfileValue,
+  ProfileState,
+  ProfileCertainty,
+  ProfileUse,
+} from "./life-profile";
+
 export interface InterviewSession {
+  profile_id?: UUID | null;
   id: UUID;
   subject_id: UUID;
   chapter_id: UUID | null;
@@ -150,6 +170,12 @@ export interface NextQuestion {
 }
 
 export interface InterviewTurnWorkflow {
+  profile_result?: {
+    profile_id: UUID;
+    profile_version: number;
+    readiness: LifeReadiness;
+    next_question: string;
+  };
   id: UUID;
   session_id: UUID;
   round_id: UUID;
@@ -174,11 +200,17 @@ export interface InterviewTurnWorkflow {
 }
 
 export interface InterviewWorkspace {
+  profile?: LifeProfile | null;
   session: InterviewSession;
   assets: SourceAsset[];
   script: ScriptProject | null;
   latest_workflow: InterviewTurnWorkflow | null;
-  progress?: { stage: string; elapsed_seconds: number; sample_count: number; estimated_seconds: [number, number] | null };
+  progress?: {
+    stage: string;
+    elapsed_seconds: number;
+    sample_count: number;
+    estimated_seconds: [number, number] | null;
+  };
 }
 
 export interface MemoryClaim {
@@ -332,6 +364,12 @@ export interface ScriptShot {
 }
 
 export interface ScriptProject {
+  source_type?: string;
+  source_snapshot?: {
+    subject_id: string;
+    revisions: { revision_id: string; title: string; version_number: number }[];
+  };
+  source_stale?: boolean;
   id: UUID;
   subject_id: UUID;
   title: string;
@@ -351,7 +389,8 @@ export interface ScriptProject {
 export interface ConsentGrant {
   id: UUID;
   subject_id: UUID;
-  consent_type: "interview" | "portrait" | "voice" | "production" | "publication" | string;
+  consent_type:
+    "interview" | "portrait" | "voice" | "production" | "publication" | string;
   scope: string;
   status: string;
   granted_by: string;
@@ -379,27 +418,72 @@ export interface ProductionRun {
   audience: string;
   estimated_cost: number;
   actual_cost: number;
-  output_manifest: (Record<string, unknown> & {
-    scene_id?: UUID | null;
-    script_version?: number;
-    script_snapshot?: ScriptScene[];
-    stage?: "preparing_references" | "copying_segments" | "planning" | "generating" | "assembling" | "completed";
-    generation_config?: { mode?: string; model?: string; identity_lock_version?: number; reference_style?: "original" | "color_redraw"; reference_prompt_version?: string | null };
-    completed_segments?: number;
-    planning_diagnostics?: Array<{ attempt: number; diagnostic_id: string; issues: Array<{ code: string; field: string }> }>;
-    plan?: { continuity?: string; voice?: string };
-    segments?: Array<{ status: string; duration_seconds: number; narration: string; visual_prompt?: string; prompt?: string; reused?: boolean; identity_reference_ids?: string[]; review_frames?: Array<{ position: number; at_seconds: number }> }>;
-    quality_review?: { duplicate_video_segments?: number[][]; shot_warnings?: Array<{ shot_index: number; code: string }>; identity_verification?: string };
-    regeneration?: { source_run_id: string; segment_index: number };
-    target_duration_seconds?: number;
-    billing_quote?: { amount_cents: number; target_seconds: number; version: string; title: string };
-    billing?: { status: "pending" | "settled"; reserved_cents: number; charged_cents?: number };
-  }) | null;
+  output_manifest:
+    | (Record<string, unknown> & {
+        scene_id?: UUID | null;
+        script_version?: number;
+        script_snapshot?: ScriptScene[];
+        stage?:
+          | "preparing_references"
+          | "copying_segments"
+          | "planning"
+          | "generating"
+          | "assembling"
+          | "completed";
+        generation_config?: {
+          mode?: string;
+          model?: string;
+          identity_lock_version?: number;
+          reference_style?: "original" | "color_redraw";
+          reference_prompt_version?: string | null;
+        };
+        completed_segments?: number;
+        planning_diagnostics?: Array<{
+          attempt: number;
+          diagnostic_id: string;
+          issues: Array<{ code: string; field: string }>;
+        }>;
+        plan?: { continuity?: string; voice?: string };
+        segments?: Array<{
+          status: string;
+          duration_seconds: number;
+          narration: string;
+          visual_prompt?: string;
+          prompt?: string;
+          reused?: boolean;
+          identity_reference_ids?: string[];
+          review_frames?: Array<{ position: number; at_seconds: number }>;
+        }>;
+        quality_review?: {
+          duplicate_video_segments?: number[][];
+          shot_warnings?: Array<{ shot_index: number; code: string }>;
+          identity_verification?: string;
+        };
+        regeneration?: { source_run_id: string; segment_index: number };
+        target_duration_seconds?: number;
+        billing_quote?: {
+          amount_cents: number;
+          target_seconds: number;
+          version: string;
+          title: string;
+        };
+        billing?: {
+          status: "pending" | "settled";
+          reserved_cents: number;
+          charged_cents?: number;
+        };
+      })
+    | null;
   error_message: string | null;
   created_at: string;
   updated_at: string;
   assets: GeneratedAsset[];
-  recovery?: { code: string; segment_index: number; rejected_asset_ids: UUID[]; can_restore_original?: boolean } | null;
+  recovery?: {
+    code: string;
+    segment_index: number;
+    rejected_asset_ids: UUID[];
+    can_restore_original?: boolean;
+  } | null;
 }
 
 export interface ProductionSettings {
@@ -445,22 +529,49 @@ export interface WalletSummary {
   available_cents: number;
   debt_cents?: number;
   token_remainder_nano?: number;
-  prices: { version: string; video_cents_per_second: number; script_chapter_cents: number;
-    video_billing_mode?: "tokens" | "per_second"; video_reserve_cents?: number;
-    video_cny_per_million?: string; video_reference_cny_per_million?: string; video_markup?: string;
-    welcome_bonus_cents: number; payment_enabled: boolean; script_billing_mode: string };
+  prices: {
+    version: string;
+    video_cents_per_second: number;
+    script_chapter_cents: number;
+    video_billing_mode?: "tokens" | "per_second";
+    video_reserve_cents?: number;
+    video_cny_per_million?: string;
+    video_reference_cny_per_million?: string;
+    video_markup?: string;
+    welcome_bonus_cents: number;
+    payment_enabled: boolean;
+    script_billing_mode: string;
+  };
 }
 export interface WalletEntry {
-  id: string; charge_id: string | null; event: "bonus" | "reserve" | "consume" | "release" | "recharge";
-  title: string; amount_cents: number; available_after_cents: number;
-  paid_delta: number; bonus_delta: number; frozen_delta: number; created_at: string;
+  id: string;
+  charge_id: string | null;
+  event: "bonus" | "reserve" | "consume" | "release" | "recharge";
+  title: string;
+  amount_cents: number;
+  available_after_cents: number;
+  paid_delta: number;
+  bonus_delta: number;
+  frozen_delta: number;
+  created_at: string;
 }
 export interface ProviderUsage {
-  id: string; model: string; operation: string; status: string; created_at: string;
-  usage: Record<string, unknown>; duration_ms: number; provider_request_id: string | null;
+  id: string;
+  model: string;
+  operation: string;
+  status: string;
+  created_at: string;
+  usage: Record<string, unknown>;
+  duration_ms: number;
+  provider_request_id: string | null;
   metering?: Record<string, unknown>;
 }
-export interface WalletPage<T> { total: number; page: number; page_size: number; items: T[] }
+export interface WalletPage<T> {
+  total: number;
+  page: number;
+  page_size: number;
+  items: T[];
+}
 export interface RechargeOrder {
   id: string;
   payment_method: "alipay" | "wechat";

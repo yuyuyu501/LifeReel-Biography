@@ -1,12 +1,12 @@
 # 单库服务 Schema 与媒体存储
 
-保留现有 lifereel 数据库、用户名、密码、端口和备份流程；49 张业务表按服务分类到九个 Schema。
+保留现有 lifereel 数据库、用户名、密码、端口和备份流程；52 张业务表按服务分类到九个 Schema。
 public 保留 alembic_version 和数据库扩展。Schema 分类本身不构成权限隔离，本轮不增加多套数据库账号。
 
 | Schema | 管理的数据表 |
 |---|---|
 | identity | account_audits, account_phones, audit_events, auth_rate_limits, consent_grants, mini_sessions, persons, platform_identities, sms_challenges, tenant_memberships, tenants, user_accounts |
-| interview | chapters, interview_rounds, interview_sessions, interview_turn_workflows, interview_voice_calls |
+| interview | chapters, interview_rounds, interview_sessions, interview_turn_workflows, interview_voice_calls, life_profiles, life_profile_entries, life_profile_revisions |
 | memory | memory_claims, memory_conflicts, memory_entities, timeline_anchors |
 | script | script_generation_receipts, script_projects, script_scenes, script_shots |
 | book | books, book_chapters, book_revisions |
@@ -32,3 +32,8 @@ media 表包含素材标识、storage_key、MIME、大小、哈希、来源、�
 SQLite 单元测试通过 schema_translate_map 将命名空间映射到默认库；真实分类、外键与迁移必须由隔离 PostgreSQL 回归覆盖。
 
 0043 新增独立 book Schema 及书籍、章节、历史版本三张表，不改动已有业务表数据。正文是文本，保存在数据库中；本次不向 OSS 写入书稿文件。回退 0043 时若已有书籍数据会拒绝删除，必须保留备份并单独处理，不能直接丢弃用户书稿。
+
+0044 为 interview 新增 life_profiles、life_profile_entries、life_profile_revisions，
+每个人物一份当前人生资料，历史变更单独保留。书稿、剧本记录资料或书稿来源，
+原章节关联仍保留兼容历史。资料与正文均为数据库中的文本，上传和生成的媒体本体仍在 OSS。
+若资料已写入或出现新的独立书章，降级 0044 会拒绝删除；继续使用整库备份和向前修复。

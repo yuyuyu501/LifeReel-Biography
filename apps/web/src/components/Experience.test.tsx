@@ -156,7 +156,7 @@ test("guide can be closed, resumed and reopened without storing personal content
   wrap(<GettingStarted userId="one" />);
   fireEvent.click(screen.getByRole("button", { name: "重新打开使用教学" }));
   expect(screen.getByRole("heading", { name: "从一句话开始" })).toBeVisible();
-  expect(JSON.parse(localStorage.getItem("lifereel:guide:v1:one")!)).toEqual({
+  expect(JSON.parse(localStorage.getItem("lifereel:guide:v2:one")!)).toEqual({
     step: 1,
     hidden: false,
   });

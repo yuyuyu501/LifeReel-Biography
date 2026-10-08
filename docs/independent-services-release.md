@@ -4,7 +4,7 @@
 
 使用唯一的 `compose.production.yaml`。`LIFEREEL_RELEASE` 为提交 SHA；`LIFEREEL_ENV_FILE` 默认 `.env`。每个服务有独立 Dockerfile，共享依赖镜像为 `deploy/Dockerfile.backend`，通过 Compose `additional_contexts: service:migrate` 构建。需使用支持该功能的 Docker Compose V2 / BuildKit。
 
-`services/` 保存领域源码，`workers/` 保存执行入口，`apps/api/` 保存基础库、迁移、ORM 注册及兼容测试入口。后端 wheel 仍包含共享领域模型，采用统一版本发布；数据库仍为一个，通过八个 Schema 按服务分类；表归属和媒体存储见 [数据库分类说明](database-schemas.md)。
+`services/` 保存领域源码，`workers/` 保存执行入口，`apps/api/` 保存基础库、迁移、ORM 注册及兼容测试入口。后端 wheel 仍包含共享领域模型，采用统一版本发布；数据库仍为一个，通过九个 Schema 按服务分类；表归属和媒体存储见 [数据库分类说明](database-schemas.md)。
 
 ## 发布顺序
 
@@ -33,3 +33,19 @@
 ## 隔离测试
 
 联调用同一生产 Compose、独立 project/env/卷。`deploy/tests/service_e2e.py` 只接受 localhost、tmp 下配置与 Mock 模型；使用 project `lifereel-servicesqa`。合成模型用于验证实际模型网关 HTTP、幂等和断线语义，不能把它当成真实模型质量验收。真实语音通话和支付仍由用户验收。
+
+## 0044 人生资料发布
+
+采访负责权威人生资料，记忆维护投影，写书拥有独立目录与版本，剧本只能改编保存稿。
+三个 Worker 分别执行采访、写书与媒体任务；Tasks 将资料同步事件持久投递给 Memory。
+资料写入已提交而 Memory 暂不可用时，接口返回 503，但 outbox 留存并重试，
+客户端用同一请求 ID 核对结果，不能覆盖已保存资料或重复收费。
+
+0044 增加资料表和作品来源字段，历史采访章节、书稿与媒体保留。
+新资料或新独立书章存在时拒绝破坏性 downgrade；不能只切回旧镜像继续写新格式。
+发布必须同时更新全部共享后端镜像和三个 Worker，检查 `alembic check`、
+实际容器镜像和源码摘要，再核对 Git 三方提交一致。
+
+`deploy/tests/life_profile_e2e.py` 使用单独的 lifereel-lifeqa project，
+覆盖新资料、第二轮纠错、Tasks/Memory 恢复、书稿、改编、模拟视频与受限来源，
+不复用生产数据库、生产模型密钥或 OSS 对象。

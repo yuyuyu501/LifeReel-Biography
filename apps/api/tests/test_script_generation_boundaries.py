@@ -18,22 +18,34 @@ from lifereel_api.providers.openai_compatible import OpenAICompatibleClient
 
 
 def _claim(text="I remember home."):
-    return SimpleNamespace(id=uuid4(), claim_text=text, source_quote=text,
-                           confidence=1, review_status="unreviewed")
+    return SimpleNamespace(
+        id=uuid4(), claim_text=text, source_quote=text, confidence=1, review_status="unreviewed"
+    )
 
 
 def test_mock_dialogue_accepts_exact_boundary_and_rejects_overflow_without_truncating():
     claim = _claim("字" * 1999)
     scene = service._rule_scenes("Subject", [claim])[0]
     assert scene["dialogues"][0]["text"] == "字" * 1999 + "。"
-    ScriptSceneUpdate.model_validate({
-        "expected_version": 1,
-        **{key: scene[key] for key in (
-            "heading", "plot", "dialogues", "visual_prompt", "duration_seconds",
-        )},
-        "shots": [{key: shot[key] for key in ("shot_type", "visual_prompt", "duration_seconds")}
-                  for shot in scene["shots"]],
-    })
+    ScriptSceneUpdate.model_validate(
+        {
+            "expected_version": 1,
+            **{
+                key: scene[key]
+                for key in (
+                    "heading",
+                    "plot",
+                    "dialogues",
+                    "visual_prompt",
+                    "duration_seconds",
+                )
+            },
+            "shots": [
+                {key: shot[key] for key in ("shot_type", "visual_prompt", "duration_seconds")}
+                for shot in scene["shots"]
+            ],
+        }
+    )
     with pytest.raises(ApiError) as exc:
         service._rule_scenes("Subject", [_claim("字" * 2000)])
     assert exc.value.status_code == 413
@@ -48,16 +60,31 @@ def _configured_provider(monkeypatch):
     monkeypatch.setattr(settings, "script_llm_model", "synthetic")
 
 
-@pytest.mark.parametrize("oversized", [
-    "claim", "source_quote", "current_script", "instructions", "aggregate", "json_escape",
-])
+@pytest.mark.parametrize(
+    "oversized",
+    [
+        "claim",
+        "source_quote",
+        "current_script",
+        "instructions",
+        "aggregate",
+        "json_escape",
+    ],
+)
 def test_full_script_request_budget_blocks_provider_call(monkeypatch, oversized):
     _configured_provider(monkeypatch)
-    monkeypatch.setattr(service, "get_processing_limits", lambda: ProcessingLimits(
-        script_input_max_chars=4000,
-    ))
-    monkeypatch.setattr(OpenAICompatibleClient, "chat_json",
-                        lambda *args: pytest.fail("over-budget request reached provider"))
+    monkeypatch.setattr(
+        service,
+        "get_processing_limits",
+        lambda: ProcessingLimits(
+            script_input_max_chars=4000,
+        ),
+    )
+    monkeypatch.setattr(
+        OpenAICompatibleClient,
+        "chat_json",
+        lambda *args: pytest.fail("over-budget request reached provider"),
+    )
     claim = _claim()
     brief = {}
     large = "私密材料" * 2000
@@ -77,7 +104,9 @@ def test_full_script_request_budget_blocks_provider_call(monkeypatch, oversized)
     with pytest.raises(ApiError) as exc:
         service._llm_scenes(
             SimpleNamespace(display_name="Subject", preferred_name=None),
-            ScriptGenerateRequest(subject_id=uuid4()), [claim], get_chapter_prompt_profile(None),
+            ScriptGenerateRequest(subject_id=uuid4()),
+            [claim],
+            get_chapter_prompt_profile(None),
             brief,
         )
     assert exc.value.status_code == 413
@@ -85,8 +114,19 @@ def test_full_script_request_budget_blocks_provider_call(monkeypatch, oversized)
     assert exc.value.context["stage"] == "script_input"
 
 
-@pytest.mark.parametrize("invalid", ["visual", "heading", "shot_visual", "shot_type",
-                                     "shot_duration", "dialogue", "title", "references"])
+@pytest.mark.parametrize(
+    "invalid",
+    [
+        "visual",
+        "heading",
+        "shot_visual",
+        "shot_type",
+        "shot_duration",
+        "dialogue",
+        "title",
+        "references",
+    ],
+)
 def test_provider_output_schema_is_enforced_before_persistence(monkeypatch, caplog, invalid):
     _configured_provider(monkeypatch)
     claim = _claim()
@@ -114,7 +154,9 @@ def test_provider_output_schema_is_enforced_before_persistence(monkeypatch, capl
     with pytest.raises(ApiError) as exc:
         service._llm_scenes(
             SimpleNamespace(display_name="Subject", preferred_name=None),
-            ScriptGenerateRequest(subject_id=uuid4()), [claim], get_chapter_prompt_profile(None),
+            ScriptGenerateRequest(subject_id=uuid4()),
+            [claim],
+            get_chapter_prompt_profile(None),
         )
     assert exc.value.code == ErrorCode.SCRIPT_LLM_RESPONSE_INVALID
     assert sentinel not in caplog.text
@@ -122,12 +164,21 @@ def test_provider_output_schema_is_enforced_before_persistence(monkeypatch, capl
 
 def _saved_script(client):
     person = client.post("/v1/persons", json={"display_name": "Workspace boundary"}).json()
-    interview = client.post("/v1/interviews", json={"subject_id": person["id"]}).json()
+    interview = client.post(
+        "/v1/interviews", json={"mode": "legacy", "subject_id": person["id"]}
+    ).json()
     with SessionLocal() as db:
         subject = db.get(Person, UUID(person["id"]))
-        db.add(MemoryClaim(tenant_id=subject.tenant_id, subject_id=subject.id,
-                           claim_text="I remember home.", source_quote="I remember home.",
-                           claim_type="recollection", confidence=1))
+        db.add(
+            MemoryClaim(
+                tenant_id=subject.tenant_id,
+                subject_id=subject.id,
+                claim_text="I remember home.",
+                source_quote="I remember home.",
+                claim_type="recollection",
+                confidence=1,
+            )
+        )
         db.commit()
     generated = client.post("/v1/scripts/generate", json={"subject_id": person["id"]})
     assert generated.status_code == 201
@@ -137,8 +188,9 @@ def _saved_script(client):
 
 
 @pytest.mark.parametrize("failure", ["legacy_input", "mock_overflow", "invalid_output"])
-def test_rejected_generation_preserves_saved_script_and_readable_workspace(client, monkeypatch,
-                                                                          failure):
+def test_rejected_generation_preserves_saved_script_and_readable_workspace(
+    client, monkeypatch, failure
+):
     person, interview, saved = _saved_script(client)
     if failure == "invalid_output":
         generate = service._rule_scenes
@@ -172,9 +224,16 @@ def test_all_accepted_claims_are_used_instead_of_silently_dropping_after_forty(c
     with SessionLocal() as db:
         subject = db.get(Person, UUID(person["id"]))
         for index in range(41):
-            db.add(MemoryClaim(tenant_id=subject.tenant_id, subject_id=subject.id,
-                               claim_text=f"Memory {index}", source_quote=f"Memory {index}",
-                               claim_type="recollection", confidence=1))
+            db.add(
+                MemoryClaim(
+                    tenant_id=subject.tenant_id,
+                    subject_id=subject.id,
+                    claim_text=f"Memory {index}",
+                    source_quote=f"Memory {index}",
+                    claim_type="recollection",
+                    confidence=1,
+                )
+            )
         db.commit()
         expected_ids = {str(claim.id) for claim in db.scalars(select(MemoryClaim))}
     generated = client.post("/v1/scripts/generate", json={"subject_id": person["id"]})

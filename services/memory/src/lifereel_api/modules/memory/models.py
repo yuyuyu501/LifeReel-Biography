@@ -42,6 +42,12 @@ class MemoryClaim(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     chapter_id: Mapped[UUID | None] = mapped_column(
         Uuid, ForeignKey("interview.chapters.id", ondelete="SET NULL"), nullable=True
     )
+    profile_entry_id: Mapped[UUID | None] = mapped_column(
+        Uuid,
+        ForeignKey("interview.life_profile_entries.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
     claim_text: Mapped[str] = mapped_column(Text)
     source_quote: Mapped[str] = mapped_column(Text)
     source_revision: Mapped[int] = mapped_column(Integer, default=1, server_default="1")
@@ -63,19 +69,35 @@ class MemoryClaim(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     @classmethod
     def current_source(cls):
         """A queued/failed correction must not expose facts extracted from an older answer."""
-        from sqlalchemy import or_, select
+        from sqlalchemy import and_, or_, select
 
         from lifereel_api.modules.interview.models import InterviewRound
+        from lifereel_api.modules.interview.profile_models import LifeProfileEntry
 
-        return or_(
-            cls.source_round_id.is_(None),
-            select(InterviewRound.id)
-            .where(
-                InterviewRound.id == cls.source_round_id,
-                InterviewRound.tenant_id == cls.tenant_id,
-                InterviewRound.answer_version == cls.source_revision,
-            )
-            .exists(),
+        return and_(
+            or_(
+                cls.source_round_id.is_(None),
+                select(InterviewRound.id)
+                .where(
+                    InterviewRound.id == cls.source_round_id,
+                    InterviewRound.tenant_id == cls.tenant_id,
+                    InterviewRound.answer_version == cls.source_revision,
+                )
+                .exists(),
+            ),
+            or_(
+                cls.profile_entry_id.is_(None),
+                select(LifeProfileEntry.id)
+                .where(
+                    LifeProfileEntry.id == cls.profile_entry_id,
+                    LifeProfileEntry.tenant_id == cls.tenant_id,
+                    LifeProfileEntry.version_number == cls.source_revision,
+                    LifeProfileEntry.state == "filled",
+                    LifeProfileEntry.certainty.not_in(["pending", "disputed"]),
+                    LifeProfileEntry.use_scope.in_(["works", "pseudonym"]),
+                )
+                .exists(),
+            ),
         )
 
 

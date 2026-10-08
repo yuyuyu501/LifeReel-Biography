@@ -133,7 +133,9 @@ def test_budget_blocks_next_memory_call(client):
     from lifereel_api.modules.interview.models import InterviewTurnWorkflow
 
     person = client.post("/v1/persons", json={"display_name": "费用限制测试"}).json()
-    session = client.post("/v1/interviews", json={"subject_id": person["id"]}).json()
+    session = client.post(
+        "/v1/interviews", json={"mode": "legacy", "subject_id": person["id"]}
+    ).json()
     workflow = client.post(
         f"/v1/interviews/{session['id']}/turns",
         json={
@@ -183,7 +185,8 @@ def test_completed_claim_and_graph_survive_biography_failure(client, monkeypatch
     person = client.post("/v1/persons", json={"display_name": "恢复测试"}).json()
     chapter = client.get("/v1/chapters").json()[0]
     session = client.post(
-        "/v1/interviews", json={"subject_id": person["id"], "chapter_id": chapter["id"]}
+        "/v1/interviews",
+        json={"mode": "legacy", "subject_id": person["id"], "chapter_id": chapter["id"]},
     ).json()
     monkeypatch.setattr(jobs, "enqueue", lambda _: None)
     # Queue without running the AI workflow.

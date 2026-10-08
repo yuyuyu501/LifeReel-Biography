@@ -14,6 +14,7 @@ import { ErrorNotice, QueryState } from "../components/QueryState";
 import { hasQueryIssue } from "../queryHelpers";
 import { statusLabel } from "../statusLabels";
 import { EditableScript } from "../components/EditableScript";
+import { BookScriptGenerator } from "../components/BookScriptGenerator";
 import { ProductionDetails } from "../components/ProductionDetails";
 import {
   ProductionQuality,
@@ -69,7 +70,10 @@ export function StudioPage() {
     index: number;
   } | null>(null);
   const people = useQuery({ queryKey: ["persons"], queryFn: api.listPersons });
-  const scripts = useQuery({ queryKey: ["scripts"], queryFn: api.listScripts });
+  const scripts = useQuery({
+    queryKey: ["scripts", "history"],
+    queryFn: api.scriptHistory,
+  });
   const settings = useQuery({
     queryKey: ["production-settings"],
     queryFn: api.productionSettings,
@@ -120,7 +124,13 @@ export function StudioPage() {
     requestedProject?.subject_id,
   );
   const entries = (scripts.data ?? [])
-    .filter((project) => project.subject_id === effectiveSubjectId)
+    .filter(
+      (project) =>
+        project.subject_id === effectiveSubjectId &&
+        (requestedProject
+          ? project.id === requestedProject.id
+          : project.status !== "superseded"),
+    )
     .flatMap((project) =>
       [...project.scenes]
         .sort((a, b) => a.order_index - b.order_index)
@@ -282,10 +292,12 @@ export function StudioPage() {
         <Button asChild variant="outline" className="button secondary">
           <Link
             to={
-              effectiveSubjectId ? `/scripts/${effectiveSubjectId}` : "/scripts"
+              effectiveSubjectId
+                ? `/books?subject=${effectiveSubjectId}`
+                : "/books"
             }
           >
-            <BookOpen size={17} aria-hidden="true" /> 返回剧本书册
+            <BookOpen size={17} aria-hidden="true" /> 前往写书
           </Link>
         </Button>
       </header>
@@ -298,8 +310,23 @@ export function StudioPage() {
               produce.error || publish.error || withdraw.error || retry.error
             }
           />
+          {effectiveSubjectId && (
+            <BookScriptGenerator
+              key={effectiveSubjectId}
+              subjectId={effectiveSubjectId}
+              disabled={scriptEditing}
+              onGenerated={(projectId) => {
+                setSearchParams((params) => {
+                  params.set("project", projectId);
+                  return params;
+                });
+                setSceneId("");
+                setView("script");
+              }}
+            />
+          )}
           <div className="studio-workspace">
-            <aside className="studio-catalog" aria-label="制作章节">
+            <aside className="studio-catalog" aria-label="制作场景">
               <label>
                 制作对象
                 <select
@@ -330,10 +357,10 @@ export function StudioPage() {
                 </select>
               </label>
               <div className="studio-catalog-heading">
-                <h2>章节剧本</h2>
-                <span>{entries.length} 章</span>
+                <h2>剧本场景</h2>
+                <span>{entries.length} 个场景</span>
               </div>
-              <nav className="studio-chapters" aria-label="章节列表">
+              <nav className="studio-chapters" aria-label="场景列表">
                 {entries.map(({ project, scene }, index) => {
                   const run = orderedRuns.find((item) =>
                     matchesChapter(item, project, scene),
@@ -364,15 +391,36 @@ export function StudioPage() {
                   );
                 })}
               </nav>
-              {!entries.length && <p className="studio-muted">暂无章节剧本</p>}
+              <details>
+                <summary>历史剧本与影像</summary>
+                {scripts.data
+                  ?.filter(
+                    (p) =>
+                      p.subject_id === effectiveSubjectId &&
+                      p.status === "superseded",
+                  )
+                  .map((p) => (
+                    <p key={p.id}>
+                      <Link to={`/studio?project=${p.id}`}>
+                        {p.title} · 第 {p.version_number} 版
+                      </Link>
+                    </p>
+                  ))}
+              </details>
+              {!entries.length && <p className="studio-muted">暂无剧本场景</p>}
             </aside>
-            <section className="studio-detail" aria-label="章节影像工作台">
+            <section className="studio-detail" aria-label="场景影像工作台">
               {selected ? (
                 <>
+                  {selected.project.source_stale && (
+                    <p role="status" className="writing-warning">
+                      书稿或资料来源已有更正，请先更新书稿，再重新改编剧本。
+                    </p>
+                  )}
                   <div className="studio-parameters">
                     <div className="studio-selection-heading">
                       <div>
-                        <span className="eyebrow">当前章节</span>
+                        <span className="eyebrow">当前场景</span>
                         <h2>{selected.scene.heading}</h2>
                       </div>
                       <span className="studio-mode-label">
@@ -417,6 +465,8 @@ export function StudioPage() {
                         variant="default"
                         className="button primary"
                         disabled={
+                          selected.project.source_stale ||
+                          selected.project.source_type === "legacy" ||
                           scriptEditing ||
                           produce.isPending ||
                           retry.isPending ||
@@ -492,7 +542,7 @@ export function StudioPage() {
                         tabIndex={view === "script" ? 0 : -1}
                         onClick={() => setView("script")}
                       >
-                        <BookOpen size={17} aria-hidden="true" /> 本章剧本
+                        <BookOpen size={17} aria-hidden="true" /> 剧本与分镜
                       </button>
                     </div>
                     {activeRun && (
@@ -599,7 +649,7 @@ export function StudioPage() {
                           icon={Film}
                           title={
                             isGenerating
-                              ? "正在生成本章影像"
+                              ? "正在生成当前场景影像"
                               : activeRun?.status === "failed"
                                 ? "本次生成未完成"
                                 : "本章尚无影像"
@@ -711,7 +761,7 @@ export function StudioPage() {
               ) : (
                 <EmptyState
                   icon={BookOpen}
-                  title="还没有可制作的章节"
+                  title="还没有可制作的场景"
                   description=""
                 />
               )}

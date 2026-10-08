@@ -28,7 +28,6 @@ from lifereel_api.modules.identity.models import Person, Tenant
 from lifereel_api.modules.interview.models import Chapter
 from lifereel_api.modules.jobs.models import Job
 from lifereel_api.modules.memory.models import MemoryClaim
-from lifereel_api.modules.script.models import ScriptProject
 from lifereel_api.providers.models import ModelInvocation
 
 API = Path(__file__).parents[1]
@@ -44,9 +43,15 @@ OWNERS = {
 
 def test_all_models_match_frozen_schema_inventory():
     # 0040 stays frozen; newly owned tables are added by the later book migration.
-    current_owners = {**OWNERS, **dict.fromkeys(
-        ("books", "book_chapters", "book_revisions"), "book"
-    )}
+    current_owners = {
+        **OWNERS,
+        **dict.fromkeys(("books", "book_chapters", "book_revisions"), "book"),
+    }
+    current_owners.update(
+        dict.fromkeys(
+            ("life_profiles", "life_profile_entries", "life_profile_revisions"), "interview"
+        )
+    )
     assert set(SERVICE_SCHEMAS) == set(migration.TABLES_BY_SCHEMA) | {"book"}
     assert {table.name: table.schema for table in Base.metadata.tables.values()} == current_owners
     for table in Base.metadata.tables.values():
@@ -186,7 +191,6 @@ def test_populated_postgresql_migration_preserves_data_constraints_and_rollback(
             [
                 asset,
                 Wallet(tenant_id=tenant.id, paid_cents=1234, bonus_cents=56),
-                ScriptProject(tenant_id=tenant.id, subject_id=person.id, title="Synthetic script"),
                 Job(
                     tenant_id=tenant.id,
                     kind="qa.schema",
@@ -201,6 +205,14 @@ def test_populated_postgresql_migration_preserves_data_constraints_and_rollback(
                     response={"synthetic": True},
                 ),
             ]
+        )
+        db.execute(
+            text("""INSERT INTO public.script_projects
+            (id, tenant_id, subject_id, title, mode, status, audience, source_claim_ids,
+             review_status, version_number, generation_provider, created_at, updated_at)
+            VALUES (:id, :tenant, :subject, 'Synthetic script', 'single_chapter', 'draft',
+                    'family', '[]', 'needs_review', 1, 'rule', now(), now())"""),
+            {"id": uuid4(), "tenant": tenant.id, "subject": person.id},
         )
         # Freeze this fixture to the pre-0040 columns; current ORM may grow new fields.
         db.execute(

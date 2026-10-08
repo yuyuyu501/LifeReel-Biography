@@ -14,6 +14,7 @@ def start(client):
     return client.post(
         "/v1/interviews",
         json={
+            "mode": "legacy",
             "subject_id": person["id"],
             "chapter_id": chapter["id"],
         },

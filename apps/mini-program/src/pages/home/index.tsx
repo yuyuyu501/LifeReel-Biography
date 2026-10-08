@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Button, Input, Text, View } from "@tarojs/components";
 import Taro from "@tarojs/taro";
-import type { Chapter, Person } from "@lifereel/contracts";
+import type { Person } from "@lifereel/contracts";
 import { miniApi } from "../../shared/api";
 import { PreviewNotice } from "../../shared/PreviewNotice";
 import { miniPlatform } from "../../shared/platform";
@@ -9,17 +9,15 @@ import { miniPlatform } from "../../shared/platform";
 export default function HomePage() {
   const [user, setUser] = useState<{ display_name: string } | null>(null);
   const [persons, setPersons] = useState<Person[]>([]);
-  const [chapters, setChapters] = useState<Chapter[]>([]);
   const [newPersonName, setNewPersonName] = useState("");
   const [selectedPersonId, setSelectedPersonId] = useState("");
   const [error, setError] = useState("");
 
   useEffect(() => {
-    Promise.all([miniApi.me(), miniApi.persons(), miniApi.chapters()])
-      .then(([me, people, chapterList]) => {
+    Promise.all([miniApi.me(), miniApi.persons()])
+      .then(([me, people]) => {
         setUser(me);
         setPersons(people);
-        setChapters(chapterList);
         setSelectedPersonId(people[0]?.id || "");
       })
       .catch((reason) =>
@@ -109,10 +107,18 @@ export default function HomePage() {
                   <Button
                     className="secondary-button"
                     onClick={() =>
-                      open(`/pages/scripts/index?subjectId=${person.id}`)
+                      open(`/pages/profile/index?subjectId=${person.id}`)
                     }
                   >
-                    剧本
+                    人生资料表
+                  </Button>
+                  <Button
+                    className="secondary-button"
+                    onClick={() =>
+                      open(`/pages/books/index?subjectId=${person.id}`)
+                    }
+                  >
+                    写书
                   </Button>
                 </View>
               ) : null}
@@ -121,31 +127,6 @@ export default function HomePage() {
         ) : (
           <Text className="empty">还没有人物资料</Text>
         )}
-      </View>
-      <View className="section">
-        <Text className="section-title">章节</Text>
-        {chapters.map((chapter) => (
-          <View className="list-card" key={chapter.id}>
-            <Text className="list-title">
-              {chapter.order_index}. {chapter.title}
-            </Text>
-            <Text className="list-meta">
-              {chapter.description || "开始记录这一章的故事"}
-            </Text>
-            {selectedPersonId ? (
-              <Button
-                className="secondary-button"
-                onClick={() =>
-                  open(
-                    `/pages/interview/index?subjectId=${selectedPersonId}&chapterId=${chapter.id}`,
-                  )
-                }
-              >
-                采访这一章
-              </Button>
-            ) : null}
-          </View>
-        ))}
       </View>
       <View className="section">
         <Text className="section-title">生产</Text>

@@ -18,20 +18,25 @@ from lifereel_api.modules.script.models import ScriptProject
 
 def publish(db: Session, tenant_id: UUID, payload: PublicationCreate) -> Publication:
     run = db.scalar(
-        select(ProductionRun).where(
+        select(ProductionRun)
+        .where(
             ProductionRun.id == payload.production_run_id,
             ProductionRun.tenant_id == tenant_id,
         )
         .with_for_update()
     )
-    if (run is None or run.status != "completed"
-            or (run.output_manifest or {}).get("media_retention")):
+    if (
+        run is None
+        or run.status != "completed"
+        or (run.output_manifest or {}).get("media_retention")
+    ):
         raise ApiError(status.HTTP_409_CONFLICT, ErrorCode.PRODUCTION_NOT_COMPLETED)
     if payload.audience != run.audience:
         raise ApiError(status.HTTP_409_CONFLICT, ErrorCode.PUBLICATION_AUDIENCE_MISMATCH)
     project = db.get(ScriptProject, run.project_id)
     if project is None:
         raise ApiError(status.HTTP_404_NOT_FOUND, ErrorCode.SCRIPT_PROJECT_NOT_FOUND)
+    validate_sources(db, tenant_id, project)
     if payload.audience != "private" and not governance.has_consent(
         db, tenant_id, project.subject_id, "publication", payload.audience
     ):
@@ -94,6 +99,13 @@ def public_lookup(db: Session, token: str) -> Publication:
     )
     if publication is None:
         raise ApiError(status.HTTP_404_NOT_FOUND, ErrorCode.PUBLICATION_UNAVAILABLE)
+    run = db.get(ProductionRun, publication.production_run_id)
+    project = db.get(ScriptProject, run.project_id) if run else None
+    if project:
+        try:
+            validate_sources(db, publication.tenant_id, project)
+        except ApiError:
+            raise ApiError(404, ErrorCode.PUBLICATION_UNAVAILABLE) from None
     return publication
 
 
@@ -108,3 +120,15 @@ def public_asset(db: Session, token: str) -> GeneratedAsset:
     if asset is None:
         raise ApiError(status.HTTP_404_NOT_FOUND, ErrorCode.PUBLICATION_ASSET_UNAVAILABLE)
     return asset
+
+
+def validate_sources(db, tenant, project):
+    if project.source_type == "book":
+        from lifereel_api.modules.script.book_adaptation import sources
+
+        sources(
+            db,
+            tenant,
+            project.subject_id,
+            [UUID(r["revision_id"]) for r in project.source_snapshot["revisions"]],
+        )

@@ -37,6 +37,9 @@ class ScriptGenerateRequest(BaseModel):
     audience: str = Field(default="family", pattern="^(private|family|friends|public)$")
     chapter_id: UUID | None = None
     idempotency_key: UUID | None = None
+    book_revision_ids: list[UUID] | None = Field(default=None, min_length=1, max_length=40)
+    duration_seconds: int = Field(default=45, ge=30, le=60, strict=True)
+    adaptation_instructions: str = Field(default="", max_length=4000)
 
 
 class ScriptShotUpdate(BaseModel):
@@ -114,3 +117,6 @@ class ScriptProjectRead(BaseModel):
     updated_at: datetime
     scenes: list[ScriptSceneRead] = Field(default_factory=list)
     shots: list[ScriptShotRead] = Field(default_factory=list)
+    source_type: str = "legacy"
+    source_snapshot: dict = Field(default_factory=dict)
+    source_stale: bool = False

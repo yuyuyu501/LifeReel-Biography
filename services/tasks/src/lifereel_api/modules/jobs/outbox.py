@@ -26,7 +26,17 @@ def dispatch_batch(limit=50):
         for event in events:
             try:
                 with db.begin_nested():
-                    if event.event_type.startswith("billing."):
+                    if event.event_type == "profile.sync.requested":
+                        from lifereel_api.architecture.internal import call
+
+                        call(
+                            "memory",
+                            "memory.profile-sync",
+                            event.tenant_id,
+                            event.payload,
+                            timeout=30,
+                        )
+                    elif event.event_type.startswith("billing."):
                         from lifereel_api.architecture.internal import call
 
                         call(

@@ -1,6 +1,13 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRef, useState } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import {
+  Link,
+  useNavigate,
+  useParams,
+  useSearchParams,
+} from "react-router-dom";
+import { profilesApi } from "../api/profiles";
+import { BookDirectoryEditor } from "../components/BookDirectoryEditor";
 import { BookOpenText, Download, Sparkles } from "lucide-react";
 import { api, API_BASE_URL } from "../api/client";
 import {
@@ -28,10 +35,11 @@ const statusText: Record<string, string> = {
 
 export function BooksPage() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const cache = useQueryClient();
   const people = useQuery({ queryKey: ["persons"], queryFn: api.listPersons });
   const books = useQuery({ queryKey: ["books"], queryFn: booksApi.list });
-  const [personId, setPersonId] = useState("");
+  const [personId, setPersonId] = useState(searchParams.get("subject") || "");
   const [title, setTitle] = useState("");
   const create = useMutation({
     mutationFn: booksApi.create,
@@ -52,9 +60,7 @@ export function BooksPage() {
         <div>
           <span className="eyebrow">把经历写成一本书</span>
           <h1>人生书架</h1>
-          <p>
-            以真实采访与当前记忆为依据，每章约1000字，慢慢写成一本属于自己的书。
-          </p>
+          <p>根据当前人生资料表选材，每章约1000字，整理成一本属于自己的书。</p>
         </div>
       </header>
       <form
@@ -227,6 +233,12 @@ export function BookWritingPage() {
         </div>
       </header>
       <section className="writing-actions" aria-label="书稿操作">
+        {!data.profile_id && (
+          <p className="writing-warning">
+            这是以前的采访书稿。请先在资料表确认历史素材，再通过“编辑目录与选材”选择当前资料，之后可以继续写作和改编。
+          </p>
+        )}
+        <BookDirectoryEditor book={data} disabled={busy} />
         <WritingPrice />
         <div className="writing-buttons">
           <Button
@@ -364,6 +376,12 @@ function ChapterBody({
   const [body, setBody] = useState(chapter.current?.body || "");
   const [editVersion, setEditVersion] = useState(chapter.version_number);
   const [showHistory, setShowHistory] = useState(false);
+  const [confirmSources, setConfirmSources] = useState(false);
+  const profile = useQuery({
+    queryKey: ["life-profile", book.subject_id],
+    queryFn: () => profilesApi.subject(book.subject_id),
+    enabled: editing && !!book.profile_id,
+  });
   const [version, setVersion] = useState(0);
   const history = useQuery({
     queryKey: ["book-versions", book.id, chapter.chapter_id],
@@ -373,6 +391,9 @@ function ChapterBody({
   const save = useMutation({
     mutationFn: () =>
       booksApi.edit(book.id, chapter.chapter_id, {
+        confirm_profile_version: confirmSources
+          ? profile.data?.version_number
+          : undefined,
         expected_version: editVersion,
         title,
         body,
@@ -387,7 +408,7 @@ function ChapterBody({
       });
     },
   });
-  if (!chapter.current)
+  if (!chapter.current && !editing)
     return (
       <div className="writing-empty">
         <BookOpenText size={32} />
@@ -396,6 +417,16 @@ function ChapterBody({
           有资料后点击“生成本章”。素材不足时，请继续采访，记录具体的人物、事件和细节。
         </p>
         <Link to="/interviews">前往采访 →</Link>
+        <Button
+          variant="outline"
+          disabled={busy}
+          onClick={() => {
+            setEditing(true);
+            onEditing(true);
+          }}
+        >
+          手动写本章
+        </Button>
       </div>
     );
   const visible =
@@ -408,8 +439,8 @@ function ChapterBody({
             variant="outline"
             disabled={busy}
             onClick={() => {
-              setTitle(chapter.current!.title);
-              setBody(chapter.current!.body);
+              setTitle(chapter.current?.title || chapter.title);
+              setBody(chapter.current?.body || "");
               setEditVersion(chapter.version_number);
               setEditing(true);
               onEditing(true);
@@ -427,8 +458,8 @@ function ChapterBody({
           版本记录
         </Button>
         <span>
-          版本 {visible.version_number} · {visible.word_count} 字 ·{" "}
-          {visible.author === "user" ? "人工编辑" : "AI 成稿，待核对"}
+          版本 {visible?.version_number || 0} · {visible?.word_count || 0} 字 ·{" "}
+          {visible?.author === "user" ? "人工编辑" : "AI 成稿，待核对"}
         </span>
       </div>
       {showHistory && (
@@ -439,7 +470,7 @@ function ChapterBody({
               key={r.id}
               disabled={editing}
               onClick={() => setVersion(r.version_number)}
-              aria-pressed={r.id === visible.id}
+              aria-pressed={r.id === visible?.id}
             >
               版本 {r.version_number} ·{" "}
               {new Date(r.created_at).toLocaleString()} · {r.word_count}字
@@ -486,19 +517,31 @@ function ChapterBody({
               onClick={() => {
                 setEditing(false);
                 onEditing(false);
-                setBody(chapter.current!.body);
-                setTitle(chapter.current!.title);
+                setBody(chapter.current?.body || "");
+                setTitle(chapter.current?.title || chapter.title);
               }}
             >
               取消
             </Button>
           </div>
+          {book.profile_id && (
+            <label>
+              <input
+                type="checkbox"
+                checked={confirmSources}
+                disabled={!profile.data}
+                onChange={(e) => setConfirmSources(e.target.checked)}
+              />
+              我已核对当前资料，并将正文中的相关事实更新为资料第{" "}
+              {profile.data?.version_number || "…"} 版
+            </label>
+          )}
           <ErrorNotice error={save.error} />
         </form>
       ) : (
         <section className="writing-prose">
-          <h3>{visible.title}</h3>
-          {visible.body.split(/\n\s*\n/).map((paragraph, index) => (
+          <h3>{visible?.title}</h3>
+          {visible?.body.split(/\n\s*\n/).map((paragraph, index) => (
             <p key={index}>{paragraph}</p>
           ))}
         </section>

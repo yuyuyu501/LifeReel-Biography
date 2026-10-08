@@ -1,10 +1,11 @@
-"""Live voice updates. Raw utterances exist only in this connection's bounded RAM queue."""
+"""Live voice updates with a bounded queue and persistent profile source evidence."""
 
 import asyncio
 import json
 import logging
 from contextvars import ContextVar
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from uuid import UUID, uuid5
 
 from starlette.concurrency import run_in_threadpool
@@ -36,6 +37,52 @@ def _process(db, tenant_id, update_id, call_id, utterances):
     session = voice_service.lock_session(db, tenant_id, call.session_id)
     subject_id, session_id, chapter_id = session.subject_id, session.id, session.chapter_id
     db.commit()
+    if session.profile_id:
+        from lifereel_api.modules.interview.profile_extraction import process as process_profile
+        from lifereel_api.modules.interview.profile_service import read as read_profile
+
+        for key, text, question in utterances:
+            from lifereel_api.modules.interview.models import InterviewRound
+
+            evidence_id = uuid5(call_id, "profile-evidence:" + key)
+            prior = db.get(InterviewRound, evidence_id)
+            if prior is None:
+                session = voice_service.lock_session(db, tenant_id, session_id)
+                session.round_count += 1
+                db.add(
+                    InterviewRound(
+                        id=evidence_id,
+                        tenant_id=tenant_id,
+                        session_id=session_id,
+                        round_index=session.round_count,
+                        answer_text=text[:3000],
+                        question_text=question[:2000],
+                        question_source="realtime_profile_evidence",
+                        answered_at=datetime.now(UTC),
+                    )
+                )
+                db.commit()
+            process_profile(
+                db,
+                tenant_id,
+                session.profile_id,
+                text,
+                {
+                    "type": "realtime_voice",
+                    "id": str(evidence_id),
+                    "call_id": str(call_id),
+                    "question": question[:2000],
+                },
+                uuid5(call_id, "profile:" + key),
+            )
+        profile = read_profile(db, tenant_id, session.profile_id)
+        return {
+            "memory_updated": True,
+            "profile_updated": True,
+            "script_updated": False,
+            "profile_version": profile["version_number"],
+            "readiness": profile["readiness"],
+        }
     retained = _instructions.get()
     instructions = retained if retained is not None else []
     changed = False
@@ -51,26 +98,49 @@ def _process(db, tenant_id, update_id, call_id, utterances):
         if not intent["has_new_facts"]:
             continue
         from lifereel_api.architecture.topology import is_remote
+
         if is_remote("memory"):
             from lifereel_api.architecture.internal import call
-            result = call("memory", "memory.voice-claim", tenant_id, {
-                "call_id": str(call_id), "key": key, "text": text, "question": question,
-            })
+
+            result = call(
+                "memory",
+                "memory.voice-claim",
+                tenant_id,
+                {
+                    "call_id": str(call_id),
+                    "key": key,
+                    "text": text,
+                    "question": question,
+                },
+            )
             changed = result["created"] or changed
             continue
         claim_id = uuid5(call_id, key)
         if db.get(MemoryClaim, claim_id):
             continue
         claim, kind, confidence, provider, model = memory._extract_claim(
-            text, "realtime_voice", question=question,
+            text,
+            "realtime_voice",
+            question=question,
         )
-        db.add(MemoryClaim(
-            id=claim_id, tenant_id=tenant_id, subject_id=subject_id,
-            interview_session_id=session_id, chapter_id=chapter_id,
-            source_round_id=None, source_observation_id=None, source_quote="",
-            claim_text=claim, claim_type=kind, confidence=confidence,
-            review_status="unreviewed", extraction_provider=provider, extraction_model=model,
-        ))
+        db.add(
+            MemoryClaim(
+                id=claim_id,
+                tenant_id=tenant_id,
+                subject_id=subject_id,
+                interview_session_id=session_id,
+                chapter_id=chapter_id,
+                source_round_id=None,
+                source_observation_id=None,
+                source_quote="",
+                claim_text=claim,
+                claim_type=kind,
+                confidence=confidence,
+                review_status="unreviewed",
+                extraction_provider=provider,
+                extraction_model=model,
+            )
+        )
         db.commit()
         changed = True
     if not changed and not requested and not _script_pending.get():
@@ -85,14 +155,22 @@ def _process(db, tenant_id, update_id, call_id, utterances):
     if claims and assessment["ready_for_script"]:
         if not is_current.get()():
             return {"memory_updated": changed, "script_updated": False, "pending": True}
-        ScriptSkill.generate(db, tenant_id, ScriptGenerateRequest(
-            subject_id=subject_id, chapter_id=chapter_id, idempotency_key=update_id,
-            mode="single_chapter", audience="family",
-        ), update_brief={
-            "script_instructions": "\n".join(instructions),
-            "update_mode": "replace_current_chapter",
-            "missing_topics": assessment["missing_topics"],
-        })
+        ScriptSkill.generate(
+            db,
+            tenant_id,
+            ScriptGenerateRequest(
+                subject_id=subject_id,
+                chapter_id=chapter_id,
+                idempotency_key=update_id,
+                mode="single_chapter",
+                audience="family",
+            ),
+            update_brief={
+                "script_instructions": "\n".join(instructions),
+                "update_mode": "replace_current_chapter",
+                "missing_topics": assessment["missing_topics"],
+            },
+        )
         updated = True
     return {"memory_updated": changed, "script_updated": updated}
 
@@ -152,13 +230,17 @@ class LiveUpdates:
             raise ApiError(409, ErrorCode.VOICE_LIMIT_REACHED)
         self.seen.add(key)
         from lifereel_api.architecture.topology import distributed
+
         if distributed():
             import redis
 
             from lifereel_api.core.config import get_settings
             from lifereel_api.modules.script.freshness import revision_key
+
             redis.from_url(get_settings().redis_url, socket_timeout=5).set(
-                revision_key(self.tenant_id, self.call_id), self.revision + 1, ex=3600,
+                revision_key(self.tenant_id, self.call_id),
+                self.revision + 1,
+                ex=3600,
             )
         self.revision += 1
         self.queue.put_nowait((key, text.strip(), question[:2000]))
@@ -174,9 +256,14 @@ class LiveUpdates:
             if not isinstance(item, dict):
                 raise ApiError(502, ErrorCode.VOICE_PROTOCOL_INVALID)
             call_id, name, arguments = (item.get(k) for k in ("call_id", "name", "arguments"))
-            if (not isinstance(call_id, str) or not 1 <= len(call_id) <= 200
-                    or not isinstance(name, str) or len(name) > 80
-                    or not isinstance(arguments, str) or len(arguments) > 2000):
+            if (
+                not isinstance(call_id, str)
+                or not 1 <= len(call_id) <= 200
+                or not isinstance(name, str)
+                or len(name) > 80
+                or not isinstance(arguments, str)
+                or len(arguments) > 2000
+            ):
                 raise ApiError(502, ErrorCode.VOICE_PROTOCOL_INVALID)
             signature = (name, arguments)
             previous = self.tool_calls.get(call_id) or additions.get(call_id)
@@ -193,9 +280,9 @@ class LiveUpdates:
                 additions[call_id] = (*signature, revision)
         if not additions:
             if all(call_id in self.tool_results for call_id in calls) and self.send_provider:
-                await self.send_provider(tool_result_event([
-                    (call_id, self.tool_results[call_id]) for call_id in calls
-                ]))
+                await self.send_provider(
+                    tool_result_event([(call_id, self.tool_results[call_id]) for call_id in calls])
+                )
             return
         if self.closing or len(self.tool_calls) + len(additions) > 128 or self.queue.full():
             raise ApiError(409, ErrorCode.VOICE_LIMIT_REACHED)
@@ -209,17 +296,21 @@ class LiveUpdates:
             result = {"status": "rejected", "code": "INVALID_SKILL_ARGUMENTS"}
         elif not item.revision:
             result = {"status": "pending", "code": "AWAITING_COMPLETED_UTTERANCE"}
-        elif (self.completed_revision < item.revision
-              or any(revision <= item.revision for revision in self.failed_revisions)):
+        elif self.completed_revision < item.revision or any(
+            revision <= item.revision for revision in self.failed_revisions
+        ):
             result = {"status": "failed", "code": "UPDATE_FAILED"}
         elif self.result.get("pending") or self.revision > self.completed_revision:
             result = {"status": "pending", "code": "NEWER_UTTERANCE_PENDING"}
         else:
             updated = self.result.get(
-                "memory_updated" if item.name == "sync_memory" else "script_updated", False,
+                "memory_updated" if item.name == "sync_memory" else "script_updated",
+                False,
             )
-            result = {"status": "completed" if updated else "unchanged",
-                      "processed_revision": self.completed_revision}
+            result = {
+                "status": "completed" if updated else "unchanged",
+                "processed_revision": self.completed_revision,
+            }
         self.tool_results[item.call_id] = result
         return result
 
@@ -261,6 +352,7 @@ class LiveUpdates:
             await self.send({"type": "update.started"})
             guard = is_current.set(lambda revision=revision: self.revision == revision)
             from lifereel_api.modules.script.freshness import remote_guard
+
             remote_token = remote_guard.set({"call_id": str(self.call_id), "revision": revision})
             instructions_token = _instructions.set(self.instructions)
             pending_token = _script_pending.set(self.result.get("pending", False))

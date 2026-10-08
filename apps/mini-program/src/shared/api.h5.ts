@@ -6,7 +6,11 @@ import type {
   ScriptProject,
   ProductionRun,
   MemoryClaim,
+  LifeProfile,
+  Book,
+  InterviewTurnWorkflow,
 } from "@lifereel/contracts";
+import { lifeProfileTemplate } from "@lifereel/contracts";
 
 const stamp = () => new Date().toISOString();
 let sequence = 0;
@@ -63,6 +67,49 @@ const chapters = [
   },
 ];
 const sessions: InterviewSession[] = [];
+const previewProfiles = new Map<string, LifeProfile>();
+const previewBooks: Book[] = [];
+const previewWorkflows = new Map<string, InterviewTurnWorkflow>();
+
+function previewProfile(subjectId: string) {
+  const prior = previewProfiles.get(subjectId);
+  if (prior) return prior;
+  const person = requireItem(people, subjectId);
+  const profile: LifeProfile = {
+    id: id("profile"),
+    subject_id: subjectId,
+    template_version: "life-profile-2026-10-08-v1",
+    version_number: 1,
+    ...lifeProfileTemplate,
+    entries: [
+      {
+        id: id("entry"),
+        field_key: "identity.preferred_name",
+        record_key: "single",
+        value: person.display_name,
+        state: "filled",
+        certainty: "reported",
+        use_scope: "works",
+        source: { type: "person" },
+        version_number: 1,
+      },
+    ],
+    readiness: {
+      status: "not_ready",
+      profile_version: 1,
+      rule_version: "preview",
+      scope: "整个人生",
+      processed_fields: 1,
+      total_fields: 67,
+      usable_entries: 1,
+      themes: [],
+      missing_fields: [],
+      message: "浏览器只展示填写方式，不调用模型，也不判断真实写作质量。",
+    },
+  };
+  previewProfiles.set(subjectId, profile);
+  return profile;
+}
 const claims: MemoryClaim[] = [
   {
     id: "preview-claim",
@@ -149,6 +196,124 @@ async function unavailable(): Promise<never> {
 }
 
 export const miniApi: typeof nativeApi = {
+  profile: async (subjectId) => previewProfile(subjectId),
+  editProfile: async (profileId, expected, changes) => {
+    const profile = [...previewProfiles.values()].find(
+      (p) => p.id === profileId,
+    );
+    if (!profile) throw new Error("资料不存在");
+    if (profile.version_number !== expected)
+      throw new Error("资料已有新版本，请重新加载");
+    for (const change of changes) {
+      const prior = profile.entries.find(
+        (e) =>
+          e.field_key === change.field_key &&
+          e.record_key === change.record_key,
+      );
+      if (change.delete) {
+        profile.entries = profile.entries.filter((e) => e !== prior);
+        continue;
+      }
+      const entry = {
+        ...change,
+        id: prior?.id || id("entry"),
+        version_number: (prior?.version_number || 0) + 1,
+        source: { type: "manual" },
+      };
+      if (prior) Object.assign(prior, entry);
+      else profile.entries.push(entry);
+    }
+    profile.version_number++;
+    profile.readiness.profile_version = profile.version_number;
+    profile.readiness.processed_fields = new Set(
+      profile.entries.map((e) => e.field_key),
+    ).size;
+    return { ...profile };
+  },
+  books: async () => [...previewBooks],
+  createBook: async (subjectId) => {
+    const existing = previewBooks.find((b) => b.subject_id === subjectId);
+    if (existing) return existing;
+    const profile = previewProfile(subjectId);
+    const chapterId = id("book-chapter");
+    const book: Book = {
+      id: id("book"),
+      subject_id: subjectId,
+      title: "示例人生书",
+      target_words: 1000,
+      profile_id: profile.id,
+      directory_version: 1,
+      chapters: [
+        {
+          id: chapterId,
+          chapter_id: chapterId,
+          title: "我的人生经历",
+          order_index: 1,
+          version_number: 0,
+          status: "empty",
+          source_count: 0,
+          stale: false,
+          job_id: null,
+          error_code: null,
+          current: null,
+          source_entry_ids: [],
+        },
+      ],
+    };
+    previewBooks.push(book);
+    return book;
+  },
+  book: async (bookId) => requireItem(previewBooks, bookId),
+  bookDirectory: async (bookId, data) => {
+    const book = requireItem(previewBooks, bookId);
+    if (book.directory_version !== data.expected_version)
+      throw new Error("目录版本冲突");
+    book.title = data.title;
+    book.chapters = data.chapters.map((ch, index) => {
+      const previous = book.chapters.find((c) => c.id === ch.id);
+      const chapterId = ch.id || id("book-chapter");
+      return {
+        ...(previous || {
+          id: chapterId,
+          chapter_id: chapterId,
+          version_number: 0,
+          status: "empty",
+          stale: false,
+          job_id: null,
+          error_code: null,
+          current: null,
+        }),
+        title: ch.title,
+        order_index: index + 1,
+        source_entry_ids: ch.source_entry_ids,
+        source_count: ch.source_entry_ids.length,
+      };
+    });
+    book.directory_version++;
+    return { ...book };
+  },
+  writeBook: unavailable,
+  editBookChapter: async (bookId, chapterId, data) => {
+    const book = requireItem(previewBooks, bookId);
+    const chapter = book.chapters.find((c) => c.chapter_id === chapterId);
+    if (!chapter || chapter.version_number !== data.expected_version)
+      throw new Error("书稿版本冲突");
+    chapter.version_number++;
+    chapter.status = "completed";
+    chapter.current = {
+      id: id("book-revision"),
+      version_number: chapter.version_number,
+      title: data.title,
+      body: data.body,
+      word_count: data.body.replace(/[^\p{L}\p{N}]/gu, "").length,
+      source_claim_ids: chapter.source_entry_ids,
+      author: "user",
+      generation_model: null,
+      created_at: stamp(),
+    };
+    return { ...book };
+  },
+  downloadProfile: unavailable,
   login: async (_platform, _code, displayName) => {
     user.display_name = displayName || "预览体验者";
     signedIn = true;
@@ -192,10 +357,15 @@ export const miniApi: typeof nativeApi = {
   interviews: async () => [...sessions],
   startInterview: async (payload) => {
     requireItem(people, payload.subject_id);
+    const existing = sessions.find(
+      (s) => s.subject_id === payload.subject_id && s.profile_id,
+    );
+    if (existing) return existing;
     const session: InterviewSession = {
       ...payload,
       id: id("session"),
-      chapter_id: payload.chapter_id || null,
+      chapter_id: null,
+      profile_id: previewProfile(payload.subject_id).id,
       topic_hint: payload.topic_hint || null,
       status: "active",
       round_count: 0,
@@ -244,6 +414,16 @@ export const miniApi: typeof nativeApi = {
   },
   createTurn: async (sessionId, payload) => {
     const session = requireItem(sessions, sessionId);
+    let round = session.rounds.find((r) => r.id === payload.round_id);
+    if (!round) {
+      round = await miniApi.createRound(sessionId, {
+        question_text: "您想先讲哪段人生经历？",
+      });
+    }
+    if (round) {
+      round.answer_text = payload.answer_text || null;
+      round.answered_at = stamp();
+    }
     const claim = {
       ...claims[0],
       id: id("claim"),
@@ -258,10 +438,10 @@ export const miniApi: typeof nativeApi = {
       updated_at: stamp(),
     };
     claims.push(claim);
-    return {
+    const result: InterviewTurnWorkflow = {
       id: id("workflow"),
       session_id: sessionId,
-      round_id: payload.round_id || "",
+      round_id: round.id,
       chapter_id: session.chapter_id,
       job_id: null,
       idempotency_key: payload.idempotency_key,
@@ -279,12 +459,15 @@ export const miniApi: typeof nativeApi = {
       updated_at: stamp(),
       completed_at: stamp(),
     };
+    previewWorkflows.set(sessionId, result);
+    return result;
   },
   workspace: async (sessionId) => ({
     session: requireItem(sessions, sessionId),
     assets: [],
     script: null,
-    latest_workflow: null,
+    latest_workflow: previewWorkflows.get(sessionId) || null,
+    profile: previewProfile(requireItem(sessions, sessionId).subject_id),
   }),
   memories: async (subjectId) =>
     claims.filter((item) => item.subject_id === subjectId),

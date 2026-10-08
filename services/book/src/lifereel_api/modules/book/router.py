@@ -15,6 +15,7 @@ from lifereel_api.modules.book.schemas import (
     BookGenerate,
     BookRead,
     ChapterEdit,
+    DirectoryEdit,
     GenerationRead,
     RevisionRead,
 )
@@ -44,6 +45,13 @@ def read(book_id: UUID, db: Db, tenant: Tenant):
     return service.read(db, tenant, book_id)
 
 
+@router.patch("/{book_id}/directory", response_model=BookRead)
+def directory(book_id: UUID, payload: DirectoryEdit, db: Db, tenant: Tenant):
+    from lifereel_api.modules.book.profile_sources import edit_directory
+
+    return edit_directory(db, tenant, book_id, payload)
+
+
 @router.post("/{book_id}/generate", response_model=GenerationRead, status_code=202)
 def generate(book_id: UUID, payload: BookGenerate, db: Db, tenant: Tenant):
     return service.queue(db, tenant, book_id, payload)
@@ -61,7 +69,15 @@ def history(book_id: UUID, chapter_id: UUID, db: Db, tenant: Tenant):
 
 @router.get("/{book_id}/export")
 def export(book_id: UUID, db: Db, tenant: Tenant, format: Literal["txt", "md"] = "txt"):
+    model = service.get_book(db, tenant, book_id)
+    service.require_profile_sources(db, model)
     book = service.read(db, tenant, book_id)
+    if model.profile_id:
+        for chapter in book.chapters:
+            if chapter.current and service.source(db, model, chapter.chapter_id).get(
+                "restricted_entry_ids"
+            ):
+                raise ApiError(409, ErrorCode.PROFILE_USE_RESTRICTED)
     if not any(ch.current for ch in book.chapters):
         raise ApiError(409, ErrorCode.BOOK_EMPTY)
     lines = [("# " if format == "md" else "") + book.title, "", "目录"]

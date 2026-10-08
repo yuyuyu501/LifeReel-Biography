@@ -116,7 +116,8 @@ def test_followup_validation_retry_meters_each_actual_call(token_mode, monkeypat
     person = token_mode.post("/v1/persons", json={"display_name": "Metering test"}).json()
     chapter = token_mode.get("/v1/chapters").json()[0]
     session = token_mode.post(
-        "/v1/interviews", json={"subject_id": person["id"], "chapter_id": chapter["id"]},
+        "/v1/interviews",
+        json={"mode": "legacy", "subject_id": person["id"], "chapter_id": chapter["id"]},
     ).json()
     answered = token_mode.post(
         f"/v1/interviews/{session['id']}/rounds/{session['rounds'][0]['id']}/answer",
@@ -125,7 +126,9 @@ def test_followup_validation_retry_meters_each_actual_call(token_mode, monkeypat
     assert answered.status_code == 200
     settings = get_settings()
     monkeypatch.setattr(settings, "llm_provider", "openai-compatible")
-    monkeypatch.setattr(settings, "openai_compatible_base_url", "https://ark.cn-beijing.volces.com/api/v3")
+    monkeypatch.setattr(
+        settings, "openai_compatible_base_url", "https://ark.cn-beijing.volces.com/api/v3"
+    )
     monkeypatch.setattr(settings, "openai_compatible_api_key", "test-key")
     monkeypatch.setattr(settings, "openai_compatible_model", tokens.MODEL)
     monkeypatch.setattr(settings, "interview_llm_model", tokens.MODEL)
@@ -133,12 +136,19 @@ def test_followup_validation_retry_meters_each_actual_call(token_mode, monkeypat
 
     def post(*args, **kwargs):
         calls.append(kwargs["json"])
-        content = invalid if len(calls) == 1 else json.dumps({
-            "next_question": "Thank you for sharing; you can add more details later.",
-            "intent": "meaning",
-        })
+        content = (
+            invalid
+            if len(calls) == 1
+            else json.dumps(
+                {
+                    "next_question": "Thank you for sharing; you can add more details later.",
+                    "intent": "meaning",
+                }
+            )
+        )
         return httpx.Response(
-            200, request=httpx.Request("POST", "https://model.test"),
+            200,
+            request=httpx.Request("POST", "https://model.test"),
             json={
                 "id": f"followup-{len(calls)}",
                 "usage": {"prompt_tokens": 10000, "completion_tokens": 1000},

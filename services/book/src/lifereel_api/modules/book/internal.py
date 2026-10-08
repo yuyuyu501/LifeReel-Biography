@@ -1,6 +1,7 @@
 from uuid import UUID
 
 from lifereel_api.modules.book import service
+from lifereel_api.modules.book.adaptation import sources
 from lifereel_api.modules.jobs.service import get_job
 
 
@@ -11,3 +12,6 @@ def retry(db, tenant, data):
 
 
 OPERATIONS = {"jobs.retry": ({"tasks"}, retry)}
+
+
+OPERATIONS["book.adaptation-sources"] = ({"script", "media", "worker-media"}, sources)

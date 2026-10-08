@@ -19,6 +19,9 @@ import type {
   ScriptProject,
   SourceAsset,
   TimelineAnchor,
+  LifeProfile,
+  ProfileChange,
+  Book,
 } from "@lifereel/contracts";
 import { getStored, removeStored, store } from "./platform";
 
@@ -102,6 +105,76 @@ async function request<T>(
 }
 
 export const miniApi = {
+  profile: (subjectId: string) =>
+    request<LifeProfile>(`/v1/life-profiles/subjects/${subjectId}`),
+  editProfile: (
+    id: string,
+    expected_version: number,
+    changes: ProfileChange[],
+    request_id: string,
+  ) =>
+    request<LifeProfile>(`/v1/life-profiles/${id}`, {
+      method: "PATCH",
+      data: { expected_version, changes, request_id },
+    }),
+  books: () => request<Book[]>("/v1/books"),
+  createBook: (subject_id: string) =>
+    request<Book>("/v1/books", { method: "POST", data: { subject_id } }),
+  book: (id: string) => request<Book>(`/v1/books/${id}`),
+  bookDirectory: (
+    id: string,
+    data: {
+      expected_version: number;
+      title: string;
+      chapters: {
+        id?: string;
+        title: string;
+        source_entry_ids: string[];
+      }[];
+    },
+  ) => request<Book>(`/v1/books/${id}/directory`, { method: "PATCH", data }),
+  writeBook: (
+    id: string,
+    data: {
+      idempotency_key: string;
+      chapter_ids?: string[];
+      overwrite?: boolean;
+      expected_versions?: Record<string, number>;
+    },
+  ) =>
+    request<{ job_ids: string[] }>(`/v1/books/${id}/generate`, {
+      method: "POST",
+      data,
+    }),
+  editBookChapter: (
+    id: string,
+    chapterId: string,
+    data: {
+      expected_version: number;
+      title: string;
+      body: string;
+      confirm_profile_version?: number;
+    },
+  ) =>
+    request<Book>(`/v1/books/${id}/chapters/${chapterId}`, {
+      method: "PATCH",
+      data,
+    }),
+  downloadProfile: async (profileId: string) => {
+    const result = await Taro.downloadFile({
+      url: `${apiBaseUrl}/v1/life-profiles/${profileId}/export?format=xlsx`,
+      header: {
+        Authorization: `Bearer ${getStored<string>(ACCESS_TOKEN) || ""}`,
+      },
+    });
+    if (result.statusCode !== 200)
+      throw new Error("表格下载失败，请重新登录后再试");
+    await Taro.openDocument({
+      filePath: result.tempFilePath,
+      fileType: "xlsx",
+      showMenu: true,
+    });
+  },
   login: (platform: "wechat" | "douyin", code: string, displayName?: string) =>
     request<MiniAuth>("/v1/auth/mini-program/login", {
       method: "POST",
@@ -202,6 +275,10 @@ export const miniApi = {
     mode?: "single_chapter" | "multi_chapter";
     audience?: string;
     chapter_id?: string;
+    book_revision_ids?: string[];
+    idempotency_key?: string;
+    duration_seconds?: number;
+    adaptation_instructions?: string;
   }) =>
     request<ScriptProject>("/v1/scripts/generate", {
       method: "POST",

@@ -28,7 +28,7 @@ def _start_answered_interview(client, answer: str = "1968年，我和父亲林�
     chapter = client.get("/v1/chapters").json()[0]
     session = client.post(
         "/v1/interviews",
-        json={"subject_id": person["id"], "chapter_id": chapter["id"]},
+        json={"mode": "legacy", "subject_id": person["id"], "chapter_id": chapter["id"]},
     ).json()
     round_ = session["rounds"][0]
     response = client.post(
@@ -123,7 +123,9 @@ def test_follow_up_accepts_ai_closing_without_forcing_another_question(client, m
     try:
         with SessionLocal() as db:
             result = suggest_next_question(
-                db, get_settings().default_tenant_id, UUID(session["id"]),
+                db,
+                get_settings().default_tenant_id,
+                UUID(session["id"]),
                 assessment={"ready_for_script": True, "missing_topics": [], "reason": "齐全"},
             )
         assert result["question_text"] == closing
@@ -184,9 +186,15 @@ def test_missing_topics_are_decided_by_ai_semantics(monkeypatch) -> None:
 def test_memory_ai_failure_rolls_back_and_interview_job_can_retry(client, monkeypatch) -> None:
     from lifereel_api.modules.orchestration import intent
 
-    monkeypatch.setattr(intent, "classify_turn", lambda message, **kwargs: {
-        "action": "interview", "has_new_facts": True, "instructions": "",
-    })
+    monkeypatch.setattr(
+        intent,
+        "classify_turn",
+        lambda message, **kwargs: {
+            "action": "interview",
+            "has_new_facts": True,
+            "instructions": "",
+        },
+    )
     from lifereel_api.modules.jobs import service as job_service
     from lifereel_api.providers.openai_compatible import OpenAICompatibleClient
 
@@ -194,7 +202,7 @@ def test_memory_ai_failure_rolls_back_and_interview_job_can_retry(client, monkey
     chapter = client.get("/v1/chapters").json()[0]
     session = client.post(
         "/v1/interviews",
-        json={"subject_id": person["id"], "chapter_id": chapter["id"]},
+        json={"mode": "legacy", "subject_id": person["id"], "chapter_id": chapter["id"]},
     ).json()
     _configure_real_llm(monkeypatch)
     monkeypatch.setattr(job_service, "enqueue", lambda job: None)
@@ -244,9 +252,13 @@ def test_memory_ai_failure_rolls_back_and_interview_job_can_retry(client, monkey
         with SessionLocal() as db:
             row = db.get(InterviewTurnWorkflow, UUID(workflow["id"]))
             state = row.script_brief["memory_recovery"]
-            row.script_brief = {**row.script_brief, "memory_recovery": {
-                **state, "failed_at": (datetime.now(UTC) - timedelta(seconds=31)).isoformat(),
-            }}
+            row.script_brief = {
+                **row.script_brief,
+                "memory_recovery": {
+                    **state,
+                    "failed_at": (datetime.now(UTC) - timedelta(seconds=31)).isoformat(),
+                },
+            }
             db.commit()
         retried = client.post(f"/v1/jobs/{job['id']}/retry")
         assert retried.status_code == 200

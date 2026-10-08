@@ -4,9 +4,8 @@ ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
 COPY --from=ffmpeg /ffmpeg /usr/local/bin/ffmpeg
 COPY --from=ffmpeg /ffprobe /usr/local/bin/ffprobe
 WORKDIR /opt/deps
-COPY apps/api/pyproject.toml apps/api/README.md ./
-RUN python -c "import tomllib; print(chr(10).join(tomllib.load(open('pyproject.toml','rb'))['project']['dependencies']))" > requirements.txt \
-    && pip install -r requirements.txt
+COPY apps/api/requirements.lock ./
+RUN pip install --require-hashes -r requirements.lock
 WORKDIR /workspace
 COPY apps/api/pyproject.toml apps/api/README.md apps/api/
 COPY apps/api/src apps/api/src

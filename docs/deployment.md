@@ -42,9 +42,9 @@ S3_BUCKET=replace-with-private-bucket
 docker compose -f compose.production.yaml up -d --build
 ```
 
-生产 Compose 包含 Gateway、Identity、Interview、Memory、Script、Media、Billing、Tasks、Model Gateway，以及两个 Worker。Worker 从 PostgreSQL 领取任务，在自身进程执行，不再回调旧 API。各服务可独立启动，仍共享数据库与统一版本基础库。
+生产 Compose 包含 Gateway、Identity、Interview、Memory、Script、Media、Billing、Tasks、Model Gateway，以及三个 Worker（采访、写书、媒体）。Worker 从 PostgreSQL 领取任务，在自身进程执行，不再回调旧 API。各服务可独立启动，仍共享数据库与统一版本基础库。
 
-一次性 migrate 容器先执行 Alembic 迁移和幂等初始化，创建默认租户、首位 owner 账号及 11 个生命章节。迁移成功后才启动业务服务。
+一次性 migrate 容器先执行 Alembic 迁移和幂等初始化，创建默认租户、首位 owner 账号、兼容历史章节，以及已有人物的人生资料表。新采访按人物续填资料，不要求选择历史章节。迁移成功后才启动业务服务。
 
 4. 检查：
 
@@ -246,3 +246,21 @@ WHISPER_COMPUTE_TYPE=int8
 - 完成采访、剧本持续更新、授权、生产、发布、公开观看和撤回的端到端演练。
 - 为 `/health`、`/ready`、`/system-status`、Worker 队列积压和 Provider 失败率配置监控。
 - 明确录音、肖像、声音克隆、未成年人信息和公开发布的隐私政策与删除流程。
+
+## 人生资料与依赖锁（0044）
+
+新流程为人生资料表 → 独立书籍目录与保存书稿 → 剧本与分镜 → 影像。
+迁移 `20261008_0044` 在 interview Schema 增加资料、条目及变更记录三张表，
+保留历史问答、书稿版本、影像与所有原始媒体路径。初始化只迁入可核验的现行事实，
+不调用真实模型；执行前检查活动任务并备份全部 Schema。
+已有新流程数据时禁止直接 downgrade 0044 或用旧备份覆盖新增内容，优先修复向前。
+
+后端镜像从 `apps/api/requirements.lock` 以 `--require-hashes` 安装运行依赖，
+与 `apps/api/uv.lock` 同步。更新依赖后在 `apps/api` 执行
+`uv export --frozen --no-dev --no-emit-project --output-file requirements.lock`，
+CI 验证两份锁一致，不在服务器临时升级 Python 包。
+
+本轮隔离联调脚本为 `deploy/tests/life_profile_e2e.py`。
+配置必须位于忽略的 tmp 目录，限定 localhost 与 lifereel-lifeqa project。
+写书的 HTTP 模型测试仅使用 Docker 内部的合成端点，不代表真实模型文字质量。
+资源限制 overlay、环境、图片和完整运行日志保存在 tmp，不提交 Git。

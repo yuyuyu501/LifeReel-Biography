@@ -245,6 +245,42 @@ def start_interview(db: Session, tenant_id: UUID, payload: InterviewStart) -> In
     if subject is None:
         raise ApiError(status.HTTP_404_NOT_FOUND, ErrorCode.SUBJECT_NOT_FOUND)
 
+    if payload.mode == "life_profile":
+        from lifereel_api.modules.interview import profile_service
+
+        profile = profile_service.ensure(db, tenant_id, payload.subject_id)
+        existing = db.scalar(
+            select(InterviewSession).where(
+                InterviewSession.tenant_id == tenant_id,
+                InterviewSession.profile_id == profile.id,
+            )
+        )
+        if existing:
+            return get_session(db, tenant_id, existing.id)
+        session = InterviewSession(
+            tenant_id=tenant_id,
+            subject_id=payload.subject_id,
+            profile_id=profile.id,
+            chapter_id=None,
+            topic_hint=payload.topic_hint,
+        )
+        db.add(session)
+        db.flush()
+        db.add(
+            InterviewRound(
+                tenant_id=tenant_id,
+                session_id=session.id,
+                round_index=1,
+                question_text=payload.topic_hint
+                or f"{subject.preferred_name or subject.display_name}，您想先从哪段人生经历说起？",
+                question_intent="opening",
+                question_source="life_profile",
+            )
+        )
+        session.round_count = 1
+        db.commit()
+        return get_session(db, tenant_id, session.id)
+
     if payload.chapter_id:
         existing = db.scalar(
             select(InterviewSession)
@@ -385,6 +421,25 @@ def suggest_next_question(
     assert_no_call(db, tenant_id, session_id)
     session = get_session(db, tenant_id, session_id)
     answered = [item for item in session.rounds if item.answer_text]
+    if session.profile_id:
+        from lifereel_api.modules.interview.profile_service import read
+
+        unanswered = next(
+            (r for r in reversed(session.rounds) if not r.answer_text and r.question_text), None
+        )
+        if unanswered:
+            return {
+                "question_text": unanswered.question_text,
+                "question_intent": "profile_gap",
+                "question_source": "life_profile",
+            }
+        profile = read(db, tenant_id, session.profile_id)
+        missing = profile["readiness"]["missing_fields"]
+        return {
+            "question_text": missing[0]["question"] if missing else "还有什么经历想补充？",
+            "question_intent": "profile_gap",
+            "question_source": "life_profile",
+        }
     revised_id = (assessment or {}).get("revised_round_id")
     revised = next((r for r in answered if str(r.id) == revised_id), None)
     last_control = (

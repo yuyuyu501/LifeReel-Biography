@@ -13,8 +13,10 @@ from lifereel_api.modules.memory import recovery
 from lifereel_api.modules.orchestration import service
 
 BUDGET_ERRORS = [
-    ErrorCode.EVIDENCE_TEXT_TOO_LARGE, ErrorCode.MEMORY_INPUT_TOO_LARGE,
-    ErrorCode.SCRIPT_INPUT_TOO_LARGE, ErrorCode.SCRIPT_MOCK_OUTPUT_TOO_LARGE,
+    ErrorCode.EVIDENCE_TEXT_TOO_LARGE,
+    ErrorCode.MEMORY_INPUT_TOO_LARGE,
+    ErrorCode.SCRIPT_INPUT_TOO_LARGE,
+    ErrorCode.SCRIPT_MOCK_OUTPUT_TOO_LARGE,
 ]
 
 
@@ -23,10 +25,13 @@ BUDGET_ERRORS = [
 def test_budget_failure_policy_and_workflow_property_agree(code, with_policy):
     workflow = InterviewTurnWorkflow(status="failed", error_code=code.value, script_brief={})
     if with_policy:
-        workflow.script_brief = {"memory_recovery": {
-            "version": recovery.VERSION, "runs": 1,
-            "failed_at": datetime.now(UTC).isoformat(),
-        }}
+        workflow.script_brief = {
+            "memory_recovery": {
+                "version": recovery.VERSION,
+                "runs": 1,
+                "failed_at": datetime.now(UTC).isoformat(),
+            }
+        }
     assert not recovery.allowed(workflow)
     assert not workflow.retry_allowed
     assert workflow.retry_after_seconds == 0
@@ -37,7 +42,9 @@ def test_budget_failure_policy_and_workflow_property_agree(code, with_policy):
 
 def _start(client):
     person = client.post("/v1/persons", json={"display_name": "Budget recovery"}).json()
-    session = client.post("/v1/interviews", json={"subject_id": person["id"]}).json()
+    session = client.post(
+        "/v1/interviews", json={"mode": "legacy", "subject_id": person["id"]}
+    ).json()
     return person, session
 
 
@@ -52,8 +59,10 @@ def _assert_no_retry(client, monkeypatch, session, code):
     wallet_before = client.get("/v1/wallet").json()
     monkeypatch.setattr(jobs, "enqueue", lambda *args: pytest.fail("budget failure was enqueued"))
     for _ in range(2):
-        for path in (f"/v1/jobs/{failed['job_id']}/retry",
-                     f"/v1/internal/interview-turns/{failed['id']}/execute"):
+        for path in (
+            f"/v1/jobs/{failed['job_id']}/retry",
+            f"/v1/internal/interview-turns/{failed['id']}/execute",
+        ):
             rejected = client.post(path)
             assert rejected.status_code == 409
             assert rejected.json()["error"]["code"] == "JOB_RETRY_NOT_ALLOWED"
@@ -65,8 +74,9 @@ def _assert_no_retry(client, monkeypatch, session, code):
 
 
 @pytest.mark.parametrize("code", BUDGET_ERRORS)
-def test_budget_retry_endpoints_preserve_attempts_and_allow_a_new_submission(client, monkeypatch,
-                                                                          code):
+def test_budget_retry_endpoints_preserve_attempts_and_allow_a_new_submission(
+    client, monkeypatch, code
+):
     _, session = _start(client)
     assess = service._assess_chapter
 
@@ -94,16 +104,20 @@ def test_budget_retry_endpoints_preserve_attempts_and_allow_a_new_submission(cli
         assert recovery.policy(original)["runs"] == 1
 
 
-def test_smaller_document_does_not_automatically_resubmit_rejected_original(client, monkeypatch,
-                                                                         tmp_path):
+def test_smaller_document_does_not_automatically_resubmit_rejected_original(
+    client, monkeypatch, tmp_path
+):
     monkeypatch.setattr(get_settings(), "local_storage_path", str(tmp_path / "storage"))
     person, session = _start(client)
 
     def upload(text, name):
         response = client.post(
             "/v1/evidence/assets",
-            data={"subject_id": person["id"], "interview_session_id": session["id"],
-                  "kind": "document"},
+            data={
+                "subject_id": person["id"],
+                "interview_session_id": session["id"],
+                "kind": "document",
+            },
             files={"file": (name, BytesIO(text.encode()), "text/plain")},
         )
         assert response.status_code == 201

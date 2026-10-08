@@ -1,0 +1,171 @@
+.life-profile-table {
+  padding: 1.25rem;
+  color: var(--text-main, #203349);
+}
+.profile-summary h2 {
+  margin: 0.4rem 0;
+}
+.profile-summary p,
+.profile-summary li {
+  font-size: 0.9rem;
+  line-height: 1.7;
+}
+.profile-summary small {
+  display: block;
+  margin-top: 0.65rem;
+  color: #657487;
+}
+.profile-next,
+.profile-export a {
+  color: #2363b8;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.profile-export {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+  margin: 1rem 0;
+  font-size: 0.85rem;
+}
+.profile-export label {
+  display: flex;
+  gap: 0.4rem;
+  align-items: center;
+}
+.profile-section {
+  border-top: 1px solid #dbe2ea;
+  padding: 0.9rem 0;
+}
+.profile-section > summary {
+  cursor: pointer;
+  font-weight: 600;
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+}
+.profile-section summary span,
+.profile-field small {
+  color: #68788b;
+  font-size: 0.78rem;
+  font-weight: normal;
+}
+.profile-field {
+  padding: 0.85rem 0;
+  border-bottom: 1px dashed #e1e6ee;
+}
+.profile-field > header {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 0.3rem;
+}
+.profile-record p {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  line-height: 1.7;
+  margin: 0.55rem 0;
+  font-size: 0.88rem;
+}
+.profile-record small {
+  display: block;
+}
+.profile-field-actions {
+  display: flex;
+  gap: 0.25rem;
+  margin-top: 0.4rem;
+}
+.profile-editor {
+  padding: 1rem;
+  border: 1px solid #9db8d8;
+  border-radius: 0.7rem;
+  background: #f5f9ff;
+  margin: 1rem 0;
+}
+.profile-editor label {
+  display: grid;
+  gap: 0.35rem;
+  margin: 0.6rem 0;
+  font-size: 0.85rem;
+}
+.profile-editor textarea {
+  min-height: 4rem;
+}
+.profile-editor-options {
+  display: flex;
+  gap: 0.7rem;
+  flex-wrap: wrap;
+}
+.profile-editor-options label {
+  flex: 1 1 8rem;
+}
+.profile-editor fieldset label {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.profile-editor-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.8rem;
+}
+.profile-history,
+.profile-legacy {
+  margin: 0.8rem 0;
+  font-size: 0.85rem;
+}
+.profile-history p {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.life-interviews-page > .life-profile-table {
+  max-width: 72rem;
+  padding: 1.5rem 0;
+}
+.book-directory-editor,
+.book-script-generator {
+  width: 100%;
+  padding: 1.3rem;
+  border: 1px solid #d8e1ec;
+  border-radius: 0.8rem;
+  background: #fff;
+  margin-bottom: 1rem;
+}
+.book-script-generator > summary {
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+.book-script-generator label,
+.book-directory-editor label {
+  display: block;
+  margin: 0.8rem 0;
+  line-height: 1.7;
+}
+.book-script-generator input[type="checkbox"],
+.book-directory-editor input[type="checkbox"] {
+  margin-right: 0.6rem;
+}
+.book-script-generator small {
+  display: block;
+  color: #69798c;
+  margin-left: 1.6rem;
+}
+.book-directory-editor section {
+  padding: 0.8rem 0;
+  border-bottom: 1px solid #e5eaf1;
+}
+.book-directory-editor details {
+  max-height: 25rem;
+  overflow: auto;
+}
+@media (max-width: 760px) {
+  .life-profile-table {
+    padding: 1rem;
+  }
+  .profile-section > summary {
+    gap: 0.5rem;
+  }
+}

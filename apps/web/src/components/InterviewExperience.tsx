@@ -100,6 +100,7 @@ const STAGES: Record<string, string> = {
   queued: "已保存，正在排队",
   analyzing_materials: "正在读取照片或录音",
   updating_memory: "正在整理记忆",
+  organizing_profile: "正在填写资料表、整理更正和可写内容",
   assessing_chapter: "正在梳理本章线索",
   preparing_reply: "正在准备回应",
   updating_script: "正在更新本章剧本",
@@ -147,7 +148,7 @@ export function InterviewProgress({
               estimate[1] +
               " 秒，实际时间可能变化。"
             : "当前同类样本不足，暂不提供预计时间。"}
-          可以切换章节，后台会继续处理。
+          可以离开页面，后台会继续处理。
         </small>
       )}
     </div>

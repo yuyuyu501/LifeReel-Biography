@@ -1,6 +1,7 @@
 """Bounded, source-grounded prose generation; never pad sparse evidence into a life."""
 
 import json
+import re
 import unicodedata
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
@@ -63,6 +64,20 @@ def validate_output(result, snapshot):
     normalized = ["".join(c for c in p.text if c.isalnum()) for p in draft.paragraphs]
     if len(set(normalized)) != len(normalized):
         raise ValueError("duplicate_paragraphs")
+    # Validate against current values. Raw source quotes can contain an earlier
+    # mistaken year and must never authorize reintroducing it into the book.
+    current_facts = "\n".join(
+        item.get("text", item.get("claim_text", "")) for item in snapshot["claims"]
+    )
+    output_text = draft.title + "\n" + body
+    unsupported = set(re.findall(r"(?:18|19|20|21)\d{2}年", output_text)) - set(
+        re.findall(r"(?:18|19|20|21)\d{2}年", current_facts)
+    )
+    for label in ["中年女性", "中年男性", "年轻女性", "年轻男性", "女性主角", "男性主角"]:
+        if label in output_text and label not in current_facts:
+            unsupported.add(label)
+    if unsupported:
+        raise ValueError("unsupported_factual_detail")
     return {"title": draft.title, "body": body, "word_count": count, "source_claim_ids": ids}
 
 

@@ -600,6 +600,10 @@ def generate_draft(
         )
         committed_read(db)
         return get_project(db, tenant_id, UUID(result["project_id"]))
+    if payload.book_revision_ids:
+        from lifereel_api.modules.script.book_adaptation import generate
+
+        return generate(db, tenant_id, payload)
     # One update can be retried, but a new update of the same chapter is a new charge.
     with execution_lock(db, payload.subject_id) as acquired:
         if not acquired:

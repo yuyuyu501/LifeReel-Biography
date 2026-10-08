@@ -119,11 +119,32 @@ it("handles interruption, mute, transcript roles and graceful end", async () => 
   );
   expect(result.current.messages).toHaveLength(2);
   act(() => socket.event({ type: "update.started" }));
-  expect(result.current.updateStatus).toContain("正在更新");
-  act(() => socket.event({ type: "update.done", memory_updated: true, script_updated: true }));
+  expect(result.current.updateStatus).toContain("正在整理人生资料");
+  act(() =>
+    socket.event({
+      type: "update.done",
+      memory_updated: true,
+      script_updated: true,
+    }),
+  );
   expect(result.current.updateStatus).toBe("知识和剧本已更新");
-  act(() => socket.event({ type: "update.done", memory_updated: true,
-    script_updated: false, pending: true }));
+  act(() =>
+    socket.event({
+      type: "update.done",
+      profile_updated: true,
+      memory_updated: true,
+      script_updated: false,
+    }),
+  );
+  expect(result.current.updateStatus).toBe("人生资料已更新");
+  act(() =>
+    socket.event({
+      type: "update.done",
+      memory_updated: true,
+      script_updated: false,
+      pending: true,
+    }),
+  );
   expect(result.current.updateStatus).toBe("正在处理后续讲述…");
   expect(result.current.active).toBe(true);
   act(() => result.current.end());
@@ -170,13 +191,30 @@ it("closes tracks and socket on navigation without reconnecting", async () => {
 it("refreshes the workspace while still talking and clears temporary captions on disconnect", async () => {
   const invalidate = vi.spyOn(QueryClient.prototype, "invalidateQueries");
   const { result } = setup();
-  await act(async () => { await result.current.start(); });
+  await act(async () => {
+    await result.current.start();
+  });
   const socket = Socket.current;
   act(() => socket.event({ type: "ready" }));
-  act(() => socket.event({ type: "transcript.done", id: "one", role: "user", text: "临时字幕" }));
-  act(() => socket.event({ type: "update.done", memory_updated: true, script_updated: true }));
+  act(() =>
+    socket.event({
+      type: "transcript.done",
+      id: "one",
+      role: "user",
+      text: "临时字幕",
+    }),
+  );
+  act(() =>
+    socket.event({
+      type: "update.done",
+      memory_updated: true,
+      script_updated: true,
+    }),
+  );
   expect(result.current.active).toBe(true);
-  expect(invalidate).toHaveBeenCalledWith({ queryKey: ["interview-workspace", "session-1"] });
+  expect(invalidate).toHaveBeenCalledWith({
+    queryKey: ["interview-workspace", "session-1"],
+  });
   expect(invalidate).toHaveBeenCalledWith({ queryKey: ["memory-graph"] });
   expect(invalidate).toHaveBeenCalledWith({ queryKey: ["scripts"] });
   act(() => socket.onclose?.());

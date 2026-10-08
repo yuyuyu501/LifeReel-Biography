@@ -30,6 +30,7 @@ import { api } from "../api/client";
 import { ApiError, errorMessage, workflowErrorContext } from "../api/errors";
 import { ErrorNotice, QueryState } from "../components/QueryState";
 import { EditableScript } from "../components/EditableScript";
+import { LifeProfileTable } from "../components/LifeProfileTable";
 import {
   EVIDENCE_LIMITS,
   EVIDENCE_LIMIT_SUMMARY,
@@ -317,7 +318,8 @@ function InterviewWorkspace({ id }: { id: string }) {
           className={mobilePane === "script" ? "active" : ""}
           onClick={() => setMobilePane("script")}
         >
-          剧本 {workflowRunning && <span />}
+          {workspace.data?.profile ? "人生资料" : "历史剧本"}{" "}
+          {workflowRunning && <span />}
         </button>
       </div>
 
@@ -355,7 +357,7 @@ function InterviewWorkspace({ id }: { id: string }) {
           </Button>
           {!retryAllowed && (
             <span>
-              本轮重试已停止，请联系管理员排查。回答和已有剧本均已保留。
+              本轮重试已停止，请联系管理员排查。回答和已保存内容均已保留。
             </span>
           )}
         </div>
@@ -368,23 +370,29 @@ function InterviewWorkspace({ id }: { id: string }) {
           <div className="pane-heading">
             <div>
               <span>采访记录</span>
-              <h1>{chapter?.title ?? "自由采访"}</h1>
+              <h1>
+                {workspace.data.profile
+                  ? "人生采访"
+                  : (chapter?.title ?? "历史采访")}
+              </h1>
             </div>
             <small>
               {visibleRounds.filter((item) => item.answer_text).length} 次回答
             </small>
           </div>
-          <ChapterNavigation
-            chapters={chapters.data ?? []}
-            session={session}
-            disabled={voice.busy || recorder.isRecording || scriptEditing}
-            canLeave={() =>
-              !(files.length || recorder.audioBlob) ||
-              window.confirm(
-                "本章尚有未发送的录音或附件，离开将丢弃这些临时内容。文字草稿会在本标签页保留。是否继续？",
-              )
-            }
-          />
+          {!workspace.data.profile && (
+            <ChapterNavigation
+              chapters={chapters.data ?? []}
+              session={session}
+              disabled={voice.busy || recorder.isRecording || scriptEditing}
+              canLeave={() =>
+                !(files.length || recorder.audioBlob) ||
+                window.confirm(
+                  "当前有未发送的录音或附件，离开将丢弃这些临时内容。文字草稿会在本标签页保留。是否继续？",
+                )
+              }
+            />
+          )}
           <div
             className="conversation"
             ref={follow.conversation}
@@ -409,8 +417,8 @@ function InterviewWorkspace({ id }: { id: string }) {
               </div>
             ))}
             {workspace.data.assets.length > 0 && (
-              <div className="chat-assets-history" aria-label="本章已上传素材">
-                <strong>本章素材</strong>
+              <div className="chat-assets-history" aria-label="已上传素材">
+                <strong>当前素材</strong>
                 {workspace.data.assets.map((asset) => (
                   <Attachment key={asset.id} asset={asset} />
                 ))}
@@ -432,11 +440,11 @@ function InterviewWorkspace({ id }: { id: string }) {
           <details className="material-guidance">
             <summary>照片、录音和讲述小提示</summary>
             <p>
-              可以讲一件小事，也可以用回形针上传本章照片或录音，说明人物、时间和地点。发现剧本或之前讲述有误，直接在下方说明哪里不对、正确内容是什么，AI
-              会据此重新整理记忆和本章剧本。
+              可以讲一件小事，也可以用回形针上传照片或录音，说明人物、时间和地点。发现资料或之前讲述有误，直接在下方说明哪里不对、正确内容是什么，AI
+              会据此更正人生资料。之后可以从资料表写书，再将书稿改编为影像。
             </p>
             <p>
-              资料先用于整理记忆；在剧本页选择本章照片和音频参考后，再用于影像制作。人物形象保持一致不影响镜头变化。
+              资料可以直接编辑，也可以继续讲述来补充。照片和录音保存为素材，在影像制作时选择使用。
             </p>
           </details>
           <InterviewVoice
@@ -549,7 +557,9 @@ function InterviewWorkspace({ id }: { id: string }) {
                 aria-label={
                   submitTurn.isPending || workflowRunning
                     ? "正在整理"
-                    : "发送并更新剧本"
+                    : workspace.data.profile
+                      ? "发送并更新资料"
+                      : "发送并更新剧本"
                 }
                 title={
                   scriptEditing
@@ -558,7 +568,9 @@ function InterviewWorkspace({ id }: { id: string }) {
                       ? "请先停止录音"
                       : submitTurn.isPending || workflowRunning
                         ? "正在整理"
-                        : "发送并更新剧本"
+                        : workspace.data.profile
+                          ? "发送并更新资料"
+                          : "发送并更新剧本"
                 }
                 disabled={
                   voice.busy ||
@@ -605,90 +617,117 @@ function InterviewWorkspace({ id }: { id: string }) {
           <small>
             {workflowRunning
               ? "正在整理"
-              : scriptSynchronized
-                ? "已经同步"
-                : workflowError
-                  ? "尚未同步"
-                  : "等待内容"}
+              : workspace.data.profile &&
+                  !workflowError &&
+                  (workflow?.status === "completed" ||
+                    voice.updateStatus === "人生资料已更新")
+                ? "资料已保存"
+                : scriptSynchronized
+                  ? "已经同步"
+                  : workflowError
+                    ? "尚未同步"
+                    : "等待内容"}
           </small>
         </aside>
 
-        <section
-          className={`live-script-pane ${mobilePane !== "script" ? "mobile-hidden" : ""}`}
-          aria-label="本章实时剧本"
-        >
-          <div className="pane-heading script-pane-heading">
-            <div>
-              <span>LIVE SCRIPT</span>
-              <h2>{chapter?.title ?? "本章剧本"}</h2>
-            </div>
-            <div className="script-pane-actions">
-              {chapterScript && <small>{scriptStatus}</small>}
-              <Button
-                variant="outline"
-                size="icon"
-                className="icon-button"
-                title="重新生成本章剧本"
-                aria-label="重新生成本章剧本"
-                disabled={
-                  voice.busy ||
-                  scriptEditing ||
-                  regenerate.isPending ||
-                  workflowRunning ||
-                  submitTurn.isPending ||
-                  retryWorkflow.isPending
-                }
-                onClick={() => regenerate.mutate()}
-              >
-                <RefreshCw size={18} />
-              </Button>
-            </div>
-          </div>
-          <div
-            className="live-script-scroll"
-            tabIndex={0}
-            aria-label="剧本内容滚动区"
+        {workspace.data.profile ? (
+          <section
+            className={`live-script-pane ${mobilePane !== "script" ? "mobile-hidden" : ""}`}
+            aria-label="人生资料表"
           >
-            {workflowRunning && (
-              <div className="script-updating">
-                <LoaderCircle size={18} />
-                <div>
-                  <strong>采访 AI 正在整理</strong>
-                  <span>
-                    识别事实、检查缺口并同步更新本章。可能需要几分钟，刷新后可继续查看进度。
-                  </span>
+            <div className="live-script-scroll">
+              <LifeProfileTable
+                profile={workspace.data.profile}
+                busy={voice.busy || workflowRunning || submitTurn.isPending}
+                onTalk={(field) => {
+                  setAnswer(
+                    `我想补充“${field.label}”的资料，请围绕这一项引导我。`,
+                  );
+                  setMobilePane("conversation");
+                }}
+              />
+            </div>
+          </section>
+        ) : (
+          <section
+            className={`live-script-pane ${mobilePane !== "script" ? "mobile-hidden" : ""}`}
+            aria-label="本章实时剧本"
+          >
+            <div className="pane-heading script-pane-heading">
+              <div>
+                <span>LIVE SCRIPT</span>
+                <h2>{chapter?.title ?? "本章剧本"}</h2>
+              </div>
+              <div className="script-pane-actions">
+                {chapterScript && <small>{scriptStatus}</small>}
+                <Button
+                  variant="outline"
+                  size="icon"
+                  className="icon-button"
+                  title="重新生成本章剧本"
+                  aria-label="重新生成本章剧本"
+                  disabled={
+                    voice.busy ||
+                    scriptEditing ||
+                    regenerate.isPending ||
+                    workflowRunning ||
+                    submitTurn.isPending ||
+                    retryWorkflow.isPending
+                  }
+                  onClick={() => regenerate.mutate()}
+                >
+                  <RefreshCw size={18} />
+                </Button>
+              </div>
+            </div>
+            <div
+              className="live-script-scroll"
+              tabIndex={0}
+              aria-label="剧本内容滚动区"
+            >
+              {workflowRunning && (
+                <div className="script-updating">
+                  <LoaderCircle size={18} />
+                  <div>
+                    <strong>采访 AI 正在整理</strong>
+                    <span>
+                      识别事实、检查缺口并同步更新本章。可能需要几分钟，刷新后可继续查看进度。
+                    </span>
+                  </div>
                 </div>
-              </div>
-            )}
-            {!chapterScript ? (
-              <div className="live-script-empty">
-                <BookOpenText size={31} />
-                <h3>剧本会从第一段讲述开始</h3>
-              </div>
-            ) : (
-              <article className="live-manuscript">
-                <section>
-                  <EditableScript
-                    key={chapterScript.id}
-                    scene={chapterScript}
-                    project={workspace.data.script!}
-                    disabled={
-                      voice.busy ||
-                      workflowRunning ||
-                      regenerate.isPending ||
-                      submitTurn.isPending
-                    }
-                    onEditingChange={setScriptEditing}
-                  />
-                  <footer>
-                    <span>{chapterScript.duration_seconds} 秒</span>
-                    <span>{chapterScript.source_claim_ids.length} 条来源</span>
-                  </footer>
-                </section>
-              </article>
-            )}
-          </div>
-        </section>
+              )}
+              {!chapterScript ? (
+                <div className="live-script-empty">
+                  <BookOpenText size={31} />
+                  <h3>剧本会从第一段讲述开始</h3>
+                </div>
+              ) : (
+                <article className="live-manuscript">
+                  <section>
+                    <EditableScript
+                      key={chapterScript.id}
+                      scene={chapterScript}
+                      project={workspace.data.script!}
+                      disabled={
+                        voice.busy ||
+                        workflowRunning ||
+                        regenerate.isPending ||
+                        submitTurn.isPending
+                      }
+                      onEditingChange={setScriptEditing}
+                    />
+                    <footer>
+                      <span>{chapterScript.duration_seconds} 秒</span>
+                      <span>
+                        {chapterScript.source_claim_ids.length} 条来源
+                      </span>
+                    </footer>
+                  </section>
+                </article>
+              )}
+            </div>
+          </section>
+        )}
       </main>
     </div>
   );

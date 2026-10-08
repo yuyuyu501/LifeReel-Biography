@@ -16,6 +16,7 @@ from lifereel_api.modules.billing import service as billing
 from lifereel_api.modules.billing.usage import track_usage
 from lifereel_api.modules.evidence import service as evidence_service
 from lifereel_api.modules.evidence.models import EvidenceObservation, SourceAsset
+from lifereel_api.modules.interview import profile_service
 from lifereel_api.modules.interview import service as interview_service
 from lifereel_api.modules.interview.chapter_prompts import get_chapter_prompt_profile
 from lifereel_api.modules.interview.models import (
@@ -124,9 +125,14 @@ def get_workspace(db: Session, tenant_id: UUID, session_id: UUID) -> dict:
     return {
         "session": session,
         "assets": [_asset_payload(item) for item in assets],
-        "script": _script_payload(db, tenant_id, session.subject_id),
+        "script": _script_payload(db, tenant_id, session.subject_id)
+        if not session.profile_id
+        else None,
         "latest_workflow": latest,
         "progress": progress_summary(db, tenant_id, latest),
+        "profile": profile_service.read(db, tenant_id, session.profile_id)
+        if session.profile_id
+        else None,
     }
 
 
@@ -181,6 +187,18 @@ def create_turn(
         )
 
     session = interview_service.get_session(db, tenant_id, session_id)
+    if not session.profile_id:
+        from lifereel_api.modules.interview.profile_models import LifeProfile
+
+        if db.scalar(
+            select(LifeProfile.id).where(
+                LifeProfile.tenant_id == tenant_id,
+                LifeProfile.subject_id == session.subject_id,
+            )
+        ):
+            raise ApiError(409, ErrorCode.SCRIPT_BOOK_SOURCE_REQUIRED)
+    if session.profile_id and payload.action != "interview":
+        raise ApiError(409, ErrorCode.SCRIPT_BOOK_SOURCE_REQUIRED)
     latest = db.scalar(
         select(InterviewTurnWorkflow)
         .where(
@@ -416,10 +434,7 @@ def _assess_chapter(
         )
     context = {
         "chapter": profile,
-        "claims": [
-            fact_evidence(claim)
-            for claim in claims[-40:]
-        ],
+        "claims": [fact_evidence(claim) for claim in claims[-40:]],
         "answered_rounds": [
             {"question": round_.question_text, "answer": round_.answer_text}
             for round_ in rounds[-12:]
@@ -518,11 +533,19 @@ def _publish_turn_reply(db, tenant_id, workflow, assessment):
     if workflow.next_question:
         return
     record_stage(db, workflow, "preparing_reply")
-    reply = interview_service.suggest_next_question(
-        db,
-        tenant_id,
-        workflow.session_id,
-        assessment=assessment,
+    reply = (
+        {
+            "question_text": workflow.profile_result["next_question"],
+            "question_intent": "profile_gap",
+            "question_source": "life_profile",
+        }
+        if workflow.profile_result
+        else interview_service.suggest_next_question(
+            db,
+            tenant_id,
+            workflow.session_id,
+            assessment=assessment,
+        )
     )
     workflow.next_question = reply["question_text"]
     workflow.next_question_intent = reply["question_intent"]
@@ -659,6 +682,10 @@ def _execute_turn(
         if workflow.script_brief.get("followup_ready") is True:
             return _complete_turn_follow_up(db, tenant_id, workflow)
         session = interview_service.get_session(db, tenant_id, workflow.session_id)
+        if session.profile_id:
+            from lifereel_api.modules.orchestration.profile_turns import execute_profile_turn
+
+            return execute_profile_turn(db, tenant_id, workflow, session)
         from lifereel_api.modules.interview.planning import control
 
         command = db.get(InterviewRound, workflow.round_id)
@@ -734,7 +761,9 @@ def _execute_turn(
         intent = workflow.script_brief.get("turn_intent")
         if intent is None:
             current_scene = db.scalar(
-                select(ScriptScene).join(ScriptProject).where(
+                select(ScriptScene)
+                .join(ScriptProject)
+                .where(
                     ScriptProject.tenant_id == tenant_id,
                     ScriptProject.subject_id == session.subject_id,
                     ScriptProject.status != "superseded",
@@ -743,13 +772,17 @@ def _execute_turn(
             )
             intent_context = {
                 "recent_user_messages": [
-                    r.answer_text[-2000:] for r in session.rounds[-8:]
+                    r.answer_text[-2000:]
+                    for r in session.rounds[-8:]
                     if r.answer_text and r.id != source_round.id
                 ],
                 "current_script": {
-                    "plot": current_scene.plot, "narration": current_scene.narration,
+                    "plot": current_scene.plot,
+                    "narration": current_scene.narration,
                     "dialogues": current_scene.dialogues,
-                } if current_scene else None,
+                }
+                if current_scene
+                else None,
             }
             intent = (
                 {"action": "interview", "has_new_facts": True, "instructions": ""}
@@ -856,16 +889,25 @@ def _execute_turn(
                 reply_error = exc
         project = None
         scenes = []
-        correcting_existing = intent.get("is_correction") and db.scalar(
-            select(ScriptScene.id).join(ScriptProject).where(
-                ScriptProject.tenant_id == tenant_id,
-                ScriptProject.subject_id == session.subject_id,
-                ScriptProject.status != "superseded",
-                ScriptScene.chapter_id == session.chapter_id,
+        correcting_existing = (
+            intent.get("is_correction")
+            and db.scalar(
+                select(ScriptScene.id)
+                .join(ScriptProject)
+                .where(
+                    ScriptProject.tenant_id == tenant_id,
+                    ScriptProject.subject_id == session.subject_id,
+                    ScriptProject.status != "superseded",
+                    ScriptScene.chapter_id == session.chapter_id,
+                )
             )
-        ) is not None
-        if (chapter_claims and (assessment["ready_for_script"] or correcting_existing)
-                and dialogue_control == "continue"):
+            is not None
+        )
+        if (
+            chapter_claims
+            and (assessment["ready_for_script"] or correcting_existing)
+            and dialogue_control == "continue"
+        ):
             record_stage(db, workflow, "updating_script")
             project, scenes, _ = ScriptSkill.generate(
                 db,

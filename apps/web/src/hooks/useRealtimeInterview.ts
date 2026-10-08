@@ -50,8 +50,16 @@ export function useRealtimeInterview(sessionId: string) {
       queryKey: ["interview-voice", sessionId],
     });
     void queryClient.invalidateQueries({ queryKey: ["interviews"] });
-    for (const key of ["scripts", "memory-overview", "memory-graph", "memory-timeline",
-      "memory-conflicts", "persons", "wallet", "wallet-ledger"]) {
+    for (const key of [
+      "scripts",
+      "memory-overview",
+      "memory-graph",
+      "memory-timeline",
+      "memory-conflicts",
+      "persons",
+      "wallet",
+      "wallet-ledger",
+    ]) {
       void queryClient.invalidateQueries({ queryKey: [key] });
     }
   }, [queryClient, sessionId]);
@@ -122,7 +130,9 @@ export function useRealtimeInterview(sessionId: string) {
       await current.audio.open((frame) => {
         if (current.ready && current.socket?.readyState === WebSocket.OPEN) {
           if (current.socket.bufferedAmount > 64000) {
-            setError("网络传输过慢，通话已中断。已完成的知识和剧本更新仍然保留。");
+            setError(
+              "网络传输过慢，通话已中断。已完成的知识和剧本更新仍然保留。",
+            );
             cleanup();
             setPhase("idle");
             refresh();
@@ -193,25 +203,39 @@ export function useRealtimeInterview(sessionId: string) {
           } else if (event.type === "transcript.done") {
             setDraft(null);
             setMessages((items) => [
-              ...items.filter(
-                (item) => !(item.id === event.id && item.role === event.role),
-              ).slice(-1),
+              ...items
+                .filter(
+                  (item) => !(item.id === event.id && item.role === event.role),
+                )
+                .slice(-1),
               { id: event.id, role: event.role, text: event.text },
             ]);
           } else if (event.type === "transcript.failed") {
             setDraft(null);
             setError("刚才一段没有听清，请再说一遍。");
           } else if (event.type === "update.started") {
-            setUpdateStatus("正在更新知识和剧本…");
+            setUpdateStatus("正在整理人生资料…");
           } else if (event.type === "update.done") {
-            setUpdateStatus(event.pending ? "正在处理后续讲述…" : event.script_updated ?
-              (event.memory_updated ? "知识和剧本已更新" : "剧本已更新") :
-              event.memory_updated ? "知识已更新，继续讲述可完善剧本" : "可以继续讲述");
+            setUpdateStatus(
+              event.pending
+                ? "正在处理后续讲述…"
+                : event.profile_updated
+                  ? "人生资料已更新"
+                  : event.script_updated
+                    ? event.memory_updated
+                      ? "知识和剧本已更新"
+                      : "剧本已更新"
+                    : event.memory_updated
+                      ? "知识已更新，继续讲述可完善剧本"
+                      : "可以继续讲述",
+            );
             refresh();
           } else if (event.type === "update.failed") {
             setUpdateStatus("本轮更新未完成");
-            setError("本轮知识或剧本更新失败，请稍后重述需要补充的内容。" +
-              errorMessage(new ApiError(event.code, 503)));
+            setError(
+              "本轮资料整理失败，请稍后重述需要补充的内容。" +
+                errorMessage(new ApiError(event.code, 503)),
+            );
             refresh();
           } else if (event.type === "limit") {
             setError(errorMessage(new ApiError("VOICE_LIMIT_REACHED", 409)));

@@ -111,7 +111,8 @@ def prepare_chapter(client, subject_id=None, chapter_index=0):
     )
     chapter = client.get("/v1/chapters").json()[chapter_index]
     interview = client.post(
-        "/v1/interviews", json={"subject_id": person["id"], "chapter_id": chapter["id"]}
+        "/v1/interviews",
+        json={"mode": "legacy", "subject_id": person["id"], "chapter_id": chapter["id"]},
     ).json()
     client.post(
         f"/v1/interviews/{interview['id']}/rounds/{interview['rounds'][0]['id']}/answer",

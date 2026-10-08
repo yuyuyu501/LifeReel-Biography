@@ -44,6 +44,28 @@ def start_production(db: Session, tenant_id: UUID, payload: ProductionStart) -> 
     )
     if project is None:
         raise ApiError(status.HTTP_404_NOT_FOUND, ErrorCode.SCRIPT_PROJECT_NOT_FOUND)
+    if project.source_type == "book":
+        from lifereel_api.modules.book.service import digest
+        from lifereel_api.modules.script.book_adaptation import sources
+
+        current = sources(
+            db,
+            tenant_id,
+            project.subject_id,
+            [UUID(r["revision_id"]) for r in project.source_snapshot.get("revisions", [])],
+        )
+        if digest(current) != digest(project.source_snapshot):
+            raise ApiError(409, ErrorCode.BOOK_SOURCE_CHANGED)
+    else:
+        from lifereel_api.modules.interview.profile_models import LifeProfile
+
+        if db.scalar(
+            select(LifeProfile.id).where(
+                LifeProfile.tenant_id == tenant_id,
+                LifeProfile.subject_id == project.subject_id,
+            )
+        ):
+            raise ApiError(409, ErrorCode.SCRIPT_BOOK_SOURCE_REQUIRED)
     scenes = list(
         db.scalars(
             select(ScriptScene)
@@ -128,7 +150,10 @@ def start_production(db: Session, tenant_id: UUID, payload: ProductionStart) -> 
             status.HTTP_422_UNPROCESSABLE_ENTITY, ErrorCode.VIDEO_PROVIDER_INVALID
         ) from exc
     reference_package = build_reference_package(
-        db, tenant_id, project.subject_id, scenes[0].chapter_id if len(scenes) == 1 else None,
+        db,
+        tenant_id,
+        project.subject_id,
+        scenes[0].chapter_id if len(scenes) == 1 else None,
     )
     if len(scenes) == 1 and (
         settings.video_reference_style == "color_redraw"
@@ -164,7 +189,8 @@ def start_production(db: Session, tenant_id: UUID, payload: ProductionStart) -> 
             fingerprint_config = {
                 **config,
                 "photo_reference": {
-                    "version": 1, "asset_id": reference_package["character_reference"],
+                    "version": 1,
+                    "asset_id": reference_package["character_reference"],
                 },
             }
         fingerprint = hashlib.sha256(

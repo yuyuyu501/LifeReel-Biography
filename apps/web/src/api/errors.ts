@@ -1,12 +1,23 @@
 export const ERROR_MESSAGES: Record<string, string> = {
+  PROFILE_NOT_FOUND: "未找到这份资料或条目，请刷新确认。",
+  PROFILE_EDIT_CONFLICT:
+    "资料已有新版本，您的草稿保留，请核对最新内容后再保存。",
+  PROFILE_REQUEST_CONFLICT: "保存请求与原请求不一致，请核对后重新提交。",
+  PROFILE_OUTPUT_INVALID: "本次资料整理未通过来源或格式检查，原内容已保留。",
+  PROFILE_USE_RESTRICTED:
+    "选材含有已删除、待澄清或禁止写进作品的内容，请先调整资料和选材。",
+  SCRIPT_BOOK_SOURCE_REQUIRED: "请先保存书稿，再到影像的“剧本与分镜”生成剧本。",
   BOOK_NOT_FOUND: "未找到这本书。",
   BOOK_CHAPTER_NOT_FOUND: "未找到本书的这个章节。",
-  BOOK_MATERIAL_INSUFFICIENT: "现有资料不足以写成约1000字的真实章节，请先补充采访中的具体经历。",
+  BOOK_MATERIAL_INSUFFICIENT:
+    "现有资料不足以写成约1000字的真实章节，请先补充采访中的具体经历。",
   BOOK_MODEL_NOT_CONFIGURED: "写书模型尚未配置，请联系管理员。",
   BOOK_INPUT_TOO_LARGE: "本章资料过多，请先整理或拆分采访内容。",
-  BOOK_OUTPUT_INVALID: "本次正文未通过字数或来源检查，旧稿已保留。可补充资料后重新生成。",
+  BOOK_OUTPUT_INVALID:
+    "本次正文未通过字数或来源检查，旧稿已保留。可补充资料后重新生成。",
   BOOK_VERSION_CONFLICT: "本章已有更新，请刷新确认最新版本后再操作。",
-  BOOK_SOURCE_CHANGED: "生成期间采访资料发生变化，旧稿已保留，请根据最新资料重新生成。",
+  BOOK_SOURCE_CHANGED:
+    "生成期间采访资料发生变化，旧稿已保留，请根据最新资料重新生成。",
   BOOK_GENERATION_BUSY: "本书有相关章节正在处理，请完成后再操作。",
   BOOK_REQUEST_CONFLICT: "生成请求与原请求不一致，请刷新后重新提交。",
   BOOK_EMPTY: "尚无已完成的书稿可以导出。",
@@ -30,17 +41,22 @@ export const ERROR_MESSAGES: Record<string, string> = {
     "修复结果尚未确认。重新修复可能产生新的服务商费用。",
   PHOTO_RESTORATION_RESULT_INVALID: "修复结果未完整保存，请稍后重试。",
   PHOTO_REDRAW_NOT_CONFIGURED: "照片转描暂未启用。",
-  PHOTO_REDRAW_SOURCE_INVALID: "请使用已授权的原始 PNG、JPEG 或 WebP 照片，大小不超过 10 MB。",
+  PHOTO_REDRAW_SOURCE_INVALID:
+    "请使用已授权的原始 PNG、JPEG 或 WebP 照片，大小不超过 10 MB。",
   PHOTO_REDRAW_FAILED: "照片转描失败，请稍后重试。",
   PHOTO_REDRAW_REJECTED: "服务商未接受此照片转描请求，请核对素材和使用权限。",
-  PHOTO_REDRAW_UNCERTAIN: "转描请求已中断，服务商可能已计费。重新转描可能产生新的费用。",
+  PHOTO_REDRAW_UNCERTAIN:
+    "转描请求已中断，服务商可能已计费。重新转描可能产生新的费用。",
   PHOTO_REDRAW_RESULT_INVALID: "转描结果无效或未完整保存，请稍后重试。",
   AUTH_ADMIN_REQUIRED: "仅平台管理员可以管理账号。",
-  AUTH_ACCOUNT_PROTECTED: "管理员账号不能在此停用或删除，请在账号设置中修改个人资料。",
+  AUTH_ACCOUNT_PROTECTED:
+    "管理员账号不能在此停用或删除，请在账号设置中修改个人资料。",
   AUTH_RATE_LIMITED: "操作过于频繁，请稍后再试。",
-  AUTH_ACCOUNT_UNAVAILABLE: "该手机号或邮箱暂不可用，请登录、找回密码或联系管理员。",
+  AUTH_ACCOUNT_UNAVAILABLE:
+    "该手机号或邮箱暂不可用，请登录、找回密码或联系管理员。",
   AUTH_PASSWORD_INCORRECT: "当前密码不正确，请重新输入。",
-  AUTH_ACCOUNT_HAS_OBLIGATIONS: "账号仍有充值余额、欠款或未完成任务，请先处理后再注销。",
+  AUTH_ACCOUNT_HAS_OBLIGATIONS:
+    "账号仍有充值余额、欠款或未完成任务，请先处理后再注销。",
   SMS_NOT_CONFIGURED: "短信验证暂未开通，请稍后再试或联系管理员。",
   SMS_SEND_FAILED: "短信发送失败，请稍后再试。",
   SMS_CODE_INVALID: "验证码不正确或已使用，请检查手机号和验证码。",
@@ -48,10 +64,12 @@ export const ERROR_MESSAGES: Record<string, string> = {
   SMS_CODE_LOCKED: "验证码错误次数过多，请稍后重新获取。",
   RESOURCE_BUSY: "当前处理任务较多，请稍后重试。已保存的内容不会丢失。",
   WALLET_NOT_FOUND: "未找到所属家庭的钱包。",
-  WALLET_INSUFFICIENT_BALANCE: "钱包可用余额不足，已暂停新的调用或任务。请前往钱包查看余额。",
+  WALLET_INSUFFICIENT_BALANCE:
+    "钱包可用余额不足，已暂停新的调用或任务。请前往钱包查看余额。",
   BILLING_STATE_INVALID: "扣费状态异常，请刷新后重试或联系管理员。",
   BILLING_MODEL_UNPRICED: "当前模型尚未配置用量价格，请联系管理员。",
-  BILLING_USAGE_PENDING: "上次 AI 调用的用量正在核对，已暂停新的调用，请联系管理员核对后再试。",
+  BILLING_USAGE_PENDING:
+    "上次 AI 调用的用量正在核对，已暂停新的调用，请联系管理员核对后再试。",
   BILLING_BUSY: "当前章节正在生成，请稍后重试。",
   BILLING_QUOTE_CHANGED: "价格已更新，请刷新页面后重新确认。",
   PAYMENT_NOT_ENABLED: "充值暂未开通，请勿向任何收款码付款。",
@@ -95,7 +113,8 @@ export const ERROR_MESSAGES: Record<string, string> = {
   EVIDENCE_UPLOAD_EXPIRED: "上传凭证已过期，请重新选择文件上传。",
   EVIDENCE_UPLOAD_INVALID: "素材内容校验未通过，请检查文件后重新上传。",
   EVIDENCE_UPLOAD_BUSY: "待完成的上传较多，请稍后重试。",
-  EVIDENCE_UPLOAD_FAILED: "素材上传或校验失败，请检查网络后重试；持续失败请联系管理员检查存储跨域配置。",
+  EVIDENCE_UPLOAD_FAILED:
+    "素材上传或校验失败，请检查网络后重试；持续失败请联系管理员检查存储跨域配置。",
   EVIDENCE_FILE_TOO_LARGE: "素材文件过大，请压缩后重试。",
   EVIDENCE_TYPE_UNSUPPORTED: "不支持这种素材格式。",
   EVIDENCE_RANGE_INVALID: "素材读取位置无效，请重新打开预览。",
@@ -109,12 +128,17 @@ export const ERROR_MESSAGES: Record<string, string> = {
   INTERVIEW_LLM_RESPONSE_INVALID: "采访 AI 返回的内容无效，请等待片刻后重试。",
   MEMORY_LLM_CONFIGURATION_INCOMPLETE: "记忆 AI 配置不完整，请联系管理员。",
   MEMORY_LLM_REQUEST_FAILED: "记忆 AI 暂时未完成整理，请稍后重试。",
-  MEMORY_INPUT_TOO_LARGE: "这段资料过长，尚未完成记忆整理。原始内容已保留，请拆分为较短的章节后提交。",
-  EVIDENCE_TEXT_TOO_LARGE: "文档超过本次整理的文字或页数上限。原文件已保留，请拆分文档后提交。",
-  SCRIPT_INPUT_TOO_LARGE: "本章资料超过一次剧本整理的上限，请按主题拆分章节或减少本次资料。已有剧本仍保留。",
-  SCRIPT_MOCK_OUTPUT_TOO_LARGE: "演示模式无法整理这么长的资料，请缩短测试内容或配置真实模型。已有资料仍保留。",
+  MEMORY_INPUT_TOO_LARGE:
+    "这段资料过长，尚未完成记忆整理。原始内容已保留，请拆分为较短的章节后提交。",
+  EVIDENCE_TEXT_TOO_LARGE:
+    "文档超过本次整理的文字或页数上限。原文件已保留，请拆分文档后提交。",
+  SCRIPT_INPUT_TOO_LARGE:
+    "本章资料超过一次剧本整理的上限，请按主题拆分章节或减少本次资料。已有剧本仍保留。",
+  SCRIPT_MOCK_OUTPUT_TOO_LARGE:
+    "演示模式无法整理这么长的资料，请缩短测试内容或配置真实模型。已有资料仍保留。",
   MEMORY_LLM_RESPONSE_INVALID: "记忆 AI 返回的整理结果无效，请稍后重试。",
-  MEMORY_RETRY_LIMIT_REACHED: "本轮整理已达到重试上限，请联系管理员排查。已保存的回答和剧本仍可查看。",
+  MEMORY_RETRY_LIMIT_REACHED:
+    "本轮整理已达到重试上限，请联系管理员排查。已保存的回答和剧本仍可查看。",
   MEMORY_RETRY_COOLDOWN: "请稍等片刻再重新整理，避免重复消耗。",
   ASR_NOT_CONFIGURED: "语音转写服务尚未配置。",
   ASR_CONFIGURATION_INCOMPLETE: "语音转写服务配置不完整，请联系管理员。",
@@ -124,7 +148,8 @@ export const ERROR_MESSAGES: Record<string, string> = {
   MEMORY_REVIEW_STATUS_INVALID: "记忆审核状态无效。",
   MEMORY_CLAIM_NOT_FOUND: "未找到该条记忆。",
   SCRIPT_PROJECT_NOT_FOUND: "未找到该剧本项目。",
-  SCRIPT_EDIT_CONFLICT: "剧本已在其他位置更新，请刷新后重新编辑。当前输入仍已保留。",
+  SCRIPT_EDIT_CONFLICT:
+    "剧本已在其他位置更新，请刷新后重新编辑。当前输入仍已保留。",
   SCRIPT_EDIT_BUSY: "本章正在由 AI 整理，请等待完成后再保存修改。",
   SCRIPT_CONTENT_INVALID: "请检查剧本内容，分镜时长之和须等于章节总时长。",
   SCRIPT_MEMORIES_REQUIRED: "请先整理采访记忆，再生成剧本。",
@@ -137,17 +162,23 @@ export const ERROR_MESSAGES: Record<string, string> = {
   PUBLICATION_CONSENT_REQUIRED: "缺少当前发布范围所需的发布授权。",
   CONSENT_NOT_FOUND: "未找到该授权记录。",
   VIDEO_PROVIDER_INVALID: "所选视频生成服务不可用，请检查配置。",
-  VIDEO_PROVIDER_CONFIGURATION_INCOMPLETE: "视频生成服务配置不完整，请联系管理员。",
+  VIDEO_PROVIDER_CONFIGURATION_INCOMPLETE:
+    "视频生成服务配置不完整，请联系管理员。",
   VIDEO_PROVIDER_REQUEST_FAILED: "视频生成服务暂时无法连接，请稍后重试。",
   VIDEO_PROVIDER_TIMEOUT: "视频生成等待超时，请稍后重试。",
   VIDEO_PROVIDER_OUTPUT_INVALID: "视频生成结果无效，请重新生成。",
   VIDEO_PROVIDER_FAILED: "视频生成失败，请稍后重试。",
-  VIDEO_REFERENCE_REJECTED: "本章素材未通过平台审核。可在本章剧本的形象栏修改后重新生成。",
-  VIDEO_AUDIO_REFERENCE_INVALID: "参考音频须为 MP3 或 WAV，单段 2–15 秒，总时长不超过 15 秒。",
-  VIDEO_AUDIO_REQUIRES_IMAGE: "音频参考需搭配图片，并启用视频声音。请在本章形象栏补充图片。",
-  VIDEO_CONTINUATION_UNAVAILABLE: "无法验证原始续接素材，可能已过期或生成账号发生变化。请稍后重试或联系支持。",
+  VIDEO_REFERENCE_REJECTED:
+    "本章素材未通过平台审核。可在本章剧本的形象栏修改后重新生成。",
+  VIDEO_AUDIO_REFERENCE_INVALID:
+    "参考音频须为 MP3 或 WAV，单段 2–15 秒，总时长不超过 15 秒。",
+  VIDEO_AUDIO_REQUIRES_IMAGE:
+    "音频参考需搭配图片，并启用视频声音。请在本章形象栏补充图片。",
+  VIDEO_CONTINUATION_UNAVAILABLE:
+    "无法验证原始续接素材，可能已过期或生成账号发生变化。请稍后重试或联系支持。",
   VIDEO_CONTENT_REJECTED: "视频内容未通过平台审核，请先修改相关剧本内容。",
-  VIDEO_REFERENCE_INVALID: "请选择该家人名下已授权且不超过 10MB 的 JPEG、PNG 或 WebP 图片。",
+  VIDEO_REFERENCE_INVALID:
+    "请选择该家人名下已授权且不超过 10MB 的 JPEG、PNG 或 WebP 图片。",
   VIDEO_PLAN_FAILED: "分镜 AI 暂时不可用，请稍后重试。",
   VIDEO_PLAN_INVALID: "分镜结果未通过校验，暂未生成视频。",
   VIDEO_PLAN_CONFIGURATION_INCOMPLETE: "请先配置分镜 AI 服务。",
@@ -155,7 +186,8 @@ export const ERROR_MESSAGES: Record<string, string> = {
   VIDEO_ASSEMBLY_FAILED: "视频拼接失败，已生成片段会保留，请重试。",
   VIDEO_DURATION_UNSUPPORTED: "每章需为 4 至 300 秒，一次制作最多 24 段。",
   VIDEO_DURATION_MISMATCH: "视频时长与分镜计划不符，请检查生成结果。",
-  VIDEO_SUBMISSION_UNCERTAIN: "提交结果不确定，已停止自动重发，请先核对云端任务。",
+  VIDEO_SUBMISSION_UNCERTAIN:
+    "提交结果不确定，已停止自动重发，请先核对云端任务。",
   PRODUCTION_SCRIPT_EMPTY: "剧本还没有可制作的章节，请先继续整理剧本。",
   PRODUCTION_RUN_NOT_FOUND: "未找到该制作任务。",
   PRODUCTION_STATE_INVALID: "制作任务状态异常，请重新创建任务。",
@@ -177,12 +209,21 @@ const EVIDENCE_KIND_LABELS: Record<string, string> = {
   video: "视频",
 };
 
-function localizedErrorMessage(code: string, context?: Record<string, unknown>): string {
+function localizedErrorMessage(
+  code: string,
+  context?: Record<string, unknown>,
+): string {
   const providerFailure = [
-    "INTERVIEW_LLM_REQUEST_FAILED", "MEMORY_LLM_REQUEST_FAILED", "SCRIPT_LLM_REQUEST_FAILED",
-    "VISION_REQUEST_FAILED", "VIDEO_PLAN_FAILED",
+    "INTERVIEW_LLM_REQUEST_FAILED",
+    "MEMORY_LLM_REQUEST_FAILED",
+    "SCRIPT_LLM_REQUEST_FAILED",
+    "VISION_REQUEST_FAILED",
+    "VIDEO_PLAN_FAILED",
   ].includes(code);
-  if (providerFailure && [504, 524].includes(Number(context?.provider_http_status))) {
+  if (
+    providerFailure &&
+    [504, 524].includes(Number(context?.provider_http_status))
+  ) {
     return "AI 服务商等待超时，已保存的资料仍然保留。此次请求可能已产生费用，请先核对处理状态和用量，再决定是否重试。";
   }
   if (providerFailure && typeof context?.provider_timeout_phase === "string") {
@@ -190,7 +231,8 @@ function localizedErrorMessage(code: string, context?: Record<string, unknown>):
   }
   if (code === "EVIDENCE_FILE_TOO_LARGE") {
     const kind = typeof context?.kind === "string" ? context.kind : "";
-    const limitBytes = typeof context?.limit_bytes === "number" ? context.limit_bytes : 0;
+    const limitBytes =
+      typeof context?.limit_bytes === "number" ? context.limit_bytes : 0;
     const label = EVIDENCE_KIND_LABELS[kind];
     if (label && limitBytes > 0) {
       const unit = limitBytes >= 1024 ** 3 ? "GB" : "MB";
@@ -228,15 +270,22 @@ export class ApiError extends Error {
   }
 }
 
-export function workflowErrorContext(brief?: Record<string, unknown>): Record<string, unknown> {
+export function workflowErrorContext(
+  brief?: Record<string, unknown>,
+): Record<string, unknown> {
   const recovery = brief?.memory_recovery;
-  if (!recovery || typeof recovery !== "object" || !("diagnostic" in recovery)) return {};
+  if (!recovery || typeof recovery !== "object" || !("diagnostic" in recovery))
+    return {};
   const diagnostic = recovery.diagnostic;
   if (!diagnostic || typeof diagnostic !== "object") return {};
   return Object.fromEntries(
-    Object.entries(diagnostic).filter(([key]) => [
-      "provider_http_status", "provider_timeout_phase", "provider_request_id",
-    ].includes(key)),
+    Object.entries(diagnostic).filter(([key]) =>
+      [
+        "provider_http_status",
+        "provider_timeout_phase",
+        "provider_request_id",
+      ].includes(key),
+    ),
   );
 }
 
@@ -248,12 +297,14 @@ export function apiErrorFromResponse(
     payload && typeof payload === "object" && "error" in payload
       ? (payload.error as Record<string, unknown> | null)
       : null;
-  const code = typeof error?.code === "string"
-    ? error.code
-    : STATUS_FALLBACK_CODES[status] ?? "REQUEST_FAILED";
-  const context = error?.context && typeof error.context === "object"
-    ? error.context as Record<string, unknown>
-    : undefined;
+  const code =
+    typeof error?.code === "string"
+      ? error.code
+      : (STATUS_FALLBACK_CODES[status] ?? "REQUEST_FAILED");
+  const context =
+    error?.context && typeof error.context === "object"
+      ? (error.context as Record<string, unknown>)
+      : undefined;
   return new ApiError(code, status, context);
 }
 
@@ -267,11 +318,14 @@ export function errorMessage(error: unknown): string {
 }
 
 export function isAuthenticationError(error: unknown): boolean {
-  return error instanceof ApiError && [
-    "AUTH_REQUIRED",
-    "AUTH_SESSION_INVALID",
-    "AUTH_SESSION_INACTIVE",
-    "AUTH_USER_NOT_FOUND",
-    "AUTH_MEMBERSHIP_MISSING",
-  ].includes(error.code);
+  return (
+    error instanceof ApiError &&
+    [
+      "AUTH_REQUIRED",
+      "AUTH_SESSION_INVALID",
+      "AUTH_SESSION_INACTIVE",
+      "AUTH_USER_NOT_FOUND",
+      "AUTH_MEMBERSHIP_MISSING",
+    ].includes(error.code)
+  );
 }

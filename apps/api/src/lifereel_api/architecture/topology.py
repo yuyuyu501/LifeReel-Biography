@@ -1,9 +1,15 @@
 """Explicit ownership used by service boot, internal clients and architecture checks."""
+
 import os
 
 ROUTERS = {
     "identity": ("auth.router", "identity.router", "governance.router"),
-    "interview": ("interview.router", "interview.voice_router", "orchestration.router"),
+    "interview": (
+        "interview.router",
+        "interview.profile_router",
+        "interview.voice_router",
+        "orchestration.router",
+    ),
     "memory": ("memory.router",),
     "script": ("script.router",),
     "book": ("book.router",),

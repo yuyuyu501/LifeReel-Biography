@@ -9,7 +9,7 @@ def test_production_without_consent_and_separate_publication(client, is_minor) -
     chapter = client.get("/v1/chapters").json()[0]
     interview = client.post(
         "/v1/interviews",
-        json={"subject_id": person["id"], "chapter_id": chapter["id"]},
+        json={"mode": "legacy", "subject_id": person["id"], "chapter_id": chapter["id"]},
     ).json()
     round_ = interview["rounds"][0]
     client.post(
@@ -61,10 +61,16 @@ def test_production_without_consent_and_separate_publication(client, is_minor) -
     )
     assert publication.status_code == 409
     assert publication.json()["error"]["code"] == "PUBLICATION_CONSENT_REQUIRED"
-    consent = client.post("/v1/consents", json={
-        "subject_id": person["id"], "consent_type": "publication", "scope": "family",
-        "granted_by": "陈阿姨本人", "evidence_note": "测试环境书面确认",
-    })
+    consent = client.post(
+        "/v1/consents",
+        json={
+            "subject_id": person["id"],
+            "consent_type": "publication",
+            "scope": "family",
+            "granted_by": "陈阿姨本人",
+            "evidence_note": "测试环境书面确认",
+        },
+    )
     assert consent.status_code == 201
     publication = client.post(
         "/v1/publications", json={"production_run_id": run["id"], "audience": "family"}

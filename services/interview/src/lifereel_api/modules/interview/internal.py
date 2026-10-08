@@ -13,3 +13,18 @@ def retry(db, tenant, data):
 
 
 OPERATIONS = {"jobs.retry": ({"tasks"}, retry)}
+
+
+def profile_read(db, tenant, data):
+    from lifereel_api.modules.interview import profile_service
+
+    if data.get("subject_id"):
+        profile = profile_service.ensure(db, tenant, UUID(data["subject_id"]))
+        return profile_service.read(db, tenant, profile.id)
+    return profile_service.read(db, tenant, UUID(data["profile_id"]))
+
+
+OPERATIONS["profile.read"] = (
+    {"book", "worker-book", "script", "media", "worker-media"},
+    profile_read,
+)

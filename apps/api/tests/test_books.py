@@ -23,7 +23,10 @@ from lifereel_api.providers.openai_compatible import OpenAICompatibleClient
 def book(client):
     person = client.post("/v1/persons", json={"display_name": "书稿测试人物"}).json()
     chapters = client.get("/v1/chapters").json()
-    result = client.post("/v1/books", json={"subject_id": person["id"], "title": "合成人生书"})
+    result = client.post(
+        "/v1/books",
+        json={"source_mode": "legacy", "subject_id": person["id"], "title": "合成人生书"},
+    )
     assert result.status_code == 201, result.text
     return {
         "book": result.json(),
@@ -85,7 +88,8 @@ def read(client, book):
 
 def test_create_list_and_reopen_preserves_existing_book(client, book):
     again = client.post(
-        "/v1/books", json={"subject_id": book["subject"]["id"], "title": "另一个标题"}
+        "/v1/books",
+        json={"source_mode": "legacy", "subject_id": book["subject"]["id"], "title": "另一个标题"},
     )
     assert again.json()["id"] == book["book"]["id"]
     assert again.json()["title"] == "合成人生书"

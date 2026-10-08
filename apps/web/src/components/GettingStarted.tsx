@@ -10,12 +10,12 @@ const STEPS = [
   },
   {
     title: "从一句话开始",
-    text: "选一个人生章节，用文字或录音回答。简短回答也可以，采访会继续追问具体细节。",
+    text: "选择人物，用文字或录音讲一段经历。AI 根据资料空缺追问，也可以直接编辑人生资料表。",
     to: "/interviews",
   },
   {
-    title: "直接对话纠正剧本",
-    text: "发现剧本有误，直接告诉 AI 哪处不对、正确内容是什么。原对话保留，记忆和本章剧本按明确的更正更新。",
+    title: "直接对话纠正资料",
+    text: "发现资料有误，直接告诉 AI 哪处不对、正确内容是什么。原对话保留，同一经历和记忆按明确的更正更新。",
     to: "/interviews",
   },
   {
@@ -24,19 +24,19 @@ const STEPS = [
     to: "/interviews",
   },
   {
-    title: "查看并补充剧本",
-    text: "初稿生成后仍能继续讲。确认叙事内容，再选择获授权的照片或音频作为本章参考。",
-    to: "/scripts",
+    title: "从资料写成人生书",
+    text: "素材足够后，确认书籍目录与选材，生成约1000字的书章。可以手动编辑并保存版本。",
+    to: "/books",
   },
   {
     title: "预览分镜再制作",
-    text: "检查各镜头的内容和人物参考。人物形象保持一致，画面可以变化；确认费用后再生成影像。",
+    text: "在影像页选择已保存书稿，先改编剧本与分镜。检查镜头要求和人物参考后，再单独生成影像。",
     to: "/studio",
   },
 ];
 
 export function GettingStarted({ userId }: { userId: string }) {
-  const key = "lifereel:guide:v1:" + userId;
+  const key = "lifereel:guide:v2:" + userId;
   const [state, setState] = useState<{ step: number; hidden: boolean }>(() => {
     try {
       const saved = JSON.parse(localStorage.getItem(key) ?? "null");

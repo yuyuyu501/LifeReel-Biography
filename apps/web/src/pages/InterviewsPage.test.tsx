@@ -10,100 +10,137 @@ const person = {
   preferred_name: "林奶奶",
   is_subject: true,
 };
-const chapterOne = { id: "chapter-1", order_index: 1, title: "我是谁", description: "从姓名与家乡说起。" };
-const chapterTwo = { id: "chapter-2", order_index: 2, title: "童年岁月", description: "记下小时候的生活。" };
-const currentSession = {
-  id: "session-current",
-  subject_id: person.id,
-  chapter_id: chapterOne.id,
-  status: "paused",
-  round_count: 2,
-  started_at: "2026-09-07T00:00:00Z",
-  rounds: [{ id: "round-1", answer_text: "我出生在泉州。" }, { id: "round-2", answer_text: null }],
+const second = {
+  ...person,
+  id: "person-2",
+  display_name: "王叔叔",
+  preferred_name: "王叔叔",
 };
-const oldSession = { ...currentSession, id: "session-old", status: "completed", started_at: "2026-09-06T00:00:00Z" };
-
-function response(payload: unknown, status = 200) {
-  return { ok: true, status, json: async () => payload } as Response;
+const profile = {
+  id: "profile-1",
+  subject_id: person.id,
+  version_number: 1,
+  template_version: "test",
+  sections: [{ key: "A", title: "基本信息" }],
+  fields: [
+    {
+      key: "identity.preferred_name",
+      label: "书中称呼",
+      priority: "基础",
+      section: "A",
+      question: "怎样称呼？",
+    },
+  ],
+  entries: [
+    {
+      id: "entry-1",
+      field_key: "identity.preferred_name",
+      record_key: "single",
+      value: "林奶奶",
+      state: "filled",
+      certainty: "reported",
+      use_scope: "works",
+      source: { type: "person" },
+      version_number: 1,
+    },
+  ],
+  readiness: {
+    status: "not_ready",
+    processed_fields: 1,
+    total_fields: 67,
+    message: "仍需具体经历",
+    missing_fields: [],
+    themes: [],
+  },
+};
+const history = {
+  id: "legacy-1",
+  subject_id: person.id,
+  chapter_id: "chapter-1",
+  started_at: "2026-09-07T00:00:00Z",
+};
+function response(payload: unknown) {
+  return { ok: true, status: 200, json: async () => payload } as Response;
 }
-
-beforeEach(() => {
-  localStorage.clear();
-  vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-    const url = String(input);
-    if (url.endsWith("/v1/persons")) return response([person]);
-    if (url.endsWith("/v1/chapters")) return response([chapterOne, chapterTwo]);
-    if (url.endsWith("/v1/interviews") && init?.method === "POST") {
-      return response({ ...currentSession, id: "session-new", chapter_id: chapterTwo.id, status: "active", rounds: [] }, 201);
-    }
-    if (url.endsWith("/v1/interviews")) return response([currentSession, oldSession]);
-    return response([]);
-  }) as unknown as typeof fetch);
-});
-
-function renderPage() {
-  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  queryClient.setQueryData(["auth-me"], { id: "owner", tenant_id: "family" });
+function page() {
   return render(
-    <QueryClientProvider client={queryClient}>
+    <QueryClientProvider
+      client={
+        new QueryClient({
+          defaultOptions: {
+            queries: { retry: false },
+            mutations: { retry: false },
+          },
+        })
+      }
+    >
       <MemoryRouter initialEntries={["/interviews"]}>
         <Routes>
           <Route path="/interviews" element={<InterviewsPage />} />
-          <Route path="/interviews/:id" element={<div>采访对话页</div>} />
+          <Route path="/interviews/:id" element={<p>已进入资料采访</p>} />
         </Routes>
       </MemoryRouter>
     </QueryClientProvider>,
   );
 }
-
-test("opens the saved chapter conversation instead of creating another one", async () => {
-  renderPage();
-  expect(await screen.findByRole("heading", { name: "章节采访" })).toBeInTheDocument();
-  expect((await screen.findAllByText(/已保存 1 轮回答/)).length).toBeGreaterThan(0);
-  expect(screen.queryByText(/^(进行中|已暂停|已完成|未开始)$/)).not.toBeInTheDocument();
-  fireEvent.click(await screen.findByRole("button", { name: /继续这一章/ }));
-  expect(await screen.findByText("采访对话页")).toBeInTheDocument();
-  expect(vi.mocked(fetch)).not.toHaveBeenCalledWith(
-    "/v1/interviews",
-    expect.objectContaining({ method: "POST" }),
-  );
-});
-
-test("restores the selected person's chapter records after reload", async () => {
-  const originalFetch = vi.mocked(fetch).getMockImplementation()!;
-  vi.mocked(fetch).mockImplementation((input, init) => String(input).endsWith("/v1/persons")
-    ? Promise.resolve(response([{ ...person, id: "chen", preferred_name: "老陈" }, person]))
-    : originalFetch(input, init));
-  const first = renderPage();
-  const select = await screen.findByRole("combobox", { name: "采访人物" });
-  expect(select).toHaveValue("chen");
-  fireEvent.change(select, { target: { value: person.id } });
-  await screen.findByRole("button", { name: /继续这一章/ });
-  first.unmount();
-  renderPage();
-  expect(await screen.findByRole("combobox", { name: "采访人物" })).toHaveValue(person.id);
-  expect(await screen.findByRole("button", { name: /继续这一章/ })).toBeInTheDocument();
-});
-
-test("creates a conversation only for a chapter that has not started", async () => {
-  renderPage();
-  await screen.findByRole("heading", { name: "章节采访" });
-  fireEvent.click(await screen.findByRole("button", { name: /开始这一章/ }));
-  await waitFor(() => expect(vi.mocked(fetch)).toHaveBeenCalledWith(
-    "/v1/interviews",
-    expect.objectContaining({
-      method: "POST",
-      body: JSON.stringify({ subject_id: person.id, chapter_id: chapterTwo.id }),
+beforeEach(() => {
+  localStorage.clear();
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (input: RequestInfo | URL) => {
+      const path = String(input).split("?")[0];
+      if (path.endsWith("/v1/persons")) return response([person, second]);
+      if (path.endsWith("/v1/interviews")) return response([history]);
+      if (path.endsWith("/subjects/person-1")) return response(profile);
+      if (path.endsWith("/subjects/person-2"))
+        return response({
+          ...profile,
+          id: "profile-2",
+          subject_id: second.id,
+          entries: [{ ...profile.entries[0], value: "王叔叔" }],
+        });
+      return response([]);
     }),
-  ));
-  expect(await screen.findByText("采访对话页")).toBeInTheDocument();
-});
-
-test("keeps legacy duplicate sessions available as past interviews", async () => {
-  renderPage();
-  expect(await screen.findByRole("heading", { name: "过往采访" })).toBeInTheDocument();
-  expect(screen.getByRole("link", { name: /我是谁.*已保存 1 轮回答/ })).toHaveAttribute(
-    "href",
-    "/interviews/session-old",
   );
+});
+test("uses one life profile and opens an interview without a chapter", async () => {
+  const original = vi.mocked(fetch).getMockImplementation()!;
+  vi.mocked(fetch).mockImplementation(async (input, init) =>
+    init?.method === "POST"
+      ? response({ id: "life-session" })
+      : original(input, init),
+  );
+  page();
+  await screen.findByText("人生资料表");
+  fireEvent.click(screen.getByRole("button", { name: "开始或继续采访" }));
+  expect(await screen.findByText("已进入资料采访")).toBeInTheDocument();
+  const sent = vi
+    .mocked(fetch)
+    .mock.calls.find(([, init]) => init?.method === "POST")!;
+  expect(JSON.parse(String(sent[1]?.body))).toEqual({ subject_id: person.id });
+});
+test("switching people loads their own life profile", async () => {
+  page();
+  await screen.findByText("人生资料表");
+  expect(screen.getByText("林奶奶", { selector: "p" })).toBeInTheDocument();
+  fireEvent.change(screen.getByLabelText("采访人物"), {
+    target: { value: second.id },
+  });
+  await waitFor(() =>
+    expect(screen.getByText("王叔叔", { selector: "p" })).toBeInTheDocument(),
+  );
+  expect(
+    screen.queryByText("林奶奶", { selector: "p" }),
+  ).not.toBeInTheDocument();
+});
+test("retains historical interview links without chapter gates", async () => {
+  page();
+  await screen.findByText("人生资料表");
+  fireEvent.click(screen.getByText("查看以前的采访记录"));
+  expect(screen.getByRole("link", { name: /历史对话/ })).toHaveAttribute(
+    "href",
+    "/interviews/legacy-1",
+  );
+  expect(screen.queryByText("章节采访")).not.toBeInTheDocument();
+  expect(screen.getByRole("link", { name: /前往写书/ })).toBeInTheDocument();
 });

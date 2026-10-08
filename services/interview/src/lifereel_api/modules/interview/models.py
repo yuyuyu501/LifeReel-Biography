@@ -52,6 +52,7 @@ class InterviewSession(UUIDPrimaryKeyMixin, TimestampMixin, Base):
             "chapter_id",
             name="uq_interview_subject_chapter",
         ),
+        UniqueConstraint("profile_id", name="uq_interview_life_profile"),
         {"schema": "interview"},
     )
 
@@ -63,6 +64,9 @@ class InterviewSession(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     )
     chapter_id: Mapped[UUID | None] = mapped_column(
         Uuid, ForeignKey("interview.chapters.id", ondelete="SET NULL"), nullable=True
+    )
+    profile_id: Mapped[UUID | None] = mapped_column(
+        Uuid, ForeignKey("interview.life_profiles.id", ondelete="SET NULL"), nullable=True
     )
     topic_hint: Mapped[str | None] = mapped_column(String(240), nullable=True)
     status: Mapped[str] = mapped_column(String(32), default="active")
@@ -110,6 +114,7 @@ class InterviewRound(UUIDPrimaryKeyMixin, Base):
 
 class InterviewTurnWorkflow(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "interview_turn_workflows"
+    profile_result: Mapped[dict] = mapped_column(JSON, default=dict, server_default="{}")
     __table_args__ = (
         UniqueConstraint(
             "tenant_id",

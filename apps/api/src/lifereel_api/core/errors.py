@@ -14,6 +14,12 @@ logger = logging.getLogger(__name__)
 
 
 class ErrorCode(StrEnum):
+    PROFILE_NOT_FOUND = "PROFILE_NOT_FOUND"
+    PROFILE_EDIT_CONFLICT = "PROFILE_EDIT_CONFLICT"
+    PROFILE_REQUEST_CONFLICT = "PROFILE_REQUEST_CONFLICT"
+    PROFILE_OUTPUT_INVALID = "PROFILE_OUTPUT_INVALID"
+    PROFILE_USE_RESTRICTED = "PROFILE_USE_RESTRICTED"
+    SCRIPT_BOOK_SOURCE_REQUIRED = "SCRIPT_BOOK_SOURCE_REQUIRED"
     BOOK_NOT_FOUND = "BOOK_NOT_FOUND"
     BOOK_CHAPTER_NOT_FOUND = "BOOK_CHAPTER_NOT_FOUND"
     BOOK_MATERIAL_INSUFFICIENT = "BOOK_MATERIAL_INSUFFICIENT"
@@ -221,20 +227,24 @@ def install_error_handlers(app: FastAPI) -> None:
 
     @app.exception_handler(ResponseValidationError)
     async def handle_response_validation_error(
-        request: Request, exc: ResponseValidationError,
+        request: Request,
+        exc: ResponseValidationError,
     ) -> JSONResponse:
         # Validation exceptions include the entire rejected value in their string/traceback.
         # Keep only bounded field locations, never input, message context or response bodies.
         errors = exc.errors()
         fields = [
-            {"type": str(error.get("type", ""))[:80],
-             "loc": [str(part)[:80] for part in error.get("loc", ())[:8]]}
+            {
+                "type": str(error.get("type", ""))[:80],
+                "loc": [str(part)[:80] for part in error.get("loc", ())[:8]],
+            }
             for error in errors[:10]
         ]
         logger.error(
             "Response validation failed: route=%s count=%s fields=%s",
             getattr(request.scope.get("route"), "path", request.url.path)[:200],
-            len(errors), fields,
+            len(errors),
+            fields,
         )
         return _response(500, ErrorCode.INTERNAL_SERVER_ERROR)
 

@@ -31,9 +31,11 @@ class ScriptGenerationReceipt(Base):
     )
     request_id: Mapped[UUID] = mapped_column(Uuid, primary_key=True)
     fingerprint: Mapped[str] = mapped_column(String(64))
-    project_id: Mapped[UUID] = mapped_column(
-        Uuid, ForeignKey("script.script_projects.id", ondelete="CASCADE")
+    project_id: Mapped[UUID | None] = mapped_column(
+        Uuid, ForeignKey("script.script_projects.id", ondelete="CASCADE"), nullable=True
     )
+    status: Mapped[str] = mapped_column(String(32), default="completed", server_default="completed")
+    checkpoint: Mapped[dict] = mapped_column(JSON, default=dict, server_default="{}")
 
 
 class ScriptProject(UUIDPrimaryKeyMixin, TimestampMixin, Base):
@@ -66,6 +68,8 @@ class ScriptProject(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     locked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     generation_provider: Mapped[str] = mapped_column(String(80), default="rule")
     generation_model: Mapped[str | None] = mapped_column(String(180), nullable=True)
+    source_type: Mapped[str] = mapped_column(String(24), default="legacy", server_default="legacy")
+    source_snapshot: Mapped[dict] = mapped_column(JSON, default=dict, server_default="{}")
 
 
 class ScriptScene(UUIDPrimaryKeyMixin, Base):

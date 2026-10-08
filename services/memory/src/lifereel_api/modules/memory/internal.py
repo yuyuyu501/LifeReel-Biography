@@ -6,6 +6,7 @@ from lifereel_api.core.errors import ApiError, ErrorCode
 from lifereel_api.modules.interview.models import InterviewSession, InterviewVoiceCall
 from lifereel_api.modules.memory import service
 from lifereel_api.modules.memory.models import MemoryClaim
+from lifereel_api.modules.memory.profile_sync import sync
 from lifereel_api.modules.memory.schemas import MemoryCompileRequest
 
 CALLERS = {"interview", "worker-interview"}
@@ -69,3 +70,6 @@ OPERATIONS = {
     "memory.compile": (CALLERS, compile_memory),
     "memory.voice-claim": (CALLERS, voice_claim),
 }
+
+
+OPERATIONS["memory.profile-sync"] = (CALLERS | {"tasks"}, sync)

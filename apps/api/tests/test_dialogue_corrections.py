@@ -168,7 +168,8 @@ def test_later_dialogue_corrects_persisted_facts_and_script_without_editing_orig
     person = client.post("/v1/persons", json={"display_name": "对话纠错合成人物"}).json()
     chapter = client.get("/v1/chapters").json()[0]
     session = client.post(
-        "/v1/interviews", json={"subject_id": person["id"], "chapter_id": chapter["id"]}
+        "/v1/interviews",
+        json={"mode": "legacy", "subject_id": person["id"], "chapter_id": chapter["id"]},
     ).json()
     url = f"/v1/interviews/{session['id']}/turns"
     original = "1952年出生于泉州，退休后和老伴住在杭州，爱好书法，写字让我平静。"

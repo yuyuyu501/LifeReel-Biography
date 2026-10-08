@@ -1,14 +1,12 @@
 import { useQuery } from "@tanstack/react-query";
-import { Navigate, Route, Routes } from "react-router-dom";
+import { Navigate, Route, Routes, useParams } from "react-router-dom";
 import { AppShell } from "./components/AppShell";
 import { HomePage } from "./pages/HomePage";
 import { InterviewRoomPage } from "./pages/InterviewRoomPage";
 import { InterviewsPage } from "./pages/InterviewsPage";
 import { MemoriesPage } from "./pages/MemoriesPage";
 import { PeoplePage } from "./pages/PeoplePage";
-import { ScriptBookPage } from "./pages/ScriptBookPage";
 import { BooksPage, BookWritingPage } from "./pages/BooksPage";
-import { ScriptLibraryPage } from "./pages/ScriptLibraryPage";
 import { StudioPage } from "./pages/StudioPage";
 import { WalletPage } from "./pages/WalletPage";
 import { LoginPage } from "./pages/LoginPage";
@@ -19,6 +17,16 @@ import { PhotoRestorationPage } from "./pages/PhotoRestorationPage";
 import { api } from "./api/client";
 import { isAuthenticationError } from "./api/errors";
 import { QueryState } from "./components/QueryState";
+
+function LegacyScriptEntry() {
+  const { subjectId } = useParams();
+  return (
+    <Navigate
+      to={`/studio?tab=script${subjectId ? `&subject=${encodeURIComponent(subjectId)}` : ""}`}
+      replace
+    />
+  );
+}
 
 function ProtectedApp() {
   const session = useQuery({
@@ -54,8 +62,8 @@ function ProtectedApp() {
         <Route path="/interviews/:id" element={<InterviewRoomPage />} />
         <Route path="/evidence" element={<Navigate to="/memories" replace />} />
         <Route path="/memories" element={<MemoriesPage />} />
-        <Route path="/scripts" element={<ScriptLibraryPage />} />
-        <Route path="/scripts/:subjectId" element={<ScriptBookPage />} />
+        <Route path="/scripts" element={<LegacyScriptEntry />} />
+        <Route path="/scripts/:subjectId" element={<LegacyScriptEntry />} />
         <Route path="/books" element={<BooksPage />} />
         <Route path="/books/:bookId" element={<BookWritingPage />} />
         <Route path="/studio" element={<StudioPage />} />

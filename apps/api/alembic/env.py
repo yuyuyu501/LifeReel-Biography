@@ -15,6 +15,7 @@ from lifereel_api.modules.evidence import models as evidence_models  # noqa: F40
 from lifereel_api.modules.governance import models as governance_models  # noqa: F401
 from lifereel_api.modules.identity import models as identity_models  # noqa: F401
 from lifereel_api.modules.interview import models as interview_models  # noqa: F401
+from lifereel_api.modules.interview import profile_models as profile_models  # noqa: F401
 from lifereel_api.modules.jobs import events as job_events  # noqa: F401
 from lifereel_api.modules.jobs import models as job_models  # noqa: F401
 from lifereel_api.modules.memory import models as memory_models  # noqa: F401

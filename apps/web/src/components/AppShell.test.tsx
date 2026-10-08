@@ -25,15 +25,13 @@ test("separates numbered workflow steps from personal information", () => {
     within(workflow)
       .getAllByRole("link")
       .map((link) => link.textContent),
-  ).toEqual(["家人01", "采访02", "剧本03", "写书04", "影像05"]);
+  ).toEqual(["家人01", "采访02", "写书03", "影像04"]);
   expect(
     within(profile)
       .getAllByRole("link")
       .map((link) => link.textContent),
   ).toEqual(["记忆", "钱包", "账号"]);
-  expect(
-    screen.queryByRole("link", { name: "首页" }),
-  ).not.toBeInTheDocument();
+  expect(screen.queryByRole("link", { name: "首页" })).not.toBeInTheDocument();
   expect(screen.getAllByRole("link", { name: "岁忆影传首页" })).toHaveLength(2);
 });
 
@@ -68,8 +66,9 @@ test("keeps both personal destinations accessible through mobile shortcuts", () 
     "page",
   );
   expect(
-    within(
-      screen.getByRole("navigation", { name: "个人资料" }),
-    ).getByRole("link", { name: "记忆" }),
+    within(screen.getByRole("navigation", { name: "个人资料" })).getByRole(
+      "link",
+      { name: "记忆" },
+    ),
   ).toHaveAttribute("aria-current", "page");
 });

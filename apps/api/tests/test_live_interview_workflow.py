@@ -48,7 +48,7 @@ def _start(client, name="实时采访测试"):
     chapter = client.get("/v1/chapters").json()[0]
     session = client.post(
         "/v1/interviews",
-        json={"subject_id": person["id"], "chapter_id": chapter["id"]},
+        json={"mode": "legacy", "subject_id": person["id"], "chapter_id": chapter["id"]},
     ).json()
     return person, chapter, session
 

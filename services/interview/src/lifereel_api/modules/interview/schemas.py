@@ -26,6 +26,7 @@ class InterviewStart(BaseModel):
     subject_id: UUID
     chapter_id: UUID | None = None
     topic_hint: str | None = Field(default=None, max_length=240)
+    mode: Literal["life_profile", "legacy"] = "life_profile"
 
 
 class InterviewRoundCreate(BaseModel):
@@ -75,6 +76,7 @@ class InterviewSessionRead(BaseModel):
     started_at: datetime
     updated_at: datetime
     completed_at: datetime | None
+    profile_id: UUID | None = None
     rounds: list[InterviewRoundRead] = Field(default_factory=list)
 
 
@@ -101,12 +103,13 @@ class InterviewTurnCreate(BaseModel):
             require_memory_input(value)
         return value
 
-
     @model_validator(mode="after")
     def validate_revision(self):
         if self.action == "revise_answer" and (
-            self.round_id is None or self.expected_version is None
-            or not (self.answer_text or "").strip() or self.asset_ids
+            self.round_id is None
+            or self.expected_version is None
+            or not (self.answer_text or "").strip()
+            or self.asset_ids
         ):
             raise ValueError("修订需要原回答、完整新文本与版本号，不附加新素材")
         return self
@@ -130,6 +133,7 @@ class InterviewTurnWorkflowRead(BaseModel):
     next_question_intent: str | None
     missing_topics: list[str]
     script_brief: dict
+    profile_result: dict = Field(default_factory=dict)
     error_code: str | None
     retry_allowed: bool = True
     retry_after_seconds: int = 0
@@ -144,3 +148,4 @@ class InterviewWorkspaceRead(BaseModel):
     script: ScriptProjectRead | None = None
     latest_workflow: InterviewTurnWorkflowRead | None = None
     progress: dict = Field(default_factory=dict)
+    profile: dict | None = None

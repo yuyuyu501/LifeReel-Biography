@@ -1,6 +1,6 @@
 from uuid import UUID
 
-from sqlalchemy import JSON, ForeignKey, Integer, String, Text, UniqueConstraint, Uuid
+from sqlalchemy import JSON, Boolean, ForeignKey, Integer, String, Text, UniqueConstraint, Uuid
 from sqlalchemy.orm import Mapped, mapped_column
 
 from lifereel_api.core.database import Base
@@ -21,6 +21,10 @@ class Book(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     )
     title: Mapped[str] = mapped_column(String(180))
     target_words: Mapped[int] = mapped_column(Integer, default=1000, server_default="1000")
+    profile_id: Mapped[UUID | None] = mapped_column(
+        Uuid, ForeignKey("interview.life_profiles.id", ondelete="SET NULL"), nullable=True
+    )
+    directory_version: Mapped[int] = mapped_column(Integer, default=1, server_default="1")
 
 
 class BookChapter(UUIDPrimaryKeyMixin, TimestampMixin, Base):
@@ -35,9 +39,13 @@ class BookChapter(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     book_id: Mapped[UUID] = mapped_column(
         Uuid, ForeignKey("book.books.id", ondelete="CASCADE"), index=True
     )
-    chapter_id: Mapped[UUID] = mapped_column(
-        Uuid, ForeignKey("interview.chapters.id", ondelete="RESTRICT"), index=True
+    chapter_id: Mapped[UUID | None] = mapped_column(
+        Uuid, ForeignKey("interview.chapters.id", ondelete="RESTRICT"), index=True, nullable=True
     )
+    title: Mapped[str] = mapped_column(String(180), default="新章节", server_default="新章节")
+    order_index: Mapped[int] = mapped_column(Integer, default=1, server_default="1")
+    source_entry_ids: Mapped[list[str]] = mapped_column(JSON, default=list, server_default="[]")
+    archived: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
     version_number: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     latest_job_id: Mapped[UUID | None] = mapped_column(
         Uuid, ForeignKey("tasks.jobs.id", ondelete="SET NULL"), nullable=True

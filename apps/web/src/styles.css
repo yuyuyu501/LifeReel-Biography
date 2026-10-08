@@ -17,3 +17,4 @@
 @import "./styles/restoration.css" layer(components);
 @import "./styles/experience.css" layer(components);
 @import "./styles/writing.css" layer(components);
+@import "./styles/life-profile.css" layer(components);

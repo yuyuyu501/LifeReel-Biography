@@ -1,6 +1,5 @@
 import {
   BookHeart,
-  BookOpenText,
   Film,
   LockKeyhole,
   LogOut,
@@ -36,7 +35,6 @@ import {
 const workflowItems = [
   { to: "/people", label: "家人", icon: UsersRound },
   { to: "/interviews", label: "采访", icon: Mic2 },
-  { to: "/scripts", label: "剧本", icon: BookOpenText },
   { to: "/books", label: "写书", icon: BookHeart },
   { to: "/studio", label: "影像", icon: Film },
 ];
@@ -107,8 +105,12 @@ export function AppShell({
     } finally {
       queryClient.clear();
       try {
-        Object.keys(sessionStorage).filter(key => key.startsWith("lifereel:draft:")).forEach(key => sessionStorage.removeItem(key));
-      } catch { /* Optional local drafts must not prevent signing out. */ }
+        Object.keys(sessionStorage)
+          .filter((key) => key.startsWith("lifereel:draft:"))
+          .forEach((key) => sessionStorage.removeItem(key));
+      } catch {
+        /* Optional local drafts must not prevent signing out. */
+      }
       navigate("/login", { replace: true });
     }
   }

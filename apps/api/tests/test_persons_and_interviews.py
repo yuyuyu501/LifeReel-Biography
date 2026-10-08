@@ -21,10 +21,14 @@ def test_person_update_rejects_explicit_null_for_required_fields(client, field):
 
 def test_person_update_distinguishes_omitted_null_and_false_values(client):
     person = client.post(
-        "/v1/persons", json={
-            "display_name": "可编辑人物", "preferred_name": "小名",
-            "birthplace": "泉州", "is_subject": True, "is_minor": True,
-        }
+        "/v1/persons",
+        json={
+            "display_name": "可编辑人物",
+            "preferred_name": "小名",
+            "birthplace": "泉州",
+            "is_subject": True,
+            "is_minor": True,
+        },
     ).json()
 
     empty = client.patch(f"/v1/persons/{person['id']}", json={})
@@ -70,7 +74,7 @@ def test_person_interview_flow(client):
 
     started = client.post(
         "/v1/interviews",
-        json={"subject_id": person["id"], "chapter_id": chapters.json()[2]["id"]},
+        json={"mode": "legacy", "subject_id": person["id"], "chapter_id": chapters.json()[2]["id"]},
     )
     assert started.status_code == 201
     session = started.json()
@@ -110,7 +114,7 @@ def test_interview_llm_receives_chapter_and_recent_answer(client, monkeypatch):
     chapter = client.get("/v1/chapters").json()[3]
     interview = client.post(
         "/v1/interviews",
-        json={"subject_id": person["id"], "chapter_id": chapter["id"]},
+        json={"mode": "legacy", "subject_id": person["id"], "chapter_id": chapter["id"]},
     ).json()
     round_ = interview["rounds"][0]
     answer = "那时我最喜欢和同学一起在图书馆看书。"
@@ -125,7 +129,7 @@ def test_interview_llm_receives_chapter_and_recent_answer(client, monkeypatch):
     other_chapter = client.get("/v1/chapters").json()[2]
     other_interview = client.post(
         "/v1/interviews",
-        json={"subject_id": person["id"], "chapter_id": other_chapter["id"]},
+        json={"mode": "legacy", "subject_id": person["id"], "chapter_id": other_chapter["id"]},
     ).json()
     other_round = other_interview["rounds"][0]
     unrelated_answer = "童年时我常和伙伴去河边玩耍。"
@@ -178,7 +182,7 @@ def test_chapter_interview_is_reused_and_accepts_continuation(client, legacy_sta
 
     first = client.post(
         "/v1/interviews",
-        json={"subject_id": person["id"], "chapter_id": chapter["id"]},
+        json={"mode": "legacy", "subject_id": person["id"], "chapter_id": chapter["id"]},
     ).json()
     first_round = first["rounds"][0]
     client.post(
@@ -191,7 +195,7 @@ def test_chapter_interview_is_reused_and_accepts_continuation(client, legacy_sta
 
     reused = client.post(
         "/v1/interviews",
-        json={"subject_id": person["id"], "chapter_id": chapter["id"]},
+        json={"mode": "legacy", "subject_id": person["id"], "chapter_id": chapter["id"]},
     )
     assert reused.status_code == 201
     assert reused.json()["id"] == first["id"]

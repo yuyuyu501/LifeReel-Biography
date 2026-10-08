@@ -41,6 +41,7 @@ from lifereel_api.modules.evidence.router import router
 from lifereel_api.modules.evidence.storage import LocalPrivateStorage
 from lifereel_api.modules.identity.models import Person, Tenant
 from lifereel_api.modules.interview.models import Chapter, InterviewSession
+from lifereel_api.modules.interview.profile_models import LifeProfile
 
 CONTENT = b"D01 synthetic evidence, identical bytes across every request."
 
@@ -80,6 +81,7 @@ def upload_db(request, tmp_path):
             Tenant,
             Person,
             Chapter,
+            LifeProfile,
             InterviewSession,
             SourceAsset,
             EvidenceUpload,
