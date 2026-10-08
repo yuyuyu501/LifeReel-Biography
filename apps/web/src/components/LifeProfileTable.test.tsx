@@ -113,7 +113,7 @@ function table(data = profile) {
   return onTalk;
 }
 
-test("missing filters exclude declined answers and confirmation filters exclude confirmed entries", () => {
+test("missing filters exclude declined answers and confirmation filters exclude confirmed entries", async () => {
   table();
   fireEvent.click(screen.getByRole("button", { name: /^待补充/ }));
   expect(screen.getByText("出生时间")).toBeInTheDocument();
@@ -123,12 +123,20 @@ test("missing filters exclude declined answers and confirmation filters exclude 
   expect(screen.queryByText("已确认的第二段经历")).not.toBeInTheDocument();
   expect(screen.getByText("待澄清")).toBeInTheDocument();
   expect(screen.getByText("内部资料")).toBeInTheDocument();
-  fireEvent.change(screen.getByLabelText("资料分类"), {
-    target: { value: "A" },
+  fireEvent.keyDown(screen.getByRole("button", { name: "筛选分类" }), {
+    key: "ArrowDown",
   });
+  fireEvent.click(
+    await screen.findByRole("menuitemradio", { name: "基本信息" }),
+  );
   expect(screen.getByText("此分类没有待确认的资料")).toBeInTheDocument();
   fireEvent.click(screen.getByRole("button", { name: /^全部/ }));
   expect(screen.getByText("合成人物")).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "清除分类筛选" }));
+  expect(screen.getByRole("button", { name: "筛选分类" })).toHaveAttribute(
+    "aria-pressed",
+    "false",
+  );
 });
 
 test("metadata can be expanded without hiding privacy flags or mutating the record", () => {
@@ -153,10 +161,10 @@ test("filtered fields still support interviewing and editing, with filters locke
   expect(onTalk).toHaveBeenCalledWith(profile.fields[1]);
   fireEvent.click(screen.getByRole("button", { name: "填写" }));
   const form = screen.getByRole("form", { name: "编辑出生时间" });
-  expect(screen.getByLabelText("资料分类")).toBeDisabled();
+  expect(screen.getByRole("button", { name: "筛选分类" })).toBeDisabled();
   expect(screen.getByRole("button", { name: /^全部/ })).toBeDisabled();
   fireEvent.click(within(form).getByRole("button", { name: "取消" }));
-  expect(screen.getByLabelText("资料分类")).toBeEnabled();
+  expect(screen.getByRole("button", { name: "筛选分类" })).toBeEnabled();
 });
 
 test("long content expands and collapses without losing its source text", () => {

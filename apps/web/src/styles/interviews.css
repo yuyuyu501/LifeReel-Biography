@@ -289,6 +289,7 @@
 }
 .live-script-pane:has(.profile-pane-heading) > .live-script-scroll {
   padding: 0;
+  background: #f8faf9;
 }
 .script-pane-actions {
   display: flex;
@@ -343,6 +344,14 @@
 }
 .profile-pane-heading {
   margin: 0 -26px;
+}
+.profile-pane-heading h2 {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.profile-pane-heading h2 > svg {
+  color: #178379;
 }
 .pane-heading > small {
   color: var(--muted-foreground);

@@ -11,6 +11,7 @@ import {
   FileImage,
   FileText,
   FileVideo,
+  Leaf,
   LoaderCircle,
   Mic2,
   Paperclip,
@@ -677,7 +678,10 @@ export function InterviewWorkspace({
             aria-label="人生资料表"
           >
             <div className="pane-heading profile-pane-heading">
-              <h2>人生资料表</h2>
+              <h2>
+                <Leaf size={18} aria-hidden="true" />
+                人生资料表
+              </h2>
               <small
                 className={`profile-save-status${workflowRunning ? " is-running" : workflow?.status === "failed" ? " is-error" : ""}`}
               >

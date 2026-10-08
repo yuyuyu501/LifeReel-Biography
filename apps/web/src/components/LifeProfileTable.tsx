@@ -12,14 +12,30 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ArrowRight,
   BookOpen,
+  BriefcaseBusiness,
   ChevronDown,
+  ClipboardList,
   Download,
+  FileText,
+  Files,
+  GraduationCap,
+  Heart,
   History,
+  House,
   Info,
+  Leaf,
+  ListFilter,
   LockKeyhole,
+  MessagesSquare,
   MessageSquare,
   Pencil,
   Plus,
+  Signpost,
+  Star,
+  UserRound,
+  UsersRound,
+  X,
+  type LucideIcon,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
@@ -32,6 +48,9 @@ import {
   DropdownMenuCheckboxItem,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "./ui/dropdown-menu";
@@ -62,6 +81,20 @@ const eventFields = [
   ["feelings", "您当时的感受（可空）"],
   ["impact", "结果或后来的影响"],
 ] as const;
+const sectionIcons: Record<string, LucideIcon> = {
+  A: ClipboardList,
+  B: House,
+  C: UserRound,
+  D: GraduationCap,
+  E: BriefcaseBusiness,
+  F: Heart,
+  G: UsersRound,
+  H: Signpost,
+  I: Star,
+  J: House,
+  K: MessagesSquare,
+  L: Files,
+};
 function display(value: ProfileValue): string {
   if (typeof value === "string") return value;
   if (Array.isArray(value)) return value.map(String).join("、");
@@ -218,7 +251,12 @@ export function LifeProfileTable({
   return (
     <div className="life-profile-table">
       <header className="profile-summary">
-        {heading && <h2>人生资料表</h2>}
+        {heading && (
+          <h2>
+            <Leaf size={18} aria-hidden="true" />
+            人生资料表
+          </h2>
+        )}
         <div className="profile-summary-topline">
           <div>
             <span className="profile-version">
@@ -288,6 +326,36 @@ export function LifeProfileTable({
           ))}
         </div>
         <div className="profile-tools">
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                title="筛选分类"
+                aria-label="筛选分类"
+                aria-pressed={category !== "all"}
+                disabled={!!draft}
+              >
+                <ListFilter size={16} />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuLabel>资料分类</DropdownMenuLabel>
+              <DropdownMenuRadioGroup
+                value={category}
+                onValueChange={setCategory}
+              >
+                <DropdownMenuRadioItem value="all">
+                  全部分类
+                </DropdownMenuRadioItem>
+                {profile.sections.map((section) => (
+                  <DropdownMenuRadioItem key={section.key} value={section.key}>
+                    {section.title}
+                  </DropdownMenuRadioItem>
+                ))}
+              </DropdownMenuRadioGroup>
+            </DropdownMenuContent>
+          </DropdownMenu>
           <Button
             variant="ghost"
             size="icon-sm"
@@ -340,22 +408,27 @@ export function LifeProfileTable({
           </DropdownMenu>
         </div>
       </div>
-      <div className="profile-category-row">
-        <select
-          aria-label="资料分类"
-          value={category}
-          disabled={!!draft}
-          onChange={(event) => setCategory(event.target.value)}
-        >
-          <option value="all">全部分类</option>
-          {profile.sections.map((section) => (
-            <option key={section.key} value={section.key}>
-              {section.title}
-            </option>
-          ))}
-        </select>
-        <span>{visibleFields.length} 项资料</span>
-      </div>
+      {category !== "all" && (
+        <div className="profile-category-row">
+          <span>
+            {
+              profile.sections.find((section) => section.key === category)
+                ?.title
+            }{" "}
+            · {visibleFields.length} 项资料
+          </span>
+          <Button
+            variant="ghost"
+            size="icon-xs"
+            title="清除分类筛选"
+            aria-label="清除分类筛选"
+            disabled={!!draft}
+            onClick={() => setCategory("all")}
+          >
+            <X size={12} />
+          </Button>
+        </div>
+      )}
       {showHistory && (
         <div className="profile-history">
           <ErrorNotice error={history.error} />
@@ -663,223 +736,234 @@ export function LifeProfileTable({
         .filter((section) =>
           visibleFields.some((field) => field.section === section.key),
         )
-        .map((section) => (
-          <details
-            key={`${section.key}-${filter}-${category}`}
-            className="profile-section"
-            open={section.key === "A" || filter !== "all" || category !== "all"}
-          >
-            <summary>
-              <ChevronDown size={15} aria-hidden="true" />
-              <strong>{section.title}</strong>
-              <span>
-                {
-                  profile.fields.filter(
-                    (field) =>
-                      field.section === section.key &&
-                      recordsFor(field).length > 0,
-                  ).length
-                }
-                /
-                {
-                  profile.fields.filter(
-                    (field) => field.section === section.key,
-                  ).length
-                }
-              </span>
-            </summary>
-            {visibleFields
-              .filter((f) => f.section === section.key)
-              .map((field) => {
-                const records = recordsFor(field).filter(
-                  (entry) => filter !== "pending" || needsConfirmation(entry),
-                );
-                return (
-                  <div className="profile-field" key={field.key}>
-                    <header>
-                      <strong title={field.priority}>{field.label}</strong>
-                    </header>
-                    {(records.length ? records : [undefined]).map(
-                      (entry, i) => {
-                        const content = entry
-                          ? display(entry.value) || profileStates[entry.state]
-                          : "待补充";
-                        const longContent =
-                          content.length > 140 ||
-                          content.split("\n").length > 3;
-                        const valueExpanded =
-                          !!entry && expandedValues.includes(entry.id);
-                        return (
-                          <div
-                            key={entry?.id || i}
-                            className={`profile-record${entry ? "" : " is-empty"}`}
-                          >
-                            <div className="profile-record-body">
-                              <p
-                                className={
-                                  longContent && !valueExpanded
-                                    ? "profile-value-preview"
-                                    : undefined
-                                }
-                              >
-                                {content}
-                              </p>
-                              {entry && longContent && (
-                                <button
-                                  className="profile-value-toggle"
-                                  type="button"
-                                  aria-expanded={valueExpanded}
-                                  onClick={() =>
-                                    setExpandedValues((current) =>
-                                      valueExpanded
-                                        ? current.filter(
-                                            (id) => id !== entry.id,
-                                          )
-                                        : [...current, entry.id],
-                                    )
+        .map((section) => {
+          const SectionIcon = sectionIcons[section.key] || FileText;
+          return (
+            <details
+              key={`${section.key}-${filter}-${category}`}
+              className="profile-section"
+              open={
+                section.key === "A" || filter !== "all" || category !== "all"
+              }
+            >
+              <summary>
+                <span className="profile-section-icon">
+                  <SectionIcon size={16} aria-hidden="true" />
+                </span>
+                <strong>{section.title}</strong>
+                <span className="profile-section-count">
+                  {
+                    profile.fields.filter(
+                      (field) =>
+                        field.section === section.key &&
+                        recordsFor(field).length > 0,
+                    ).length
+                  }
+                  /
+                  {
+                    profile.fields.filter(
+                      (field) => field.section === section.key,
+                    ).length
+                  }
+                </span>
+                <ChevronDown size={15} aria-hidden="true" />
+              </summary>
+              {visibleFields
+                .filter((f) => f.section === section.key)
+                .map((field) => {
+                  const records = recordsFor(field).filter(
+                    (entry) => filter !== "pending" || needsConfirmation(entry),
+                  );
+                  return (
+                    <div className="profile-field" key={field.key}>
+                      <header>
+                        <strong title={field.priority}>{field.label}</strong>
+                      </header>
+                      {(records.length ? records : [undefined]).map(
+                        (entry, i) => {
+                          const content = entry
+                            ? display(entry.value) || profileStates[entry.state]
+                            : "待补充";
+                          const longContent =
+                            content.length > 140 ||
+                            content.split("\n").length > 3;
+                          const valueExpanded =
+                            !!entry && expandedValues.includes(entry.id);
+                          return (
+                            <div
+                              key={entry?.id || i}
+                              className={`profile-record${entry ? "" : " is-empty"}`}
+                            >
+                              <div className="profile-record-body">
+                                <p
+                                  className={
+                                    longContent && !valueExpanded
+                                      ? "profile-value-preview"
+                                      : undefined
                                   }
                                 >
-                                  {valueExpanded ? "收起" : "展开内容"}
-                                  <ChevronDown size={12} aria-hidden="true" />
-                                </button>
-                              )}
-                              {entry &&
-                                (needsConfirmation(entry) ||
-                                  entry.use_scope !== "works") && (
-                                  <div className="profile-record-flags">
-                                    {needsConfirmation(entry) && (
-                                      <span className="profile-pending-flag">
-                                        {certaintyNames[entry.certainty]}
-                                      </span>
-                                    )}
-                                    {entry.use_scope !== "works" && (
-                                      <span>
-                                        <LockKeyhole
-                                          size={12}
-                                          aria-hidden="true"
-                                        />
-                                        {entry.use_scope === "internal"
-                                          ? "内部资料"
-                                          : "使用化名"}
-                                      </span>
-                                    )}
-                                  </div>
+                                  {content}
+                                </p>
+                                {entry && longContent && (
+                                  <button
+                                    className="profile-value-toggle"
+                                    type="button"
+                                    aria-expanded={valueExpanded}
+                                    onClick={() =>
+                                      setExpandedValues((current) =>
+                                        valueExpanded
+                                          ? current.filter(
+                                              (id) => id !== entry.id,
+                                            )
+                                          : [...current, entry.id],
+                                      )
+                                    }
+                                  >
+                                    {valueExpanded ? "收起" : "展开内容"}
+                                    <ChevronDown size={12} aria-hidden="true" />
+                                  </button>
                                 )}
-                            </div>
-                            <div className="profile-field-actions">
-                              {entry && (
-                                <Button
-                                  variant="ghost"
-                                  size="icon-sm"
-                                  title="来源与权限"
-                                  aria-label={`查看${field.label}的来源与权限`}
-                                  aria-expanded={expandedEntries.includes(
-                                    entry.id,
+                                {entry &&
+                                  (needsConfirmation(entry) ||
+                                    entry.use_scope !== "works") && (
+                                    <div className="profile-record-flags">
+                                      {needsConfirmation(entry) && (
+                                        <span className="profile-pending-flag">
+                                          {certaintyNames[entry.certainty]}
+                                        </span>
+                                      )}
+                                      {entry.use_scope !== "works" && (
+                                        <span>
+                                          <LockKeyhole
+                                            size={12}
+                                            aria-hidden="true"
+                                          />
+                                          {entry.use_scope === "internal"
+                                            ? "内部资料"
+                                            : "使用化名"}
+                                        </span>
+                                      )}
+                                    </div>
                                   )}
-                                  aria-controls={`profile-entry-${entry.id}`}
-                                  onClick={() =>
-                                    setExpandedEntries((current) =>
-                                      current.includes(entry.id)
-                                        ? current.filter(
-                                            (id) => id !== entry.id,
-                                          )
-                                        : [...current, entry.id],
-                                    )
-                                  }
-                                >
-                                  <Info size={15} />
-                                </Button>
-                              )}
-                              <Button
-                                variant="ghost"
-                                size="icon-sm"
-                                title={entry ? "编辑资料" : "填写"}
-                                aria-label={entry ? "编辑资料" : "填写"}
-                                disabled={!!draft}
-                                onClick={() => begin(field, entry)}
-                              >
-                                {entry ? (
-                                  <Pencil size={15} />
-                                ) : (
-                                  <Plus size={15} />
+                              </div>
+                              <div className="profile-field-actions">
+                                {entry && (
+                                  <Button
+                                    variant="ghost"
+                                    size="icon-sm"
+                                    title="来源与权限"
+                                    className="size-7"
+                                    aria-label={`查看${field.label}的来源与权限`}
+                                    aria-expanded={expandedEntries.includes(
+                                      entry.id,
+                                    )}
+                                    aria-controls={`profile-entry-${entry.id}`}
+                                    onClick={() =>
+                                      setExpandedEntries((current) =>
+                                        current.includes(entry.id)
+                                          ? current.filter(
+                                              (id) => id !== entry.id,
+                                            )
+                                          : [...current, entry.id],
+                                      )
+                                    }
+                                  >
+                                    <Info size={15} />
+                                  </Button>
                                 )}
-                              </Button>
-                              {onTalk && (
                                 <Button
                                   variant="ghost"
                                   size="icon-sm"
-                                  title="在聊天中补充"
-                                  aria-label="在聊天中补充"
-                                  disabled={busy || !!draft}
-                                  onClick={() => onTalk(field)}
+                                  title={entry ? "编辑资料" : "填写"}
+                                  className="size-7"
+                                  aria-label={entry ? "编辑资料" : "填写"}
+                                  disabled={!!draft}
+                                  onClick={() => begin(field, entry)}
                                 >
-                                  <MessageSquare size={15} />
+                                  {entry ? (
+                                    <Pencil size={15} />
+                                  ) : (
+                                    <Plus size={15} />
+                                  )}
                                 </Button>
+                                {onTalk && (
+                                  <Button
+                                    variant="ghost"
+                                    size="icon-sm"
+                                    title="在聊天中补充"
+                                    className="size-7"
+                                    aria-label="在聊天中补充"
+                                    disabled={busy || !!draft}
+                                    onClick={() => onTalk(field)}
+                                  >
+                                    <MessageSquare size={15} />
+                                  </Button>
+                                )}
+                              </div>
+                              {entry && expandedEntries.includes(entry.id) && (
+                                <dl
+                                  className="profile-record-metadata"
+                                  id={`profile-entry-${entry.id}`}
+                                >
+                                  <div>
+                                    <dt>状态</dt>
+                                    <dd>
+                                      {profileStates[entry.state]} ·{" "}
+                                      {certaintyNames[entry.certainty]}
+                                    </dd>
+                                  </div>
+                                  <div>
+                                    <dt>使用范围</dt>
+                                    <dd>
+                                      {entry.use_scope === "internal"
+                                        ? "只用于内部资料"
+                                        : entry.use_scope === "pseudonym"
+                                          ? "使用化名"
+                                          : "可用于书稿和影像"}
+                                    </dd>
+                                  </div>
+                                  <div>
+                                    <dt>来源</dt>
+                                    <dd>
+                                      {entry.source.type === "manual"
+                                        ? "手动填写"
+                                        : entry.source.type === "person"
+                                          ? "人物档案"
+                                          : entry.source.type === "legacy_claim"
+                                            ? "历史采访"
+                                            : "采访证据"}
+                                    </dd>
+                                  </div>
+                                  {entry.source.quote && (
+                                    <div>
+                                      <dt>原文</dt>
+                                      <dd>{entry.source.quote}</dd>
+                                    </div>
+                                  )}
+                                </dl>
                               )}
                             </div>
-                            {entry && expandedEntries.includes(entry.id) && (
-                              <dl
-                                className="profile-record-metadata"
-                                id={`profile-entry-${entry.id}`}
-                              >
-                                <div>
-                                  <dt>状态</dt>
-                                  <dd>
-                                    {profileStates[entry.state]} ·{" "}
-                                    {certaintyNames[entry.certainty]}
-                                  </dd>
-                                </div>
-                                <div>
-                                  <dt>使用范围</dt>
-                                  <dd>
-                                    {entry.use_scope === "internal"
-                                      ? "只用于内部资料"
-                                      : entry.use_scope === "pseudonym"
-                                        ? "使用化名"
-                                        : "可用于书稿和影像"}
-                                  </dd>
-                                </div>
-                                <div>
-                                  <dt>来源</dt>
-                                  <dd>
-                                    {entry.source.type === "manual"
-                                      ? "手动填写"
-                                      : entry.source.type === "person"
-                                        ? "人物档案"
-                                        : entry.source.type === "legacy_claim"
-                                          ? "历史采访"
-                                          : "采访证据"}
-                                  </dd>
-                                </div>
-                                {entry.source.quote && (
-                                  <div>
-                                    <dt>原文</dt>
-                                    <dd>{entry.source.quote}</dd>
-                                  </div>
-                                )}
-                              </dl>
-                            )}
-                          </div>
-                        );
-                      },
-                    )}
-                    {field.key.endsWith("[]") && records.length > 0 && (
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="profile-add-record"
-                        disabled={!!draft}
-                        onClick={() => begin(field)}
-                      >
-                        <Plus size={14} aria-hidden="true" />
-                        添加一条
-                      </Button>
-                    )}
-                  </div>
-                );
-              })}
-          </details>
-        ))}
+                          );
+                        },
+                      )}
+                      {field.key.endsWith("[]") && records.length > 0 && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="profile-add-record"
+                          disabled={!!draft}
+                          onClick={() => begin(field)}
+                        >
+                          <Plus size={14} aria-hidden="true" />
+                          添加一条
+                        </Button>
+                      )}
+                    </div>
+                  );
+                })}
+            </details>
+          );
+        })}
     </div>
   );
 }
