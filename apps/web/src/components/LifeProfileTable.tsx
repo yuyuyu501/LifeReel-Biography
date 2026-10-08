@@ -9,7 +9,15 @@ import type {
   ProfileValue,
 } from "@lifereel/contracts";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import {
+  ArrowRight,
+  Download,
+  History,
+  MessageSquare,
+  Pencil,
+  Plus,
+} from "lucide-react";
+import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../api/client";
 import { profilesApi } from "../api/profiles";
@@ -61,13 +69,18 @@ function display(value: ProfileValue): string {
 export function LifeProfileTable({
   profile,
   busy = false,
+  heading = true,
   onTalk,
+  onEditingChange,
 }: {
   profile: LifeProfile;
   busy?: boolean;
+  heading?: boolean;
   onTalk?: (field: ProfileField) => void;
+  onEditingChange?: (editing: boolean) => void;
 }) {
   const cache = useQueryClient();
+  const editor = useRef<HTMLFormElement>(null);
   const assets = useQuery({
     queryKey: ["profile-assets", profile.subject_id],
     queryFn: () => api.listEvidence(profile.subject_id),
@@ -81,6 +94,19 @@ export function LifeProfileTable({
   } | null>(null);
   const [includePrivate, setIncludePrivate] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
+  const editingField = draft?.field.key;
+  const editingEntry = draft?.entry?.id;
+  const editing = Boolean(draft);
+  useEffect(() => {
+    onEditingChange?.(editing);
+  }, [editing, onEditingChange]);
+  useEffect(() => {
+    if (!editingField) return;
+    editor.current?.scrollIntoView?.({ block: "nearest" });
+    editor.current
+      ?.querySelector<HTMLElement>("textarea, select")
+      ?.focus({ preventScroll: true });
+  }, [editingField, editingEntry]);
   const history = useQuery({
     queryKey: ["profile-history", profile.id],
     queryFn: () => profilesApi.history(profile.id),
@@ -150,7 +176,7 @@ export function LifeProfileTable({
         <span className="eyebrow">
           人生资料 · 第 {profile.version_number} 版
         </span>
-        <h2>人生资料表</h2>
+        {heading && <h2>人生资料表</h2>}
         <p>
           {profile.readiness.processed_fields} /{" "}
           {profile.readiness.total_fields} 项已处理
@@ -169,18 +195,15 @@ export function LifeProfileTable({
           to={`/books?subject=${profile.subject_id}`}
           className="profile-next"
         >
-          前往写书
+          前往写书 <ArrowRight size={14} aria-hidden="true" />
         </Link>
-        <small>
-          可以只写已有的经历，其他内容以后继续。已处理数量不代表素材充足。
-        </small>
       </header>
       <div className="profile-export">
         <a href={profilesApi.exportUrl(profile.id, "xlsx", includePrivate)}>
-          下载表格
+          <Download size={15} aria-hidden="true" /> 下载表格
         </a>
         <a href={profilesApi.exportUrl(profile.id, "md", includePrivate)}>
-          下载 Markdown
+          <Download size={15} aria-hidden="true" /> 下载 Markdown
         </a>
         <label>
           <input
@@ -193,9 +216,13 @@ export function LifeProfileTable({
         <Button
           variant="ghost"
           size="sm"
+          title="修改历史"
+          aria-label="修改历史"
+          aria-pressed={showHistory}
           onClick={() => setShowHistory(!showHistory)}
         >
-          修改历史
+          <History size={16} />
+          <span className="sr-only">修改历史</span>
         </Button>
       </div>
       {showHistory && (
@@ -236,6 +263,7 @@ export function LifeProfileTable({
       {draft && (
         <form
           className="profile-editor"
+          ref={editor}
           aria-label={`编辑${draft.field.label}`}
           onSubmit={(e) => {
             e.preventDefault();
@@ -549,19 +577,23 @@ export function LifeProfileTable({
                         <Button
                           variant="ghost"
                           size="sm"
+                          title={entry ? "编辑资料" : "填写"}
+                          aria-label={entry ? "编辑资料" : "填写"}
                           disabled={!!draft}
                           onClick={() => begin(field, entry)}
                         >
-                          {entry ? "编辑资料" : "填写"}
+                          {entry ? <Pencil size={15} /> : <Plus size={15} />}
                         </Button>
                         {onTalk && (
                           <Button
                             variant="ghost"
                             size="sm"
+                            title="在聊天中补充"
+                            aria-label="在聊天中补充"
                             disabled={busy || !!draft}
                             onClick={() => onTalk(field)}
                           >
-                            在聊天中补充
+                            <MessageSquare size={15} />
                           </Button>
                         )}
                       </div>

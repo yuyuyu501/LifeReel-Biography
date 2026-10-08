@@ -1,6 +1,6 @@
 .life-profile-table {
   padding: 1.25rem;
-  color: var(--text-main, #203349);
+  color: #252629;
 }
 .profile-summary h2 {
   margin: 0.4rem 0;
@@ -13,13 +13,16 @@
 .profile-summary small {
   display: block;
   margin-top: 0.65rem;
-  color: #657487;
+  color: #76777c;
 }
 .profile-next,
 .profile-export a {
   color: #2363b8;
   text-decoration: underline;
   text-underline-offset: 3px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
 }
 .profile-export {
   display: flex;
@@ -35,7 +38,7 @@
   align-items: center;
 }
 .profile-section {
-  border-top: 1px solid #dbe2ea;
+  border-top: 1px solid #e8e8eb;
   padding: 0.9rem 0;
 }
 .profile-section > summary {
@@ -47,13 +50,13 @@
 }
 .profile-section summary span,
 .profile-field small {
-  color: #68788b;
+  color: #76777c;
   font-size: 0.78rem;
   font-weight: normal;
 }
 .profile-field {
   padding: 0.85rem 0;
-  border-bottom: 1px dashed #e1e6ee;
+  border-bottom: 1px solid #efeff1;
 }
 .profile-field > header {
   display: flex;
@@ -78,9 +81,9 @@
 }
 .profile-editor {
   padding: 1rem;
-  border: 1px solid #9db8d8;
-  border-radius: 0.7rem;
-  background: #f5f9ff;
+  border: 1px solid #dedee2;
+  border-radius: 6px;
+  background: #fafafa;
   margin: 1rem 0;
 }
 .profile-editor label {
@@ -111,8 +114,7 @@
   gap: 0.5rem;
   margin-top: 0.8rem;
 }
-.profile-history,
-.profile-legacy {
+.profile-history {
   margin: 0.8rem 0;
   font-size: 0.85rem;
 }
@@ -120,9 +122,37 @@
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
-.life-interviews-page > .life-profile-table {
-  max-width: 72rem;
-  padding: 1.5rem 0;
+.profile-field-actions button {
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  color: #707176;
+}
+.profile-field-actions button:hover {
+  background: #f0f0f2;
+  color: #202124;
+}
+.profile-pane-heading + .live-script-scroll .life-profile-table {
+  padding: 22px 24px;
+}
+.profile-pane-heading + .live-script-scroll .profile-field {
+  display: grid;
+  grid-template-columns: minmax(110px, 0.65fr) minmax(0, 1.35fr);
+  gap: 12px;
+}
+.profile-pane-heading + .live-script-scroll .profile-field > header {
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: flex-start;
+  padding-top: 8px;
+  font-size: 13px;
+}
+.profile-pane-heading + .live-script-scroll .profile-record,
+.profile-pane-heading + .live-script-scroll .profile-field > button {
+  grid-column: 2;
+}
+.profile-record p:only-child {
+  color: #76777c;
 }
 .book-directory-editor,
 .book-script-generator {
@@ -167,5 +197,16 @@
   }
   .profile-section > summary {
     gap: 0.5rem;
+  }
+  .profile-pane-heading + .live-script-scroll .life-profile-table {
+    padding: 18px 16px;
+  }
+  .profile-pane-heading + .live-script-scroll .profile-field {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0;
+  }
+  .profile-pane-heading + .live-script-scroll .profile-record,
+  .profile-pane-heading + .live-script-scroll .profile-field > button {
+    grid-column: 1;
   }
 }

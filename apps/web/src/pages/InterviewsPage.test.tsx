@@ -1,6 +1,6 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { MemoryRouter, Route, Routes } from "react-router-dom";
+import { MemoryRouter } from "react-router-dom";
 import { beforeEach, vi } from "vitest";
 import { InterviewsPage } from "./InterviewsPage";
 
@@ -75,21 +75,50 @@ function page() {
       }
     >
       <MemoryRouter initialEntries={["/interviews"]}>
-        <Routes>
-          <Route path="/interviews" element={<InterviewsPage />} />
-          <Route path="/interviews/:id" element={<p>已进入资料采访</p>} />
-        </Routes>
+        <InterviewsPage />
       </MemoryRouter>
     </QueryClientProvider>,
   );
 }
 beforeEach(() => {
   localStorage.clear();
+  sessionStorage.clear();
   vi.stubGlobal(
     "fetch",
-    vi.fn(async (input: RequestInfo | URL) => {
+    vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const path = String(input).split("?")[0];
       if (path.endsWith("/v1/persons")) return response([person, second]);
+      if (path.endsWith("/v1/interviews") && init?.method === "POST") {
+        const id = JSON.parse(String(init.body)).subject_id;
+        return response({ id: `session-${id}` });
+      }
+      if (path.endsWith("/workspace")) {
+        const isSecond = path.includes("session-person-2");
+        const subject = isSecond ? second : person;
+        return response({
+          session: {
+            id: `session-${subject.id}`,
+            subject_id: subject.id,
+            rounds: [
+              {
+                id: "opening",
+                question_text: `${subject.preferred_name}，您想从哪段经历说起？`,
+              },
+            ],
+          },
+          profile: isSecond
+            ? {
+                ...profile,
+                id: "profile-2",
+                subject_id: second.id,
+                entries: [{ ...profile.entries[0], value: "王叔叔" }],
+              }
+            : profile,
+          assets: [],
+          script: null,
+          latest_workflow: null,
+        });
+      }
       if (path.endsWith("/v1/interviews")) return response([history]);
       if (path.endsWith("/subjects/person-1")) return response(profile);
       if (path.endsWith("/subjects/person-2"))
@@ -103,17 +132,13 @@ beforeEach(() => {
     }),
   );
 });
-test("uses one life profile and opens an interview without a chapter", async () => {
-  const original = vi.mocked(fetch).getMockImplementation()!;
-  vi.mocked(fetch).mockImplementation(async (input, init) =>
-    init?.method === "POST"
-      ? response({ id: "life-session" })
-      : original(input, init),
-  );
+test("opens the AI conversation and editable profile together without a chapter", async () => {
   page();
-  await screen.findByText("人生资料表");
-  fireEvent.click(screen.getByRole("button", { name: "开始或继续采访" }));
-  expect(await screen.findByText("已进入资料采访")).toBeInTheDocument();
+  await screen.findByRole("heading", { name: "人生资料表" });
+  expect(
+    screen.getByRole("textbox", { name: "说说这段往事" }),
+  ).toBeInTheDocument();
+  expect(screen.getByText("林奶奶，您想从哪段经历说起？")).toBeInTheDocument();
   const sent = vi
     .mocked(fetch)
     .mock.calls.find(([, init]) => init?.method === "POST")!;
@@ -133,14 +158,31 @@ test("switching people loads their own life profile", async () => {
     screen.queryByText("林奶奶", { selector: "p" }),
   ).not.toBeInTheDocument();
 });
-test("retains historical interview links without chapter gates", async () => {
+test("removes the old interview entry while preserving AI interviewing and book navigation", async () => {
   page();
   await screen.findByText("人生资料表");
-  fireEvent.click(screen.getByText("查看以前的采访记录"));
-  expect(screen.getByRole("link", { name: /历史对话/ })).toHaveAttribute(
-    "href",
-    "/interviews/legacy-1",
-  );
+  expect(screen.queryByText("查看以前的采访记录")).not.toBeInTheDocument();
+  expect(
+    screen.queryByRole("link", { name: /历史对话/ }),
+  ).not.toBeInTheDocument();
+  expect(screen.getByRole("region", { name: "AI 采访" })).toBeInTheDocument();
   expect(screen.queryByText("章节采访")).not.toBeInTheDocument();
   expect(screen.getByRole("link", { name: /前往写书/ })).toBeInTheDocument();
+});
+test("keeps the interview draft when changing people and returning", async () => {
+  page();
+  const input = await screen.findByRole("textbox", { name: "说说这段往事" });
+  fireEvent.change(input, { target: { value: "还没发送的往事" } });
+  fireEvent.change(screen.getByLabelText("采访人物"), {
+    target: { value: second.id },
+  });
+  await screen.findByText("王叔叔，您想从哪段经历说起？");
+  expect(screen.getByRole("textbox", { name: "说说这段往事" })).toHaveValue("");
+  fireEvent.change(screen.getByLabelText("采访人物"), {
+    target: { value: person.id },
+  });
+  await screen.findByText("林奶奶，您想从哪段经历说起？");
+  expect(screen.getByRole("textbox", { name: "说说这段往事" })).toHaveValue(
+    "还没发送的往事",
+  );
 });

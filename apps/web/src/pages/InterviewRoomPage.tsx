@@ -1,6 +1,6 @@
 import { Button } from "../components/ui/button";
 import { Textarea } from "../components/ui/textarea";
-import type { SourceAsset } from "@lifereel/contracts";
+import type { Person, SourceAsset } from "@lifereel/contracts";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ArrowUp,
@@ -83,7 +83,13 @@ export function InterviewRoomPage() {
   return <InterviewWorkspace key={id} id={id} />;
 }
 
-function InterviewWorkspace({ id }: { id: string }) {
+export function InterviewWorkspace({
+  id,
+  subjectPicker,
+}: {
+  id: string;
+  subjectPicker?: { people: Person[]; onChange: (id: string) => void };
+}) {
   const queryClient = useQueryClient();
   const workspace = useQuery({
     queryKey: ["interview-workspace", id],
@@ -296,6 +302,20 @@ function InterviewWorkspace({ id }: { id: string }) {
     : scriptSynchronized
       ? "已同步"
       : "最新内容尚未同步";
+  const profileSaved =
+    Boolean(workspace.data.profile) &&
+    !workflowError &&
+    (workflow?.status === "completed" ||
+      voice.updateStatus === "人生资料已更新");
+  const syncStatus = workflowRunning
+    ? "正在整理"
+    : profileSaved
+      ? "资料已保存"
+      : scriptSynchronized
+        ? "已经同步"
+        : workflowError
+          ? "尚未同步"
+          : "等待内容";
 
   return (
     <div className="page interview-room interview-workspace-page">
@@ -362,23 +382,55 @@ function InterviewWorkspace({ id }: { id: string }) {
           )}
         </div>
       )}
-      <main className="live-interview-layout">
+      <div className="live-interview-layout">
         <section
           className={`conversation-pane ${mobilePane !== "conversation" ? "mobile-hidden" : ""}`}
-          aria-label="采访记录"
+          aria-label="AI 采访"
         >
           <div className="pane-heading">
             <div>
-              <span>采访记录</span>
               <h1>
                 {workspace.data.profile
                   ? "人生采访"
                   : (chapter?.title ?? "历史采访")}
               </h1>
             </div>
-            <small>
-              {visibleRounds.filter((item) => item.answer_text).length} 次回答
-            </small>
+            {subjectPicker ? (
+              <select
+                aria-label="采访人物"
+                value={session.subject_id}
+                disabled={
+                  voice.busy ||
+                  recorder.isRecording ||
+                  scriptEditing ||
+                  submitTurn.isPending ||
+                  workflowRunning ||
+                  retryWorkflow.isPending
+                }
+                onChange={(event) => {
+                  if (
+                    (files.length || recorder.audioBlob) &&
+                    !window.confirm(
+                      "当前有未发送的录音或附件，切换人物将丢弃这些临时内容。文字草稿会保留。是否继续？",
+                    )
+                  )
+                    return;
+                  subjectPicker.onChange(event.target.value);
+                }}
+              >
+                {subjectPicker.people
+                  .filter((p) => p.is_subject)
+                  .map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.preferred_name || p.display_name}
+                    </option>
+                  ))}
+              </select>
+            ) : (
+              <small>
+                {visibleRounds.filter((item) => item.answer_text).length} 次回答
+              </small>
+            )}
           </div>
           {!workspace.data.profile && (
             <ChapterNavigation
@@ -403,7 +455,6 @@ function InterviewWorkspace({ id }: { id: string }) {
               <div key={round.id} className="conversation-turn">
                 {round.question_text && (
                   <div className="question-bubble">
-                    <span className="ai-avatar">岁</span>
                     <p>{round.question_text}</p>
                   </div>
                 )}
@@ -437,16 +488,6 @@ function InterviewWorkspace({ id }: { id: string }) {
             </Button>
           )}
           <InterviewProgress workspace={workspace.data} />
-          <details className="material-guidance">
-            <summary>照片、录音和讲述小提示</summary>
-            <p>
-              可以讲一件小事，也可以用回形针上传照片或录音，说明人物、时间和地点。发现资料或之前讲述有误，直接在下方说明哪里不对、正确内容是什么，AI
-              会据此更正人生资料。之后可以从资料表写书，再将书稿改编为影像。
-            </p>
-            <p>
-              资料可以直接编辑，也可以继续讲述来补充。照片和录音保存为素材，在影像制作时选择使用。
-            </p>
-          </details>
           <InterviewVoice
             voice={voice}
             disabled={
@@ -519,9 +560,10 @@ function InterviewWorkspace({ id }: { id: string }) {
             <div className="composer-actions">
               <label
                 className="composer-tool attachment-button"
-                title={EVIDENCE_LIMIT_SUMMARY}
+                title={`添加素材 · ${EVIDENCE_LIMIT_SUMMARY}`}
               >
-                <Paperclip size={17} /> 添加素材
+                <Paperclip size={18} />
+                <span className="sr-only">添加素材</span>
                 <input
                   className="sr-only"
                   type="file"
@@ -532,28 +574,39 @@ function InterviewWorkspace({ id }: { id: string }) {
                 />
               </label>
               <Button
-                variant="outline"
+                variant="ghost"
+                size="icon-sm"
                 type="button"
-                className={`composer-tool px-2 text-xs ${recorder.isRecording ? "recording" : ""}`}
+                className={`composer-tool p-0 ${recorder.isRecording ? "recording" : ""}`}
                 disabled={voice.busy || submitTurn.isPending}
                 aria-pressed={recorder.isRecording}
+                aria-label={
+                  recorder.isRecording
+                    ? "停止录音"
+                    : recorder.audioUrl
+                      ? "重新录制"
+                      : "录制原声"
+                }
+                title={
+                  recorder.isRecording
+                    ? "停止录音"
+                    : recorder.audioUrl
+                      ? "重新录制"
+                      : "录制原声"
+                }
                 onClick={() =>
                   recorder.isRecording ? recorder.stop() : recorder.start()
                 }
               >
                 {recorder.isRecording ? (
-                  <>
-                    <Square size={16} /> 停止录音
-                  </>
+                  <Square size={17} />
                 ) : (
-                  <>
-                    <Mic2 size={17} />{" "}
-                    {recorder.audioUrl ? "重新录制" : "录制原声"}
-                  </>
+                  <Mic2 size={18} />
                 )}
               </Button>
               <Button
-                className="composer-send px-2 text-xs"
+                size="icon-sm"
+                className="composer-send rounded-full bg-[#252629] p-0 text-white hover:bg-[#3d3e43]"
                 aria-label={
                   submitTurn.isPending || workflowRunning
                     ? "正在整理"
@@ -563,7 +616,9 @@ function InterviewWorkspace({ id }: { id: string }) {
                 }
                 title={
                   scriptEditing
-                    ? "请先保存或取消剧本修改"
+                    ? workspace.data.profile
+                      ? "请先保存或取消资料修改"
+                      : "请先保存或取消剧本修改"
                     : recorder.isRecording
                       ? "请先停止录音"
                       : submitTurn.isPending || workflowRunning
@@ -588,7 +643,6 @@ function InterviewWorkspace({ id }: { id: string }) {
                 ) : (
                   <ArrowUp size={21} />
                 )}
-                <span>发送</span>
               </Button>
             </div>
             {(fileError || recorder.error) && (
@@ -597,53 +651,50 @@ function InterviewWorkspace({ id }: { id: string }) {
           </form>
         </section>
 
-        <aside className="workflow-status-rail" aria-label="实时整理状态">
-          <span
-            className={
-              workflowRunning
-                ? "running"
-                : workflow?.status === "completed"
-                  ? "done"
-                  : ""
-            }
-          >
-            {workflowRunning ? (
-              <LoaderCircle size={16} />
-            ) : (
-              <CheckCircle2 size={16} />
-            )}
-          </span>
-          <div />
-          <small>
-            {workflowRunning
-              ? "正在整理"
-              : workspace.data.profile &&
-                  !workflowError &&
-                  (workflow?.status === "completed" ||
-                    voice.updateStatus === "人生资料已更新")
-                ? "资料已保存"
-                : scriptSynchronized
-                  ? "已经同步"
-                  : workflowError
-                    ? "尚未同步"
-                    : "等待内容"}
-          </small>
-        </aside>
+        {!workspace.data.profile && (
+          <aside className="workflow-status-rail" aria-label="实时整理状态">
+            <span
+              className={
+                workflowRunning
+                  ? "running"
+                  : workflow?.status === "completed"
+                    ? "done"
+                    : ""
+              }
+            >
+              {workflowRunning ? (
+                <LoaderCircle size={16} />
+              ) : (
+                <CheckCircle2 size={16} />
+              )}
+            </span>
+            <div />
+            <small>{syncStatus}</small>
+          </aside>
+        )}
 
         {workspace.data.profile ? (
           <section
             className={`live-script-pane ${mobilePane !== "script" ? "mobile-hidden" : ""}`}
             aria-label="人生资料表"
           >
+            <div className="pane-heading profile-pane-heading">
+              <h2>人生资料表</h2>
+              <small>{syncStatus}</small>
+            </div>
             <div className="live-script-scroll">
               <LifeProfileTable
+                key={workspace.data.profile.id}
                 profile={workspace.data.profile}
+                heading={false}
+                onEditingChange={setScriptEditing}
                 busy={voice.busy || workflowRunning || submitTurn.isPending}
                 onTalk={(field) => {
                   setAnswer(
                     `我想补充“${field.label}”的资料，请围绕这一项引导我。`,
                   );
                   setMobilePane("conversation");
+                  document.getElementById("interview-answer")?.focus();
                 }}
               />
             </div>
@@ -728,7 +779,7 @@ function InterviewWorkspace({ id }: { id: string }) {
             </div>
           </section>
         )}
-      </main>
+      </div>
     </div>
   );
 }

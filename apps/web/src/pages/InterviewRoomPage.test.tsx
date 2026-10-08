@@ -332,12 +332,12 @@ test("adds a material in the composer and submits it through the turn workflow",
   );
 });
 
-test("uses labeled tools and a visible send label without a pricing banner", async () => {
+test("uses accessible icon tools with tooltips without a pricing banner", async () => {
   renderPage();
   await screen.findByRole("textbox", { name: "说说这段往事" });
   const send = screen.getByRole("button", { name: "发送并更新剧本" });
   expect(send).toBeDisabled();
-  expect(send).toHaveTextContent("发送");
+  expect(send.querySelector("svg")).not.toBeNull();
   expect(
     screen.queryByText(/官方标准价|查看钱包|不再按章收费/),
   ).not.toBeInTheDocument();

@@ -122,7 +122,14 @@
 /* Subpage: interview room and live script. */
 
 .interview-room {
-  width: min(1460px, calc(100% - 48px));
+  width: 100%;
+  height: calc(100dvh - 64px);
+  min-height: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  color: #252629;
+  background: #fff;
 }
 .conversation {
   display: grid;
@@ -154,11 +161,12 @@
 .question-bubble p {
   max-width: 710px;
   margin: 0;
-  padding: 15px 17px;
-  border: 1px solid var(--line);
-  border-radius: 3px 8px 8px 8px;
-  background: #fff;
-  font-size: 17px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 14px;
   line-height: 1.75;
 }
 .answer-bubble {
@@ -171,25 +179,28 @@
 .answer-bubble p {
   margin: 0;
   padding: 14px 17px;
-  border-radius: 8px 3px 8px 8px;
+  border-radius: 8px;
   color: var(--ink);
-  background: var(--green-soft);
+  background: #f3f3f5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
   font-size: 15px;
   line-height: 1.75;
 }
 .answer-bubble svg {
-  color: var(--green);
+  flex-shrink: 0;
+  color: #9a9ba0;
 }
 .answer-composer {
-  margin: 0 16px 16px;
+  margin: 0 24px 20px;
   padding: 14px;
-  border: 1px solid var(--line-strong);
+  border: 1px solid #dedee3;
   border-radius: 8px;
   background: #fff;
-  box-shadow: 0 3px 12px rgba(19, 32, 28, 0.04);
+  box-shadow: 0 2px 14px rgba(0, 0, 0, 0.03);
 }
 .answer-composer:focus-within {
-  border-color: var(--green);
+  border-color: #9c9da4;
 }
 .recording-preview {
   margin: -4px 0 14px;
@@ -236,16 +247,19 @@
   font-size: 13px;
 }
 .live-interview-layout {
-  height: calc(100dvh - 150px);
-  min-height: 560px;
-  margin-top: 18px;
+  flex: 1;
+  min-height: 0;
+  margin-top: 0;
   display: grid;
-  grid-template-columns: minmax(380px, 0.9fr) 42px minmax(440px, 1.1fr);
+  grid-template-columns: minmax(0, 1fr) 42px minmax(0, 1fr);
   align-items: stretch;
-  border: 1px solid var(--line);
-  border-radius: 8px;
+  border: 0;
+  border-radius: 0;
   overflow: hidden;
   background: #fff;
+}
+.live-interview-layout:has(.profile-pane-heading) {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
 }
 .conversation-pane,
 .live-script-pane {
@@ -255,12 +269,13 @@
 .conversation-pane {
   display: flex;
   flex-direction: column;
-  background: var(--canvas);
+  background: #fff;
 }
 .live-script-pane {
   display: flex;
   flex-direction: column;
   padding: 0 26px;
+  border-left: 1px solid #e8e8eb;
   background: #fff;
 }
 .live-script-scroll {
@@ -286,12 +301,12 @@
 }
 .pane-heading {
   flex-shrink: 0;
-  min-height: 78px;
-  padding: 15px 20px;
+  min-height: 52px;
+  padding: 10px 24px;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 20px;
+  gap: 12px;
   border-bottom: 1px solid var(--line);
   background: #fff;
 }
@@ -306,8 +321,24 @@
 .pane-heading h1,
 .pane-heading h2 {
   margin: 0;
-  font-family: "Songti SC", STSong, serif;
-  font-size: 20px;
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 600;
+}
+.pane-heading select {
+  min-width: 0;
+  max-width: 55%;
+  height: 32px;
+  padding: 0 24px 0 8px;
+  border: 1px solid #e4e4e8;
+  border-radius: 5px;
+  background: #fff;
+  color: #55565c;
+  font-size: 12px;
+  text-overflow: ellipsis;
+}
+.profile-pane-heading {
+  margin: 0 -26px;
 }
 .pane-heading > small {
   color: var(--muted-foreground);
@@ -318,12 +349,14 @@
   min-height: 0;
   overflow-y: auto;
   align-content: start;
-  padding: 24px 20px;
+  padding: 28px 24px;
   flex: 1;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
 }
 .conversation-pane .question-bubble p {
-  max-width: calc(100% - 48px);
-  font-size: 15px;
+  max-width: 100%;
+  font-size: 14px;
 }
 .conversation-pane .answer-bubble {
   max-width: 84%;
@@ -337,13 +370,15 @@
   gap: 8px;
 }
 .composer-tool {
-  min-height: 44px;
-  padding: 0 11px;
+  width: 32px;
+  height: 32px;
+  min-height: 32px;
+  padding: 0;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 5px;
-  border: 1px solid var(--line);
+  border: 0;
   border-radius: 6px;
   color: var(--ink-soft);
   background: #fff;
@@ -365,9 +400,9 @@
   outline-offset: 3px;
 }
 .composer-send {
-  width: 76px;
-  height: 36px;
-  flex: 0 0 76px;
+  width: 32px;
+  height: 32px;
+  flex: 0 0 32px;
   margin-left: auto;
   padding: 0;
   display: inline-flex;
@@ -377,7 +412,7 @@
   border: 0;
   border-radius: 999px;
   color: #fff;
-  background: var(--green);
+  background: #252629;
   cursor: pointer;
   font-size: 12px;
   font-weight: 600;
@@ -593,9 +628,35 @@
   font-size: 9px;
 }
 .interview-voice {
-  padding: 12px 20px;
-  border-top: 1px solid var(--line);
+  padding: 8px 24px;
+  border-top: 0;
   flex-shrink: 0;
+}
+.interview-room .interview-progress {
+  border-top: 0;
+  padding: 6px 24px;
+  color: #76777c;
+  font-size: 12px;
+  max-height: 80px;
+  overflow: auto;
+}
+.interview-room .conversation,
+.interview-room .live-script-scroll,
+.interview-room .answer-composer,
+.interview-room .voice-transcript {
+  scrollbar-width: thin;
+  scrollbar-color: #d8d8dc transparent;
+}
+.interview-room ::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+.interview-room ::-webkit-scrollbar-thumb {
+  background: #d8d8dc;
+  border-radius: 3px;
+}
+.interview-room ::-webkit-scrollbar-track {
+  background: transparent;
 }
 .interview-voice.is-active {
   background: #f0f8f5;
@@ -664,7 +725,7 @@
 }
 @media (max-width: 1080px) {
   .interview-room {
-    width: min(100% - 40px, 1000px);
+    width: 100%;
   }
 }
 @media (max-width: 900px) {
@@ -673,11 +734,12 @@
     scroll-margin-bottom: 86px;
   }
   .interview-workspace-page {
-    width: min(100% - 32px, 760px);
+    width: 100%;
+    height: calc(100dvh - 128px - env(safe-area-inset-bottom));
   }
   .interview-mobile-tabs {
     height: 44px;
-    margin-top: 14px;
+    margin-top: 0;
     padding: 3px;
     display: grid;
     grid-template-columns: 1fr 1fr;
@@ -708,9 +770,11 @@
     background: var(--vermilion);
   }
   .live-interview-layout {
-    height: calc(100dvh - 210px);
-    min-height: 440px;
-    margin-top: 10px;
+    min-height: 0;
+    margin-top: 0;
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .live-interview-layout:has(.profile-pane-heading) {
     grid-template-columns: minmax(0, 1fr);
   }
   .workflow-status-rail {
@@ -726,7 +790,7 @@
 }
 @media (max-width: 620px) {
   .interview-room {
-    width: min(100% - 24px, 620px);
+    width: 100%;
   }
   .question-bubble p {
     font-size: 16px;
@@ -759,8 +823,8 @@
     padding: 0 8px;
   }
   .composer-send {
-    width: 68px;
-    flex-basis: 68px;
+    width: 32px;
+    flex-basis: 32px;
   }
   .chat-assets-history {
     margin-left: 0;
@@ -772,7 +836,8 @@
     margin-inline: -16px;
     padding: 0 16px 22px;
   }
-  .script-pane-heading {
+  .script-pane-heading,
+  .profile-pane-heading {
     margin: 0 -16px;
     padding-right: 16px;
     padding-left: 16px;
