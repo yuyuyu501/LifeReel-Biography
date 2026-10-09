@@ -63,21 +63,6 @@
 .material-guidance summary {
   cursor: pointer;
 }
-.getting-started {
-  margin: 16px 0;
-  padding: 20px;
-  border: 1px solid var(--line);
-  background: var(--green-soft);
-  border-radius: 10px;
-}
-.getting-started h2 {
-  font-size: 19px;
-  margin: 8px 0;
-}
-.getting-started p {
-  line-height: 1.7;
-  margin: 8px 0 14px;
-}
 .new-message-button {
   align-self: center;
   margin: 4px;

@@ -56,7 +56,7 @@ function ProtectedApp() {
       displayName={session.data?.display_name}
     >
       <Routes>
-        <Route path="/" element={<HomePage userId={session.data?.id} />} />
+        <Route path="/" element={<HomePage />} />
         <Route path="/people" element={<PeoplePage />} />
         <Route path="/interviews" element={<InterviewsPage />} />
         <Route path="/interviews/:id" element={<InterviewRoomPage />} />

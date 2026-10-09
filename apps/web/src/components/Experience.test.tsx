@@ -10,7 +10,6 @@ import { MemoryRouter } from "react-router-dom";
 import { beforeEach, expect, test, vi } from "vitest";
 import { api } from "../api/client";
 import { AnswerHistory } from "./InterviewExperience";
-import { GettingStarted } from "./GettingStarted";
 import { ProductionQuality, ShotPreview } from "./ProductionExperience";
 import {
   useConversationFollow,
@@ -30,7 +29,6 @@ function wrap(element: React.ReactNode) {
 
 beforeEach(() => {
   sessionStorage.clear();
-  localStorage.clear();
 });
 
 test("shot preview uses ordered project shots belonging to the selected scene", () => {
@@ -146,20 +144,6 @@ test("history reading retains scroll position and exposes a return-to-latest act
   fireEvent.click(screen.getByRole("button", { name: "回到最新" }));
   expect(area.scrollTop).toBe(1000);
   expect(screen.queryByRole("button")).not.toBeInTheDocument();
-});
-
-test("guide can be closed, resumed and reopened without storing personal content", () => {
-  const view = wrap(<GettingStarted userId="one" />);
-  fireEvent.click(screen.getByRole("button", { name: "下一步" }));
-  fireEvent.click(screen.getByRole("button", { name: "暂时收起" }));
-  view.unmount();
-  wrap(<GettingStarted userId="one" />);
-  fireEvent.click(screen.getByRole("button", { name: "重新打开使用教学" }));
-  expect(screen.getByRole("heading", { name: "从一句话开始" })).toBeVisible();
-  expect(JSON.parse(localStorage.getItem("lifereel:guide:v2:one")!)).toEqual({
-    step: 1,
-    hidden: false,
-  });
 });
 
 test("local regeneration shows a quote before submitting and targets only the chosen shot", async () => {

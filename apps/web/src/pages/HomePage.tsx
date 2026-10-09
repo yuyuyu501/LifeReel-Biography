@@ -15,9 +15,8 @@ import { booksApi } from "../api/books";
 import { api } from "../api/client";
 import { QueryState } from "../components/QueryState";
 import { hasQueryIssue } from "../queryHelpers";
-import { GettingStarted } from "../components/GettingStarted";
 
-export function HomePage({ userId = "local" }: { userId?: string } = {}) {
+export function HomePage() {
   const people = useQuery({ queryKey: ["persons"], queryFn: api.listPersons });
   const interviews = useQuery({
     queryKey: ["interviews"],
@@ -28,9 +27,9 @@ export function HomePage({ userId = "local" }: { userId?: string } = {}) {
     queryFn: () => api.listEvidence(),
   });
   const scripts = useQuery({ queryKey: ["scripts"], queryFn: api.listScripts });
-  const books = useQuery({queryKey: ["books"], queryFn: booksApi.list});
+  const books = useQuery({ queryKey: ["books"], queryFn: booksApi.list });
   const overviewQueries = [people, interviews, evidence, scripts, books];
-  const activeInterview = interviews.data?.find(s => s.profile_id);
+  const activeInterview = interviews.data?.find((s) => s.profile_id);
   const latestInterview = interviews.data?.[0];
   const nextAction = activeInterview
     ? {
@@ -73,7 +72,6 @@ export function HomePage({ userId = "local" }: { userId?: string } = {}) {
         </Button>
       </header>
 
-      <GettingStarted key={userId} userId={userId} />
       {hasQueryIssue(overviewQueries) ? (
         <QueryState
           queries={overviewQueries}
@@ -148,7 +146,9 @@ export function HomePage({ userId = "local" }: { userId?: string } = {}) {
                 <span className="eyebrow">制作轨道</span>
                 <h2>从讲述到成片</h2>
               </div>
-              <p>采访整理人生资料，写书保存正文，影像再从书稿改编剧本与分镜。</p>
+              <p>
+                采访整理人生资料，写书保存正文，影像再从书稿改编剧本与分镜。
+              </p>
             </div>
             <div className="workflow-track">
               <Link
@@ -195,10 +195,7 @@ export function HomePage({ userId = "local" }: { userId?: string } = {}) {
                     : "等待采访沉淀"}
                 </small>
               </Link>
-              <Link
-                to="/books"
-                className={books.data?.length ? "done" : ""}
-              >
+              <Link to="/books" className={books.data?.length ? "done" : ""}>
                 <span>
                   <BookOpenText />
                 </span>
