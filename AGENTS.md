@@ -13,6 +13,11 @@
 - Do not commit secrets, environment files, personal media, or runtime data.
 - Use isolated databases and mock providers for tests. Do not invoke paid AI,
   SMS, payment, or video services as part of routine release verification.
+- For any deletion, refactor, replacement, or feature migration, first inspect
+  the current implementation, then search Git history for the affected feature
+  and its related paths. Before editing, identify the associated tests, routes,
+  configuration, database objects, documentation, and deployment files. After
+  editing, search globally for stale references and run the relevant checks.
 - A release is complete only after required migrations finish, affected services
   run the new code, health checks pass, and local/GitHub/server commit IDs match.
   Matching Git commits alone does not prove that running containers were updated.
