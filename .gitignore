@@ -52,6 +52,3 @@ uploads/
 # Local tooling
 .docker/
 tmp/
-
-# Local Codex/agent instructions; keep these outside project history
-AGENTS.md
