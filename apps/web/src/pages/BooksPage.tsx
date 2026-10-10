@@ -8,7 +8,15 @@ import {
 } from "react-router-dom";
 import { profilesApi } from "../api/profiles";
 import { BookDirectoryEditor } from "../components/BookDirectoryEditor";
-import { BookOpenText, Download, Sparkles } from "lucide-react";
+import {
+  ArrowRight,
+  BookOpen,
+  BookOpenText,
+  Download,
+  FileText,
+  Sparkles,
+  UserRound,
+} from "lucide-react";
 import { api, API_BASE_URL } from "../api/client";
 import {
   booksApi,
@@ -55,10 +63,13 @@ export function BooksPage() {
       </div>
     );
   return (
-    <div className="page writing-page">
+    <div className="page writing-page writing-library-page">
       <header className="page-header">
         <div>
-          <span className="eyebrow">把经历写成一本书</span>
+          <span className="writing-page-eyebrow">
+            <BookOpen size={22} aria-hidden="true" />
+            把经历写成一本书
+          </span>
           <h1>人生书架</h1>
           <p>根据当前人生资料表选材，每章约1000字，整理成一本属于自己的书。</p>
         </div>
@@ -74,8 +85,11 @@ export function BooksPage() {
             });
         }}
       >
-        <label>
-          选择人物
+        <label className="writing-field">
+          <span className="writing-field-label">
+            <UserRound size={17} aria-hidden="true" />
+            选择人物
+          </span>
           <select
             value={personId}
             onChange={(e) => setPersonId(e.target.value)}
@@ -89,8 +103,11 @@ export function BooksPage() {
             ))}
           </select>
         </label>
-        <label>
-          书名
+        <label className="writing-field">
+          <span className="writing-field-label">
+            <BookOpen size={17} aria-hidden="true" />
+            书名
+          </span>
           <Input
             value={title}
             onChange={(e) => setTitle(e.target.value)}
@@ -105,34 +122,68 @@ export function BooksPage() {
         <p>每位人物一本书。创建书籍免费；点击生成后按现有文字模型规则计费。</p>
         <ErrorNotice error={create.error} />
       </form>
-      <div className="writing-shelf">
-        {books.data?.map((book) => (
-          <Link
-            className="writing-cover"
-            to={"/books/" + book.id}
-            key={book.id}
-          >
-            <BookOpenText size={28} />
-            <h2>{book.title}</h2>
-            <p>
-              {book.chapters.filter((c) => c.current).length} /{" "}
-              {book.chapters.length} 章已成稿
-            </p>
-            <span>
-              {book.chapters.reduce(
-                (n, c) => n + (c.current?.word_count || 0),
-                0,
-              )}{" "}
-              字 · 打开书稿 →
-            </span>
-          </Link>
-        ))}
-        {!books.data?.length && (
-          <p className="writing-empty">
-            书架还是空的。选择人物，开启第一本人生书。
-          </p>
-        )}
-      </div>
+      <section
+        className="writing-library"
+        aria-labelledby="writing-library-title"
+      >
+        <div className="writing-library-heading">
+          <div>
+            <BookOpen size={25} aria-hidden="true" />
+            <h2 id="writing-library-title">我的人生书</h2>
+            <span>{books.data?.length || 0} 本</span>
+          </div>
+        </div>
+        <div className="writing-shelf">
+          {books.data?.map((book) => {
+            const completed = book.chapters.filter((c) => c.current).length;
+            const words = book.chapters.reduce(
+              (n, c) => n + (c.current?.word_count || 0),
+              0,
+            );
+            return (
+              <Link
+                className="writing-book-card"
+                to={"/books/" + book.id}
+                key={book.id}
+              >
+                <div className="writing-book-cover" aria-hidden="true">
+                  <BookOpen size={27} />
+                  <strong>人生书</strong>
+                  <small>LIFE BOOK</small>
+                </div>
+                <div className="writing-book-info">
+                  <h3>{book.title}</h3>
+                  <div className="writing-book-stats">
+                    <span>
+                      <FileText size={16} aria-hidden="true" />
+                      {completed}/{book.chapters.length} 章已成稿
+                    </span>
+                    <i aria-hidden="true" />
+                    <span>{words} 字</span>
+                  </div>
+                  <span className="writing-book-open">
+                    打开书稿
+                    <ArrowRight size={17} aria-hidden="true" />
+                  </span>
+                </div>
+              </Link>
+            );
+          })}
+          {!books.data?.length && (
+            <div className="writing-library-empty">
+              <div className="writing-library-empty-icon" aria-hidden="true">
+                <BookOpen size={34} />
+              </div>
+              <h3>每个人的故事，都值得被记录</h3>
+              <p>选择家人并创建人生书，开始整理珍贵回忆。</p>
+              <Link to="/people">
+                去建立家人档案
+                <ArrowRight size={17} aria-hidden="true" />
+              </Link>
+            </div>
+          )}
+        </div>
+      </section>
     </div>
   );
 }
@@ -214,7 +265,7 @@ export function BookWritingPage() {
     generate.mutate({ ...payload, idempotency_key: request.current.id });
   }
   return (
-    <div className="page writing-page">
+    <div className="page writing-page writing-book-detail-page">
       <Link to="/books" className="writing-back">
         ← 人生书架
       </Link>
