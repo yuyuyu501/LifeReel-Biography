@@ -11,7 +11,7 @@ workflow:
   local_change: 1
   test: 1
   git_sync: 1
-  server_update: 0
+  server_update: 1
 ```
 
 - `local_change: 1`: make approved code or configuration changes in the local
@@ -19,9 +19,9 @@ workflow:
 - `test: 1`: run the relevant checks before committing.
 - `git_sync: 1`: after validation, review, commit, push to `origin`, and verify
   the remote commit.
-- `server_update: 0`: do not update production for ordinary changes. Enable
-  this stage only when the user explicitly requests deployment for the current
-  task.
+- `server_update: 1`: after validation and GitHub synchronization, update the
+  production server to the exact pushed commit for every applicable code or
+  configuration change.
 
 ## Repository commands
 
@@ -69,7 +69,7 @@ for routine tests.
 - Do not commit secrets, `.env` files, personal media, or runtime data.
 - `git_sync: 1` means GitHub synchronization; it does not mean that the
   server has been updated.
-- `server_update: 0` is the current default. When explicitly enabled, follow
-  the global production checks, back up the database and environment, fetch the
-  exact pushed commit, run migrations, verify containers and health endpoints,
-  and report rollback information.
+- `server_update: 1` is the current default. Follow the global production
+  checks, back up the database and environment, fetch the exact pushed commit,
+  run migrations, verify containers and health endpoints, and report rollback
+  information after every applicable release.
