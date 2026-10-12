@@ -55,6 +55,7 @@ class InterviewRoundRead(BaseModel):
     question_text: str
     question_intent: str | None
     question_source: str | None
+    question_sources: list[dict] = Field(default_factory=list)
     answer_text: str | None
     answer_version: int = 1
     answer_revisions: list[dict] = Field(default_factory=list)

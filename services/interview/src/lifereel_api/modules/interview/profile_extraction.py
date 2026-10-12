@@ -7,6 +7,7 @@ from sqlalchemy import select
 
 from lifereel_api.core.config import get_settings
 from lifereel_api.core.errors import ApiError, ErrorCode
+from lifereel_api.modules.interview import companion
 from lifereel_api.modules.interview import profile_service as profiles
 from lifereel_api.modules.interview.profile_models import LifeProfileRevision
 from lifereel_api.modules.interview.profile_schemas import EntryChange, ProfilePatch
@@ -22,6 +23,7 @@ class Extraction(BaseModel):
     model_config = ConfigDict(extra="forbid")
     changes: list[Suggestion] = Field(default_factory=list, max_length=40)
     next_question: str = Field(min_length=1, max_length=800)
+    decision: companion.Decision | None = None
 
 
 PROMPT = """你负责纪实人生采访，只整理资料表，不生成剧本或书稿。
@@ -141,9 +143,11 @@ def _mock(text, workspace):
 
 def process(db, tenant, profile_id, text, source, request_id, workflow=None):
     workspace = profiles.read(db, tenant, profile_id)
+    settings = get_settings()
+    session, dialogue = companion.dialogue_context(db, tenant, profile_id, source, workflow)
     prior = (
         db.query(LifeProfileRevision)
-        .filter_by(profile_id=profile_id, request_id=request_id)
+        .filter_by(tenant_id=tenant, profile_id=profile_id, request_id=request_id)
         .first()
     )
     if prior:
@@ -156,7 +160,19 @@ def process(db, tenant, profile_id, text, source, request_id, workflow=None):
             ),
             None,
         )
-        return {"profile": workspace, "next_question": reply or "您还想补充哪段经历？"}
+        metadata = next((c["metadata"] for c in prior.changes if "metadata" in c), {})
+        decision = metadata.get("interview_decision", {})
+        if session and decision:
+            session.interview_state = companion.next_state(
+                session.interview_state, decision, source
+            )
+            db.commit()
+        return {
+            "profile": workspace,
+            "next_question": reply or "您还想补充哪段经历？",
+            "decision": decision,
+            "audit": metadata.get("interview_audit", {}),
+        }
     if not text.strip():
         return {"profile": workspace, "next_question": "您想先讲哪段经历？"}
     revisions = list(
@@ -177,18 +193,20 @@ def process(db, tenant, profile_id, text, source, request_id, workflow=None):
         if c.get("metadata", {}).get("next_question")
     ]
     saved = workflow.profile_result.get("extraction") if workflow else None
-    settings = get_settings()
+    if (
+        saved
+        and settings.interview_enhancements_enabled
+        and saved["entry_versions"] != {e["id"]: e["version_number"] for e in workspace["entries"]}
+    ):
+        # A manual correction after a checkpoint invalidates both facts and the audited reply.
+        saved = None
+    audit = saved.get("audit", {}) if saved else {}
     if saved:
         output = saved["output"]
     elif settings.llm_provider == "mock":
         output = _mock(text, workspace)
     else:
-        client = OpenAICompatibleClient(
-            settings.openai_compatible_base_url or "",
-            settings.openai_compatible_api_key or "",
-            settings.model_for("interview"),
-            task="interview",
-        )
+        client = OpenAICompatibleClient.for_task("interview")
         if not client.capabilities().configured:
             raise ApiError(503, ErrorCode.INTERVIEW_LLM_CONFIGURATION_INCOMPLETE)
         context_entries = []
@@ -209,7 +227,11 @@ def process(db, tenant, profile_id, text, source, request_id, workflow=None):
             elif isinstance(value, dict):
                 value = {k: v[:1500] if isinstance(v, str) else v for k, v in value.items()}
             context_entries.append(
-                {k: v for k, v in {**entry, "value": value}.items() if k != "source"}
+                {
+                    **entry,
+                    "value": value,
+                    "source_id": f"entry:{entry['id']}:v{entry['version_number']}",
+                }
             )
         material = {
             "fields": list(FIELD_MAP.values()),
@@ -228,20 +250,28 @@ def process(db, tenant, profile_id, text, source, request_id, workflow=None):
             "new_answer": text,
             "readiness": workspace["readiness"],
             "recent_questions": asked,
+            **dialogue,
+            "source_ids": [f"current:{source.get('id', request_id)}:v{source.get('version', 1)}"]
+            + [e["source_id"] for e in context_entries]
+            + [r["id"] for r in dialogue["recent_dialogue"]],
         }
         if len(json.dumps(material, ensure_ascii=False)) > 90000:
             raise ApiError(413, ErrorCode.MEMORY_INPUT_TOO_LARGE)
-        output = client.chat_json(PROMPT, json.dumps(material, ensure_ascii=False))
+        if settings.interview_enhancements_enabled:
+            output, audit = companion.generate(client, PROMPT, material)
+        else:
+            output = client.chat_json(PROMPT, json.dumps(material, ensure_ascii=False))
     if workflow and not saved:
         saved = {
             "output": output,
             "entry_versions": {e["id"]: e["version_number"] for e in workspace["entries"]},
+            "audit": audit,
         }
         workflow.profile_result = {**workflow.profile_result, "extraction": saved}
         db.commit()
     try:
         extracted = Extraction.model_validate(output)
-        if extracted.next_question in asked:
+        if not settings.interview_enhancements_enabled and extracted.next_question in asked:
             extracted.next_question = next(
                 (
                     f["question"]
@@ -252,12 +282,24 @@ def process(db, tenant, profile_id, text, source, request_id, workflow=None):
             )
         changes = []
         quotes = {}
-        for item in extracted.changes:
+        for index, item in enumerate(extracted.changes):
             if item.quote not in text:
                 raise ValueError("unsupported_quote")
+            conflict_id = audit.get("conflict_entry_ids", {}).get(str(index))
+            if conflict_id:
+                linked = next((e for e in workspace["entries"] if e["id"] == conflict_id), None)
+                if not linked or linked["field_key"] != item.field_key:
+                    raise ValueError("unsupported_conflict_link")
+                item.id, item.record_key = linked["id"], linked["record_key"]
             if item.record_key == "new":
                 item.record_key = str(uuid5(request_id, item.field_key + str(len(changes))))
             change = EntryChange.model_validate(item.model_dump(exclude={"quote"}))
+            if change.certainty == "confirmed" and not re.search(
+                r"确认|没错|确实|对的", item.quote
+            ):
+                change.certainty = "reported"
+            if settings.interview_enhancements_enabled and change.delete:
+                raise ValueError("ai_deletion_not_supported")
             if change.field_key == "identity.gender" and str(change.value) not in item.quote:
                 raise ValueError("unsupported_gender")
             current = next(
@@ -297,13 +339,44 @@ def process(db, tenant, profile_id, text, source, request_id, workflow=None):
             if current and current["use_scope"] == "pseudonym":
                 change.use_scope = "pseudonym"
                 change.pseudonyms = current.get("pseudonyms", {})
-            if (
-                current
-                and current["certainty"] == "confirmed"
-                and not any(
-                    w in text for w in ["更正", "记错", "不是", "改成", "应该", "正确", "修改"]
+            correction = bool(
+                re.search(
+                    r"更正|记错|改成|修正|修改(?:资料|记录|年份|时间|地点)|"
+                    r"不是.{1,30}(?:而是|应该是|是)|(?:刚才|之前|先前).{0,15}应该是",
+                    text,
                 )
-            ):
+            )
+            conflict = index in audit.get("conflict_indices", [])
+            if conflict and not current:
+                # Unresolved candidates cannot become usable memories without the other side.
+                raise ValueError("conflict_requires_existing_entry")
+            if current and not correction:
+                if change.field_key.startswith("identity.") and change.value != current["value"]:
+                    conflict = True
+                if isinstance(change.value, dict) and isinstance(current["value"], dict):
+                    for key in ("time_raw", "place"):
+                        if (
+                            change.value.get(key)
+                            and current["value"].get(key)
+                            and change.value[key] != current["value"][key]
+                        ):
+                            conflict = True
+            if current and conflict and not correction:
+                change.value = {
+                    "alternatives": [
+                        {"value": current["value"], "source": current["source"]},
+                        {"value": change.value, "source": {**source, "quote": item.quote}},
+                    ],
+                    "what": "两次陈述存在差异，待讲述者澄清",
+                }
+                change.certainty = "disputed"
+                extracted.next_question = (
+                    "这次讲的内容和先前记录有些不同，是两个阶段，还是需要更正先前的说法？"
+                )
+                if extracted.decision:
+                    extracted.decision.action = "clarify"
+                    extracted.decision.question_goal = "由讲述者澄清两次陈述的差异"
+            if current and current["certainty"] == "confirmed" and not correction and not conflict:
                 continue
             changes.append(change)
             quotes[change.field_key + ":" + change.record_key] = item.quote
@@ -319,6 +392,23 @@ def process(db, tenant, profile_id, text, source, request_id, workflow=None):
             changes=changes,
         ),
         actor="ai",
-        source={**source, "quotes": quotes, "next_question": extracted.next_question},
+        source={
+            **source,
+            "quotes": quotes,
+            "next_question": extracted.next_question,
+            "interview_decision": extracted.decision.model_dump(mode="json")
+            if extracted.decision
+            else {},
+            "interview_audit": audit,
+        },
     )
-    return {"profile": result, "next_question": extracted.next_question}
+    decision = extracted.decision.model_dump(mode="json") if extracted.decision else {}
+    if session and decision:
+        session.interview_state = companion.next_state(session.interview_state, decision, source)
+        db.commit()
+    return {
+        "profile": result,
+        "next_question": extracted.next_question,
+        "decision": decision,
+        "audit": audit,
+    }

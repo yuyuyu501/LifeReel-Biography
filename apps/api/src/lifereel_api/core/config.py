@@ -7,7 +7,7 @@ from uuid import UUID
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-LLMTask = Literal["interview", "memory", "script", "vision", "video_plan"]
+LLMTask = Literal["interview", "interview_review", "memory", "script", "vision", "video_plan"]
 TimeoutSeconds = Annotated[float, Field(gt=0, le=3600, allow_inf_nan=False)]
 
 
@@ -55,9 +55,7 @@ class Settings(BaseSettings):
     douyin_mini_app_id: str | None = None
     douyin_mini_app_secret: str | None = None
     wechat_mini_login_url: str = "https://api.weixin.qq.com/sns/jscode2session"
-    douyin_mini_login_url: str = (
-        "https://developer.toutiao.com/api/apps/v2/jscode2session"
-    )
+    douyin_mini_login_url: str = "https://developer.toutiao.com/api/apps/v2/jscode2session"
     mini_program_http_timeout_seconds: float = Field(default=8, gt=0, le=30)
     mini_program_enabled: bool = False
     mini_refresh_days: int = Field(default=30, ge=1, le=90)
@@ -124,6 +122,17 @@ class Settings(BaseSettings):
     openai_compatible_api_key: str | None = None
     openai_compatible_model: str | None = None
     interview_llm_model: str | None = None
+    interview_llm_backend: Literal["inherit", "volcengine"] = "inherit"
+    interview_enhancements_enabled: bool = False
+    interview_history_enabled: bool = False
+    interview_review_enabled: bool = False
+    interview_review_llm_model: str = "gpt-6.1-sol"
+    interview_review_llm_stream: bool = False
+    interview_review_llm_connect_timeout_seconds: TimeoutSeconds = 4
+    interview_review_llm_read_timeout_seconds: TimeoutSeconds = 12
+    interview_review_llm_write_timeout_seconds: TimeoutSeconds = 5
+    interview_review_llm_pool_timeout_seconds: TimeoutSeconds = 3
+    interview_turn_budget_seconds: float = Field(default=55, ge=10, le=120)
     memory_llm_model: str | None = None
     script_llm_model: str | None = None
     vision_llm_model: str | None = None
@@ -199,12 +208,18 @@ class Settings(BaseSettings):
     def model_for(self, capability: str) -> str:
         configured = {
             "interview": self.interview_llm_model,
+            "interview_review": self.interview_review_llm_model,
             "memory": self.memory_llm_model,
             "script": self.script_llm_model,
             "vision": self.vision_llm_model,
             "asr": self.asr_model,
         }.get(capability)
         return configured or self.openai_compatible_model or ""
+
+    def llm_endpoint_for(self, task: LLMTask) -> tuple[str, str]:
+        if task == "interview" and self.interview_llm_backend == "volcengine":
+            return self.volcengine_api_base_url, self.volcengine_api_key or ""
+        return self.openai_compatible_base_url or "", self.openai_compatible_api_key or ""
 
     def llm_timeouts_for(self, task: LLMTask) -> dict[str, float]:
         return {

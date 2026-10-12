@@ -3,6 +3,7 @@
 from uuid import uuid4
 
 import pytest
+from alembic.script import ScriptDirectory
 from sqlalchemy import text
 from test_service_schemas import postgres  # noqa: F401
 
@@ -66,18 +67,19 @@ def test_life_profile_upgrade_preserves_legacy_book_and_guards_new_data(postgres
         command.downgrade(config, "20260930_0043")
     with target.connect() as db:
         assert db.scalar(text("SELECT count(*) FROM interview.life_profiles")) == 1
-        assert db.scalar(text("SELECT version_num FROM public.alembic_version")) == "20261008_0044"
+        assert db.scalar(text("SELECT version_num FROM public.alembic_version")) == (
+            ScriptDirectory.from_config(config).get_current_head()
+        )
 
 
 def test_profile_reads_and_book_creation_do_not_wait_on_foreign_key_lock(postgres, monkeypatch):  # noqa: F811
-    from sqlalchemy.orm import Session
-
     from lifereel_api.modules.book import profile_sources
     from lifereel_api.modules.book import service as books
     from lifereel_api.modules.book.models import Book
     from lifereel_api.modules.book.schemas import BookCreate
     from lifereel_api.modules.identity.models import Person, Tenant
     from lifereel_api.modules.interview import profile_service
+    from sqlalchemy.orm import Session
 
     target, config = postgres
     command.upgrade(config, "head")

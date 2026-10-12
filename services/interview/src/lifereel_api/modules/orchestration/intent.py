@@ -28,9 +28,7 @@ def classify_turn(message: str, *, context: dict | None = None) -> dict:
                 "has_new_facts": not regenerate, "instructions": message if regenerate else ""}
     if not message.strip():
         return {"action": "interview", "has_new_facts": False, "instructions": ""}
-    client = OpenAICompatibleClient(settings.openai_compatible_base_url or "",
-                                    settings.openai_compatible_api_key or "",
-                                    settings.model_for("interview"))
+    client = OpenAICompatibleClient.for_task("interview")
     if not client.capabilities().configured:
         raise ApiError(503, ErrorCode.INTERVIEW_LLM_CONFIGURATION_INCOMPLETE)
     try:

@@ -338,7 +338,7 @@ def patch(db, tenant, profile_id, payload: ProfilePatch, *, actor="manual", sour
             row.source = {
                 k: v
                 for k, v in (source or {"type": "manual", "actor": actor}).items()
-                if k != "quotes"
+                if k not in {"quotes", "next_question", "interview_decision", "interview_audit"}
             }
             if legacy_id:
                 row.source = {**row.source, "supersedes_claim_id": legacy_id}
@@ -352,7 +352,19 @@ def patch(db, tenant, profile_id, payload: ProfilePatch, *, actor="manual", sour
         changes.append({"before": before, "after": after})
     profile.version_number += 1
     if source and source.get("next_question"):
-        changes.append({"metadata": {"next_question": source["next_question"]}})
+        changes.append(
+            {
+                "metadata": {
+                    k: source[k]
+                    for k in (
+                        "next_question",
+                        "interview_decision",
+                        "interview_audit",
+                    )
+                    if k in source
+                }
+            }
+        )
     db.add(
         LifeProfileRevision(
             tenant_id=tenant,

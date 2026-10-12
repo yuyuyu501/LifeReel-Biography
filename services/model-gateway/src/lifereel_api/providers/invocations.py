@@ -13,7 +13,11 @@ from lifereel_api.providers.rpc import provider_error, raise_provider_error
 
 def invoke(db, source, operation, envelope, function):
     settings = get_settings()
-    scope = hashlib.sha256((settings.openai_compatible_api_key or "").encode()).hexdigest()
+    base_url = settings.openai_compatible_base_url
+    api_key = settings.openai_compatible_api_key
+    if operation == "llm.chat" and envelope.payload.get("task"):
+        base_url, api_key = settings.llm_endpoint_for(envelope.payload["task"])
+    scope = hashlib.sha256((api_key or "").encode()).hexdigest()
     canonical = json.dumps(
         {
             "source": source,
@@ -21,7 +25,7 @@ def invoke(db, source, operation, envelope, function):
             "reference": envelope.usage_reference,
             "usage": envelope.usage_operation,
             "payload": envelope.payload,
-            "provider": settings.openai_compatible_base_url,
+            "provider": base_url,
             "credential_scope": scope,
         },
         sort_keys=True,

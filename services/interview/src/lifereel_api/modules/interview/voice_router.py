@@ -35,7 +35,7 @@ Auth = Annotated[AuthContext, Depends(auth_context)]
 
 @router.get("/interviews/{session_id}/voice")
 def state(session_id: UUID, db: Db, context: Auth):
-    interviews.get_session(db, context.tenant_id, session_id)
+    session = interviews.get_session(db, context.tenant_id, session_id)
     call = db.scalar(
         select(InterviewVoiceCall)
         .where(
@@ -46,7 +46,7 @@ def state(session_id: UUID, db: Db, context: Auth):
         .limit(1)
     )
     return {
-        "enabled": service.enabled() and context.role in {"owner", "editor", "worker"},
+        "enabled": service.enabled(session) and context.role in {"owner", "editor", "worker"},
         "max_seconds": get_settings().realtime_voice_max_seconds,
         "call": service.payload(call) if call else None,
     }

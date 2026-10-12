@@ -149,6 +149,12 @@ def _usage(data: dict) -> dict:
 
 
 class OpenAICompatibleClient:
+    @classmethod
+    def for_task(cls, task: LLMTask):
+        settings = get_settings()
+        base_url, api_key = settings.llm_endpoint_for(task)
+        return cls(base_url, api_key, settings.model_for(task), task=task)
+
     def __init__(
         self, base_url: str, api_key: str, model: str, *, task: LLMTask | None = None,
     ) -> None:

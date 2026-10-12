@@ -455,6 +455,24 @@ export function InterviewWorkspace({
                 {round.question_text && (
                   <div className="question-bubble">
                     <p>{round.question_text}</p>
+                    {!!round.question_sources?.length && (
+                      <ul
+                        className="interview-history-sources"
+                        aria-label="历史资料来源"
+                      >
+                        {round.question_sources.map((source) => (
+                          <li key={source.url}>
+                            <a
+                              href={source.url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                            >
+                              {source.title}
+                            </a>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
                   </div>
                 )}
                 {round.answer_text && (

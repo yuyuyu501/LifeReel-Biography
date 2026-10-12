@@ -27,8 +27,11 @@ ACTIVE = ("connecting", "active", "closing")
 LEASE_SECONDS = 60
 
 
-def enabled() -> bool:
+def enabled(session: InterviewSession | None = None) -> bool:
     settings = get_settings()
+    if session and session.profile_id and settings.interview_enhancements_enabled:
+        # Realtime provider speech is emitted before this pipeline can audit it.
+        return False
     return bool(
         (settings.realtime_voice_provider == "doubao" and settings.doubao_realtime_api_key)
         or (settings.realtime_voice_provider == "mock" and settings.is_development)
@@ -92,7 +95,8 @@ def payload(call: InterviewVoiceCall) -> dict:
 
 
 def start(db: Session, context: AuthContext, session_id: UUID) -> InterviewVoiceCall:
-    if not enabled():
+    session = interviews.get_session(db, context.tenant_id, session_id)
+    if not enabled(session):
         raise ApiError(503, ErrorCode.VOICE_NOT_CONFIGURED)
     # A tenant lock also bounds paid connections across different interview tabs.
     db.scalar(select(Tenant).where(Tenant.id == context.tenant_id).with_for_update())

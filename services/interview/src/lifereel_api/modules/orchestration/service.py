@@ -422,11 +422,7 @@ def _assess_chapter(
         )
 
     profile = get_chapter_prompt_profile(chapter)
-    client = OpenAICompatibleClient(
-        settings.openai_compatible_base_url or "",
-        settings.openai_compatible_api_key or "",
-        settings.model_for("interview"),
-    )
+    client = OpenAICompatibleClient.for_task("interview")
     if not client.capabilities().configured:
         raise ApiError(
             status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -536,7 +532,9 @@ def _publish_turn_reply(db, tenant_id, workflow, assessment):
     reply = (
         {
             "question_text": workflow.profile_result["next_question"],
-            "question_intent": "profile_gap",
+            "question_intent": workflow.profile_result.get("decision", {}).get(
+                "action", "profile_gap"
+            ),
             "question_source": "life_profile",
         }
         if workflow.profile_result
@@ -555,6 +553,15 @@ def _publish_turn_reply(db, tenant_id, workflow, assessment):
     }
     # Persist the visible response and its checkpoint together. Retrying later
     # stages cannot create another assistant message or repeat this paid call.
+    citations = []
+    if workflow.profile_result:
+        audit = workflow.profile_result.get("audit", {})
+        history = audit.get("history", {})
+        if history.get("status") == "found" and audit.get("verdict") == "pass":
+            citations = [
+                {k: item[k] for k in ("title", "url", "region", "year_start", "year_end")}
+                for item in history.get("sources", [])
+            ]
     interview_service.add_round(
         db,
         tenant_id,
@@ -564,6 +571,7 @@ def _publish_turn_reply(db, tenant_id, workflow, assessment):
             question_intent=reply["question_intent"],
             question_source=reply["question_source"],
         ),
+        question_sources=citations,
     )
 
 

@@ -40,6 +40,13 @@ export interface Chapter {
 }
 
 export interface InterviewRound {
+  question_sources?: {
+    title: string;
+    url: string;
+    region: string;
+    year_start: number;
+    year_end: number;
+  }[];
   id: UUID;
   round_index: number;
   question_text: string;

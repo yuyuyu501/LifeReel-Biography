@@ -72,11 +72,7 @@ def _llm_follow_up(
             status.HTTP_503_SERVICE_UNAVAILABLE,
             ErrorCode.INTERVIEW_LLM_CONFIGURATION_INCOMPLETE,
         )
-    client = OpenAICompatibleClient(
-        settings.openai_compatible_base_url or "",
-        settings.openai_compatible_api_key or "",
-        settings.model_for("interview"),
-    )
+    client = OpenAICompatibleClient.for_task("interview")
     if not client.capabilities().configured:
         raise ApiError(
             status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -335,7 +331,12 @@ def start_interview(db: Session, tenant_id: UUID, payload: InterviewStart) -> In
 
 
 def add_round(
-    db: Session, tenant_id: UUID, session_id: UUID, payload: InterviewRoundCreate
+    db: Session,
+    tenant_id: UUID,
+    session_id: UUID,
+    payload: InterviewRoundCreate,
+    *,
+    question_sources: list[dict] | None = None,
 ) -> InterviewRound:
     from lifereel_api.modules.interview.voice_service import assert_no_call, lock_session
 
@@ -354,6 +355,7 @@ def add_round(
         tenant_id=tenant_id,
         session_id=session_id,
         round_index=next_index,
+        question_sources=question_sources or [],
         **payload.model_dump(),
     )
     session.round_count = next_index

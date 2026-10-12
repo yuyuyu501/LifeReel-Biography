@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { Person } from "@lifereel/contracts";
 import { Pencil, Plus, UserRound } from "lucide-react";
 import { type FormEvent, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { api } from "../api/client";
 import { EmptyState } from "../components/EmptyState";
 import { ErrorNotice, QueryState } from "../components/QueryState";
@@ -13,7 +14,8 @@ import { AccountDialog } from "../components/AccountDialog";
 export function PeoplePage() {
   const queryClient = useQueryClient();
   const people = useQuery({ queryKey: ["persons"], queryFn: api.listPersons });
-  const [open, setOpen] = useState(false);
+  const [params, setParams] = useSearchParams();
+  const [open, setOpen] = useState(params.get("create") === "1");
   const [name, setName] = useState("");
   const [preferredName, setPreferredName] = useState("");
   const [birthYear, setBirthYear] = useState("");
@@ -23,6 +25,16 @@ export function PeoplePage() {
   const [editingId, setEditingId] = useState<string | null>(null);
 
   function resetForm() {
+    if (params.has("create")) {
+      setParams(
+        (previous) => {
+          const next = new URLSearchParams(previous);
+          next.delete("create");
+          return next;
+        },
+        { replace: true },
+      );
+    }
     setName("");
     setPreferredName("");
     setBirthYear("");

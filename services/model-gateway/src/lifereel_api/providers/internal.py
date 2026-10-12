@@ -19,7 +19,7 @@ class Payload(BaseModel):
 
 
 class ChatPayload(Payload):
-    task: Literal["interview", "memory", "script", "vision", "video_plan"]
+    task: Literal["interview", "interview_review", "memory", "script", "vision", "video_plan"]
     model: str = Field(min_length=1, max_length=200)
     messages: list[dict] = Field(min_length=1, max_length=1000)
     json_output: bool
@@ -83,17 +83,14 @@ def validate(operation, data):
 def chat(db, tenant, data):
     settings = get_settings()
     task = data["task"]
-    if task not in {"interview", "memory", "script", "vision", "video_plan"}:
+    if task not in {"interview", "interview_review", "memory", "script", "vision", "video_plan"}:
         raise ApiError(422, ErrorCode.REQUEST_VALIDATION_FAILED)
     model = settings.model_for(task)
     if data["model"] != model or settings.llm_provider != "openai-compatible":
         raise ApiError(503, ErrorCode.INTERVIEW_LLM_CONFIGURATION_INCOMPLETE)
-    client = OpenAICompatibleClient(
-        settings.openai_compatible_base_url or "",
-        settings.openai_compatible_api_key or "",
-        model,
-        task=task,
-    )
+    if task == "interview_review" and not settings.interview_review_enabled:
+        raise ApiError(503, ErrorCode.INTERVIEW_LLM_CONFIGURATION_INCOMPLETE)
+    client = OpenAICompatibleClient.for_task(task)
     return {
         "output": client._chat(
             data["messages"],

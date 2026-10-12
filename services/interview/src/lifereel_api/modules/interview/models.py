@@ -69,6 +69,7 @@ class InterviewSession(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         Uuid, ForeignKey("interview.life_profiles.id", ondelete="SET NULL"), nullable=True
     )
     topic_hint: Mapped[str | None] = mapped_column(String(240), nullable=True)
+    interview_state: Mapped[dict] = mapped_column(JSON, default=dict, server_default="{}")
     status: Mapped[str] = mapped_column(String(32), default="active")
     round_count: Mapped[int] = mapped_column(Integer, default=0)
     started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
@@ -101,6 +102,7 @@ class InterviewRound(UUIDPrimaryKeyMixin, Base):
     question_text: Mapped[str] = mapped_column(Text)
     question_intent: Mapped[str | None] = mapped_column(String(80), nullable=True)
     question_source: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    question_sources: Mapped[list[dict]] = mapped_column(JSON, default=list, server_default="[]")
     answer_text: Mapped[str | None] = mapped_column(Text, nullable=True)
     answer_version: Mapped[int] = mapped_column(Integer, default=1, server_default="1")
     answer_revisions: Mapped[list[dict]] = mapped_column(JSON, default=list, server_default="[]")

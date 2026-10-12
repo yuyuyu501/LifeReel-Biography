@@ -134,6 +134,25 @@ beforeEach(() => {
     }),
   );
 });
+
+it("shows the person creation entry and workflow when no people exist", async () => {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async () => response([])),
+  );
+  page();
+  expect(
+    await screen.findByRole("heading", { name: "添加人物后，开始第一次采访" }),
+  ).toBeInTheDocument();
+  expect(screen.getByRole("link", { name: "添加人物" })).toHaveAttribute(
+    "href",
+    "/people?create=1",
+  );
+  expect(screen.getByRole("list", { name: "记录流程" }).children).toHaveLength(
+    3,
+  );
+  expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
+});
 test("opens the AI conversation and editable profile together without a chapter", async () => {
   page();
   await screen.findByRole("heading", { name: "人生资料表" });

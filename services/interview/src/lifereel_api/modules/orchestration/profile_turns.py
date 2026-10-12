@@ -3,9 +3,10 @@ from uuid import UUID, uuid5
 
 from sqlalchemy import select
 
+from lifereel_api.core.config import get_settings
 from lifereel_api.modules.evidence import service as evidence
 from lifereel_api.modules.evidence.models import EvidenceObservation, SourceAsset
-from lifereel_api.modules.interview import planning
+from lifereel_api.modules.interview import companion, planning
 from lifereel_api.modules.interview.models import InterviewRound
 from lifereel_api.modules.interview.profile_extraction import process
 from lifereel_api.modules.orchestration.progress import record_stage
@@ -97,7 +98,9 @@ def execute_profile_turn(db, tenant, workflow, session):
                 source={"type": "source_asset", "workflow_id": str(workflow.id)},
             )
     command = planning.control(text)
-    if command == "continue":
+    enhanced = get_settings().interview_enhancements_enabled
+    action = companion.boundary(text) if enhanced else None
+    if command == "continue" and not action:
         record_stage(db, workflow, "organizing_profile")
         result = process(
             db,
@@ -110,16 +113,36 @@ def execute_profile_turn(db, tenant, workflow, session):
         )
         reply = result["next_question"]
         readiness = result["profile"]["readiness"]
+        decision, audit = result.get("decision", {}), result.get("audit", {})
     else:
         from lifereel_api.modules.interview.profile_service import read
 
         readiness = read(db, tenant, session.profile_id)["readiness"]
         reply = (
-            "好的，资料已经保存，您可以稍后继续。"
-            if command == "pause"
-            else "好的，您想接着讲哪段经历？"
+            companion.fallback(action)
+            if action
+            else (
+                "好的，资料已经保存，您可以稍后继续。"
+                if command == "pause"
+                else "好的，您想接着讲哪段经历？"
+            )
         )
-    if readiness["status"] != "not_ready":
+        decision, audit = {}, {}
+        if enhanced:
+            decision = {
+                "action": action or "transition",
+                "topic": "",
+                "question_goal": "尊重用户当前意愿",
+                "boundary_quote": text[:500],
+            }
+            session.interview_state = companion.next_state(
+                session.interview_state,
+                decision,
+                {"id": str(round_.id), "version": round_.answer_version},
+                boundary_text=text if action == "transition" else "",
+            )
+            audit = {"verdict": "boundary", "version": 1}
+    if readiness["status"] != "not_ready" and not enhanced:
         reply = readiness["message"] + "\n" + reply
     workflow.script_project_id = None
     workflow.script_scene_ids = []
@@ -129,6 +152,8 @@ def execute_profile_turn(db, tenant, workflow, session):
         "profile_version": readiness["profile_version"],
         "readiness": readiness,
         "next_question": reply,
+        "decision": decision,
+        "audit": audit,
     }
     workflow.script_brief = {
         **workflow.script_brief,
