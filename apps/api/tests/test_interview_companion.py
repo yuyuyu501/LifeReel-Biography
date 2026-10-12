@@ -623,7 +623,7 @@ def test_composite_family_answer_restores_sources_before_semantic_review(
         material = json.loads(data)
         if system == companion.AUDIT_PROMPT:
             assert all(change["quote"] in answer for change in material["candidate"]["changes"])
-            return review(safe=[0, 1, 2])
+            return review(safe=[0, 1, 2, 3])
         return candidate(material, "您小时候的日常是怎样的？", [
             {"field_key": "family.members[]", "record_key": "new",
              "value": {"name": "周守成", "relationship": "父亲", "what": "农闲修农具"},
@@ -632,15 +632,18 @@ def test_composite_family_answer_restores_sources_before_semantic_review(
              "value": {"name": "周小兰", "relationship": "妹妹", "what": "比我小三岁"},
              "quote": "比我小三岁的妹妹周小兰。"},
             {"field_key": "identity.aliases", "value": ["小远"], "quote": "祖母叫我小远。"},
+            {"field_key": "family.members[]", "record_key": "new",
+             "value": {"relationship": "祖母", "what": "叫我小远"},
+             "quote": "祖母；祖母叫我小远。"},
         ])
 
     monkeypatch.setattr(OpenAICompatibleClient, "chat_json", provider)
     result = run_profile(profile, answer)
     assert result["audit"]["verdict"] == "pass"
     assert result["audit"]["rewrites"] == 0
-    assert result["audit"]["quote_repairs"] == [{"attempt": 0, "indices": [0, 1]}]
+    assert result["audit"]["quote_repairs"] == [{"attempt": 0, "indices": [0, 1, 3]}]
     rows = [e for e in result["profile"]["entries"] if e["source"].get("type") == "test"]
-    assert len(rows) == 3
+    assert len(rows) == 4
     assert all(e["source"]["quote"] in answer for e in rows)
 
 

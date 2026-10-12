@@ -161,7 +161,7 @@ def ground_quotes(output, answer):
             continue
         # Restore only exact excerpts, never approximate words or missing evidence.
         fragments = [part.strip().rstrip("。.") for part in re.split(r"[；;]", quote)]
-        if not fragments or any(len(part) < 3 for part in fragments):
+        if not fragments or any(len(part) < 2 for part in fragments):
             continue
         positions = []
         cursor = 0
