@@ -722,3 +722,54 @@ def test_review_escalation_uses_conflicts_and_survives_optional_sol_timeout(
     if sol_timeout:
         assert trace["escalation_failure"]["error_code"] == "ReadTimeout"
         assert trace["review_model"] == enhanced.interview_llm_model
+
+
+@pytest.mark.parametrize("indices", [[True], [0.0], ["0.5"], ["-1"], ["work.events[]"]])
+def test_review_index_normalization_still_rejects_invalid_types(indices):
+    from pydantic import ValidationError
+
+    with pytest.raises(ValidationError):
+        companion.Review.model_validate(review(safe=indices))
+
+
+def test_string_review_indices_are_unambiguous_and_still_range_checked(
+    client, enhanced, monkeypatch,
+):
+    profile, _ = setup(client)
+
+    def provider(self, system, data):
+        if system == companion.AUDIT_PROMPT:
+            return review(safe=["0"])
+        return candidate(json.loads(data), "您后来做什么工作？", [
+            {"field_key": "learning.interests", "value": "电路", "quote": "我喜欢电路。"},
+        ])
+
+    monkeypatch.setattr(OpenAICompatibleClient, "chat_json", provider)
+    result = run_profile(profile, "我喜欢电路。")
+    assert result["audit"]["verdict"] == "pass"
+    assert any(e["value"] == "电路" for e in result["profile"]["entries"])
+
+
+def test_generation_schema_repair_is_bounded_and_preserves_fact_guards(
+    client, enhanced, monkeypatch,
+):
+    profile, _ = setup(client)
+    generations = 0
+
+    def provider(self, system, data):
+        nonlocal generations
+        if system == companion.AUDIT_PROMPT:
+            return review(safe=[0])
+        generations += 1
+        output = candidate(json.loads(data), "您对哪方面修理最感兴趣？", [
+            {"field_key": "learning.interests", "value": "电路", "quote": "我喜欢电路。",
+             "certainty": "certain" if generations == 1 else "reported"},
+        ])
+        return output
+
+    monkeypatch.setattr(OpenAICompatibleClient, "chat_json", provider)
+    result = run_profile(profile, "我喜欢电路。")
+    assert generations == 2
+    assert result["audit"]["schema_rewrites"] == result["audit"]["rewrites"] == 1
+    assert result["audit"]["verdict"] == "pass"
+    assert any(e["value"] == "电路" for e in result["profile"]["entries"])

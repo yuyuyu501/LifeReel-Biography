@@ -7,7 +7,7 @@ import time
 from typing import Annotated, Literal
 
 import httpx
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 from sqlalchemy import select
 
 from lifereel_api.core.config import get_settings
@@ -38,6 +38,16 @@ class Review(BaseModel):
     conflict_change_indices: list[ChangeIndex] = Field(default_factory=list, max_length=40)
     conflict_entry_ids: dict[str, str] = Field(default_factory=dict, max_length=40)
     issues: list[str] = Field(default_factory=list, max_length=8)
+
+    @field_validator("safe_change_indices", "conflict_change_indices", mode="before")
+    @classmethod
+    def canonical_indices(cls, values):
+        if isinstance(values, list):
+            return [
+                int(value) if isinstance(value, str) and re.fullmatch(r"0|[1-9]\d?", value)
+                else value for value in values
+            ]
+        return values
 
 
 GUIDANCE = """
@@ -84,6 +94,7 @@ quote必须在new_answer中连续逐字出现，不能用分号拼接摘录或�
 拒绝、停止和已保存边界优先；已回答的细节不要重问；最多一个主要问题。
 verdict:pass(完整回复有依据且尊重边界),rewrite(可纠正措辞),clarify(缺少个人信息),pause(应停止)。
 safe_change_indices只列出新回答及有效资料完整支持的changes下标；不支持的不得保存。
+safe_change_indices和conflict_change_indices用JSON整数下标，例如[0,1]，不用字符串或field_key。
 conflict_change_indices列出与旧资料冲突、未明确更正的下标，保留双方待澄清。
 conflict_entry_ids把冲突下标字符串映射到current_entries中旧记录id，尤其候选是new时必须给出。
 冲突候选若忠实记录用户原话也可列入safe_change_indices。不要让旧事实被新冲突覆盖。
@@ -318,13 +329,34 @@ def generate(client, prompt, material):
             "boundary_quote": "",
         },
     }
+
+    def extract(input_material):
+        raw = client.chat_json(prompt + GUIDANCE, json.dumps(input_material, ensure_ascii=False))
+        try:
+            return Extraction.model_validate(raw).model_dump(mode="json")
+        except ValidationError as exc:
+            if (
+                trace["rewrites"]
+                or time.monotonic() - started >= settings.interview_turn_budget_seconds - 20
+            ):
+                raise
+            trace["rewrites"] = 1
+            trace["schema_rewrites"] = 1
+            repair_material = {
+                **input_material,
+                "rejected_candidate": raw,
+                "schema_issues": [
+                    {"loc": list(issue["loc"]), "type": issue["type"]}
+                    for issue in exc.errors(include_input=False, include_context=False)[:8]
+                ],
+                "rewrite_instruction": "只修正JSON结构和枚举，保持原话依据，不增加事实。",
+            }
+            return Extraction.model_validate(
+                client.chat_json(prompt + GUIDANCE, json.dumps(repair_material, ensure_ascii=False))
+            ).model_dump(mode="json")
+
     try:
-        output = Extraction.model_validate(
-            client.chat_json(
-                prompt + GUIDANCE,
-                json.dumps(material, ensure_ascii=False),
-            )
-        ).model_dump(mode="json")
+        output = extract(material)
         decision = Decision.model_validate(output.get("decision"))
         if decision.history_request:
             context = (
@@ -335,12 +367,7 @@ def generate(client, prompt, material):
             material = {**material, "historical_context": context}
             trace["history"] = context
             if time.monotonic() - started < settings.interview_turn_budget_seconds - 15:
-                output = Extraction.model_validate(
-                    client.chat_json(
-                        prompt + GUIDANCE,
-                        json.dumps(material, ensure_ascii=False),
-                    )
-                ).model_dump(mode="json")
+                output = extract(material)
             else:
                 raise ValueError("turn_budget_exhausted")
         semantic_rewrite = False
@@ -384,6 +411,7 @@ def generate(client, prompt, material):
                 )
                 if (
                     attempt == 0
+                    and not trace["rewrites"]
                     and time.monotonic() - started < settings.interview_turn_budget_seconds - 20
                 ):
                     trace["rewrites"] = 1
