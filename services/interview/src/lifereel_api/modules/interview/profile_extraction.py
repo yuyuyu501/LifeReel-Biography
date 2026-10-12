@@ -47,6 +47,13 @@ field_key以[]结尾才是多条记录，新增用record_key=new；其他字段�
 单值字段补充时保留已有直接有出处的内容；姓名和书中称呼是用户偏好，可以按要求更新。
 一段回答涉及多个资料维度时分别归入对应字段，不要把整段塞进日常生活代替困难、兴趣、影响等字段。
 学习阶段和任职阶段逐段记成records[]；选择原因、人物帮助和具体事件另有对应字段，有原话则同时整理。
+逐项检查新回答涉及哪些字段；事实已在别列出现，不代表对应列已经完整，也不要只整理最后一句。
+fields.question说明该列用途，不是要求照着问卷提问。仅整理本轮原话直接支持的维度，不猜缺项。
+家人对成长的作用写入family.members[]；家乡印象写入family.origin，而非只放童年日常。
+工作阶段及经营现状写入work.records[]，职责写入work.responsibilities；不能只记在搬迁或选择里。
+伴侣互相支持的共同经历写入relationships.events[]；对家人的寄语写入care.messages。
+用户明确称为自己人生转折的事件写入turning.events[]；帮助与应对写入turning.support。
+同一经历可支持不同字段，但同一字段复用旧记录，逐条引用原话；不把家人的转折当本人的转折。
 明确更正优先：修正原经历的时间、地点及对应内容，不保留旧错值作现行事实。
 指代不清时不更新，next_question只澄清必要内容。不能猜性别、年龄、年份、感受和对白。
 经历value用对象，可含title,time_raw,time_precision,place,people,what,action,result,impact,feelings。
@@ -278,7 +285,7 @@ def process(db, tenant, profile_id, text, source, request_id, workflow=None):
             )
         material = {
             "fields": [
-                {k: field[k] for k in ("key", "label", "section", "kind")}
+                {k: field[k] for k in ("key", "label", "section", "kind", "question")}
                 for field in FIELD_MAP.values()
             ],
             "current_entries": context_entries,
