@@ -300,6 +300,28 @@ def test_long_profile_retains_single_field_context_and_defers_unuploaded_descrip
         assert any(rev["actor"] == "material_validation" for rev in history)
 
 
+@pytest.mark.parametrize("empty_reply", [None, "", "   "])
+def test_empty_followup_still_audits_facts_without_stopping_user(
+    client, enhanced, monkeypatch, empty_reply,
+):
+    profile, _ = setup(client)
+
+    def provider(self, system, data):
+        if system == companion.AUDIT_PROMPT:
+            return review(safe=[0])
+        return {"next_question": empty_reply, "changes": [{
+            "field_key": "present.daily_life", "record_key": "single",
+            "value": "每周开店三天", "quote": "每周开店三天。",
+        }]}
+
+    monkeypatch.setattr(OpenAICompatibleClient, "chat_json", provider)
+    result = run_profile(profile, "每周开店三天。")
+    assert result["decision"]["action"] == "transition"
+    assert result["next_question"] == "您想继续补充，还是先聊到这里？"
+    assert result["audit"]["reply_defaults"] == 1
+    assert any(e["field_key"] == "present.daily_life" for e in result["profile"]["entries"])
+
+
 @pytest.mark.parametrize(
     "text,reply",
     [

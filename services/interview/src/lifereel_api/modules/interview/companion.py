@@ -495,6 +495,14 @@ def generate(client, prompt, material):
         safe_output["decision"]["question_goal"] = "澄清去的所指，不推断死亡"
 
     def validate_extraction(raw):
+        if isinstance(raw, dict) and (
+            raw.get("next_question") is None
+            or isinstance(raw.get("next_question"), str) and not raw["next_question"].strip()
+        ):
+            raw = {**raw, "next_question": "您想继续补充，还是先聊到这里？",
+                   "decision": {**safe_output["decision"], "action": "transition",
+                                "question_goal": "由讲述者决定是否继续"}}
+            trace["reply_defaults"] = trace.get("reply_defaults", 0) + 1
         extracted = Extraction.model_validate(raw)
         if extracted.decision is None:
             extracted.decision = Decision.model_validate({
