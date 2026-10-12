@@ -9,7 +9,7 @@
 3. Lite 提取候选资料并选择场景、影响、澄清、换题、暂停或结束动作。
 4. 必要时查公开历史资料，再据实际检索结果生成候选。
 5. 校验格式、出处编号、问题数量、重复、年份、假称检索及已知错误预设；独立调用审核器检查完整回复和每条资料的语义。
-6. 最多重写一次。多项已有矛盾、至少四个年份的复杂时间线或重写后的审核可升级 Sol；格式、审核或渠道故障回退到开放澄清。不播放或显示未审核的候选。
+6. 最多重写一次。多项已有矛盾、至少四个年份的复杂时间线或重写后的审核可升级 Sol；格式、审核或渠道故障将本轮标记为失败，保留回答和已有资料，不发布未审核的候选。
 7. 仅保存审核认可、原话存在且版本有效的条目，记录审核、动作及公开来源后发布回复。
 
 原有资料表的 `reported/confirmed/uncertain/disputed/pending` 状态继续使用。`disputed` 对应计划中的未解决冲突；旧值与新陈述在同条记录的 alternatives 中保留各自出处。它不会进入可写作资料快照或有效记忆。明确更正后形成新有效版本，旧版本可在资料历史中追溯。用户手动确认、更正、删除、使用范围限制仍由原有版本控制维护。
@@ -27,11 +27,15 @@ INTERVIEW_HISTORY_ENABLED=true
 INTERVIEW_REVIEW_ENABLED=true
 INTERVIEW_REVIEW_LLM_MODEL=gpt-6.1-sol
 INTERVIEW_LLM_STREAM=false
-INTERVIEW_LLM_READ_TIMEOUT_SECONDS=15
-INTERVIEW_TURN_BUDGET_SECONDS=55
+INTERVIEW_LLM_THINKING=disabled
+INTERVIEW_LLM_READ_TIMEOUT_SECONDS=25
+INTERVIEW_REVIEW_LLM_READ_TIMEOUT_SECONDS=25
+INTERVIEW_TURN_BUDGET_SECONDS=75
 ```
 
 采访与普通审核使用现有 `VOLCENGINE_API_BASE_URL/VOLCENGINE_API_KEY`。Sol 审核使用现有 `OPENAI_COMPATIBLE_BASE_URL/OPENAI_COMPATIBLE_API_KEY`，不改变写书等任务的模型。Model Gateway 按任务验证模型并选择相应渠道。每次 API 调用仍保留现有用量账本。
+
+火山采访调用显式传入 `thinking.type=disabled`，避免默认推理耗时超过读取超时；该参数只发给火山采访渠道。模板字段只传必要的名称和类型，审核只传证据，不重复发送完整填表模板。单值字段统一使用 `record_key=single`。用户修改书中称呼属于偏好更新；身份冲突仍需核对双方出处。失败不会生成虚假的成功资料版本，界面区分回答保存与资料整理成功。供应商返回状态不确定时保持调用幂等保护，不自动重复付费请求。
 
 全轮预算用于阻止继续检索、重写或升级，单次请求另外受连接和读取超时限制；不是严格的端到端延迟承诺。审核不向用户流式展示。普通轮通常两次模型调用，含历史查询或一次重写时调用更多，实际 P90 与费用须在真实访谈中测量。
 

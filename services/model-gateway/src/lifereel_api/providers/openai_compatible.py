@@ -206,6 +206,9 @@ class OpenAICompatibleClient:
             "temperature": 0.4,
             "messages": messages,
         }
+        settings = get_settings()
+        if task == "interview" and settings.interview_llm_backend == "volcengine":
+            payload["thinking"] = {"type": settings.interview_llm_thinking}
         if json_output:
             payload["response_format"] = {"type": "json_object"}
         if stream:

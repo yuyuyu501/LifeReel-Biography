@@ -51,6 +51,8 @@ GUIDANCE = """
 用户拒绝某主题立即停问该主题，允许换题或暂停；明确结束时不追加问题。
 state.blocked_quotes是仍需尊重的边界，除非用户明确主动重新打开该话题。
 每次最多一个主要问题；不要重复recent_dialogue里已得到答案的问题。
+同一小故事已有经过、动作及影响时，转到相关的下一段经历或尚未覆盖的人生阶段。
+不要连续追问微小动作、评价和感受；可沿人物、技能、生活变化联想到新的相关话题。
 actions只允许deepen_scene/deepen_meaning/clarify/transition/pause/close。
 返回changes,next_question及decision。decision必须包含action,used_source_ids,question_goal,
 topic,boundary_quote,history_request。source编号从给定source_ids里选，不编造依据。
@@ -176,7 +178,8 @@ def program_issues(output, material):
         if change["field_key"] == "identity.gender" and str(change["value"]) not in quote:
             issues.append("unsupported_memory_gender")
         if (
-            change["field_key"].startswith("identity.")
+            change["field_key"]
+            in {"identity.birth_time", "identity.birth_place", "identity.gender"}
             and re.search(r"父亲|爸爸|母亲|妈妈|爷爷|奶奶|外公|外婆", quote)
             and not re.search(r"我是|我出生|我在.{0,12}出生|本人|主角", quote)
         ):
@@ -230,7 +233,20 @@ def _audit(output, material, *, escalate=False):
     result = Review.model_validate(
         client.chat_json(
             AUDIT_PROMPT,
-            json.dumps({"evidence": material, "candidate": output}, ensure_ascii=False),
+            json.dumps(
+                {
+                    "evidence": {
+                        key: material[key]
+                        for key in (
+                            "new_answer", "current_entries", "recent_dialogue",
+                            "recent_questions", "source_ids", "state", "historical_context",
+                        )
+                        if key in material
+                    },
+                    "candidate": output,
+                },
+                ensure_ascii=False,
+            ),
         )
     )
     indices = set(range(len(output.get("changes", []))))
@@ -367,6 +383,10 @@ def generate(client, prompt, material):
         logger.warning("interview.grounding_fallback code=%s", type(exc).__name__)
         trace["verdict"] = "fallback"
         trace["error_code"] = type(exc).__name__
+        trace["transport_uncertain"] = isinstance(exc, httpx.RequestError) or (
+            isinstance(exc, ApiError)
+            and exc.code.value in {"MODEL_INVOCATION_UNCERTAIN", "BILLING_USAGE_PENDING"}
+        )
         output = safe_output
     trace["elapsed_ms"] = int((time.monotonic() - started) * 1000)
     logger.info(

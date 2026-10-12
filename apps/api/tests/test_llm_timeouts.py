@@ -5,15 +5,15 @@ from uuid import uuid4
 
 import httpx
 import pytest
+from lifereel_api.modules.billing import tokens
+from lifereel_api.modules.billing.usage import _context, track_usage
+from lifereel_api.modules.memory.structured import MemoryClient
+from lifereel_api.providers import openai_compatible as provider
 from pydantic import ValidationError
 
 from lifereel_api.core.config import Settings, get_settings
 from lifereel_api.core.database import SessionLocal
 from lifereel_api.core.errors import ApiError
-from lifereel_api.modules.billing import tokens
-from lifereel_api.modules.billing.usage import _context, track_usage
-from lifereel_api.modules.memory.structured import MemoryClient
-from lifereel_api.providers import openai_compatible as provider
 
 
 @pytest.fixture
@@ -72,6 +72,27 @@ def test_task_settings_read_from_environment(monkeypatch):
     settings = Settings(_env_file=None)
     assert settings.llm_timeouts_for("video_plan")["read"] == 240
     assert settings.llm_timeouts_for("memory")["connect"] == 12
+
+
+@pytest.mark.parametrize("task,backend,expected", [
+    ("interview", "volcengine", {"type": "disabled"}),
+    ("interview", "inherit", None),
+    ("interview_review", "volcengine", None),
+    ("memory", "volcengine", None),
+])
+def test_lite_thinking_option_only_reaches_volcengine_interviews(
+    llm, monkeypatch, task, backend, expected,
+):
+    monkeypatch.setattr(get_settings(), "interview_llm_backend", backend)
+    monkeypatch.setattr(get_settings(), "interview_llm_thinking", "disabled")
+    llm.task = task
+
+    def post(*args, **kwargs):
+        assert kwargs["json"].get("thinking") == expected
+        return response(completion())
+
+    monkeypatch.setattr(httpx, "post", post)
+    assert llm.chat_json("system", "user") == {"ok": True}
 
 
 @pytest.mark.parametrize("value", [0, -1, float("inf"), float("nan"), 3601])

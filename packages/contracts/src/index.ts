@@ -182,6 +182,7 @@ export interface InterviewTurnWorkflow {
     profile_version: number;
     readiness: LifeReadiness;
     next_question: string;
+    audit?: { verdict?: string; transport_uncertain?: boolean };
   };
   id: UUID;
   session_id: UUID;

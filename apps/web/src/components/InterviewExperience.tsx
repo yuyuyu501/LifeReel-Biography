@@ -115,6 +115,9 @@ export function InterviewProgress({
 }) {
   const [now, setNow] = useState(() => Date.now());
   const workflow = workspace.latest_workflow;
+  const profileFallback =
+    Boolean(workspace.profile) &&
+    workflow?.profile_result?.audit?.verdict === "fallback";
   const running =
     workflow?.status === "queued" || workflow?.status === "running";
   useEffect(() => {
@@ -135,7 +138,9 @@ export function InterviewProgress({
   return (
     <div className="interview-progress">
       <p role="status" aria-live="polite">
-        {STAGES[stage] ?? "正在整理"}
+        {profileFallback
+          ? "回答已保存，资料整理失败"
+          : (STAGES[stage] ?? "正在整理")}
         {running && workflow.next_question ? "；采访回应已就绪" : ""}
       </p>
       {running && (

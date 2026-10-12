@@ -25,7 +25,10 @@ INPUT_BUDGET_ERRORS = frozenset({
 
 
 def input_rejected(workflow):
-    return getattr(workflow, "error_code", None) in INPUT_BUDGET_ERRORS
+    audit = (getattr(workflow, "profile_result", None) or {}).get("audit", {})
+    return getattr(workflow, "error_code", None) in INPUT_BUDGET_ERRORS or (
+        audit.get("verdict") == "fallback" and audit.get("transport_uncertain") is True
+    )
 
 
 def require_retryable_input(workflow):

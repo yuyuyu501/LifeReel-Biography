@@ -282,6 +282,9 @@ export function InterviewWorkspace({
   const workflow = workspace.data.latest_workflow;
   const workflowRunning =
     workflow?.status === "queued" || workflow?.status === "running";
+  const profileFallback =
+    Boolean(workspace.data.profile) &&
+    workflow?.profile_result?.audit?.verdict === "fallback";
   const workflowError =
     workflow?.status === "failed" && workflow.error_code
       ? new ApiError(
@@ -303,11 +306,13 @@ export function InterviewWorkspace({
     : scriptSynchronized
       ? "已同步"
       : "最新内容尚未同步";
-  const profileSaved = Boolean(workspace.data.profile) && !workflowError;
+  const profileSaved =
+    Boolean(workspace.data.profile) && !workflowError && !profileFallback;
   const syncStatus = workflowRunning
     ? "正在整理"
-    : workspace.data.profile && workflow?.status === "failed"
-      ? "整理失败，已有资料已保存"
+    : workspace.data.profile &&
+        (workflow?.status === "failed" || profileFallback)
+      ? "回答已保存，资料整理失败"
       : profileSaved
         ? "资料已保存"
         : scriptSynchronized
@@ -369,14 +374,18 @@ export function InterviewWorkspace({
             {retryWorkflow.isPending
               ? "正在重新提交"
               : !retryAllowed
-                ? "已达重试上限"
+                ? workflow.profile_result?.audit?.transport_uncertain
+                  ? "等待调用核对"
+                  : "已达重试上限"
                 : retryCooling
                   ? "稍后可重试"
                   : "重新整理"}
           </Button>
           {!retryAllowed && (
             <span>
-              本轮重试已停止，请联系管理员排查。回答和已保存内容均已保留。
+              {workflow.profile_result?.audit?.transport_uncertain
+                ? "本次调用结果尚未确认，请联系管理员核对。回答和已有资料均已保留。"
+                : "本轮重试已停止，请联系管理员排查。回答和已保存内容均已保留。"}
             </span>
           )}
         </div>

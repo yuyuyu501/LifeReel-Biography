@@ -59,7 +59,11 @@ const history = {
   chapter_id: "chapter-1",
   started_at: "2026-09-07T00:00:00Z",
 };
-let workflow: { status: string; error_code?: string } | null = null;
+let workflow: {
+  status: string;
+  error_code?: string;
+  profile_result?: { audit: { verdict: string } };
+} | null = null;
 function response(payload: unknown) {
   return { ok: true, status: 200, json: async () => payload } as Response;
 }
@@ -176,12 +180,29 @@ test.each(["queued", "running", "failed"])(
     await screen.findByRole("heading", { name: "人生资料表" });
     expect(
       screen.getByText(
-        status === "failed" ? "整理失败，已有资料已保存" : "正在整理",
+        status === "failed" ? "回答已保存，资料整理失败" : "正在整理",
         { selector: "small.profile-save-status" },
       ),
     ).toBeInTheDocument();
   },
 );
+test("does not label legacy completed fallback workflows as saved profiles", async () => {
+  workflow = {
+    status: "completed",
+    profile_result: { audit: { verdict: "fallback" } },
+  };
+  page();
+  await screen.findByRole("heading", { name: "人生资料表" });
+  expect(
+    screen.getByText("回答已保存，资料整理失败", {
+      selector: "small.profile-save-status",
+    }),
+  ).toBeInTheDocument();
+  expect(screen.queryByText("资料已保存")).not.toBeInTheDocument();
+  expect(
+    screen.queryByText("本轮整理完成，可以继续补充"),
+  ).not.toBeInTheDocument();
+});
 test("switching people loads their own life profile", async () => {
   page();
   await screen.findByText("人生资料表");

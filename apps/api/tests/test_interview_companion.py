@@ -13,6 +13,7 @@ from lifereel_api.providers.openai_compatible import OpenAICompatibleClient
 
 from lifereel_api.core.config import Settings, get_settings
 from lifereel_api.core.database import SessionLocal
+from lifereel_api.core.errors import ApiError, ErrorCode
 
 
 @pytest.fixture
@@ -519,3 +520,67 @@ def test_father_birth_year_cannot_be_saved_as_subject_identity(client, enhanced,
     result = run_profile(profile, "我爸爸1970年出生。")
     assert result["audit"]["verdict"] == "fallback"
     assert not any(e["field_key"] == "identity.birth_year" for e in result["profile"]["entries"])
+
+
+def test_preferred_name_update_and_single_record_protocol(client, enhanced, monkeypatch):
+    profile, _ = setup(client)
+
+    def provider(self, system, data):
+        if system == companion.AUDIT_PROMPT:
+            return review(safe=[0])
+        return candidate(json.loads(data), "您想从哪段经历讲起？", [{
+            "field_key": "identity.preferred_name", "record_key": "new",
+            "value": "明远", "quote": "书中叫我明远。",
+        }])
+
+    monkeypatch.setattr(OpenAICompatibleClient, "chat_json", provider)
+    result = run_profile(profile, "书中叫我明远。")
+    entry = next(e for e in result["profile"]["entries"]
+                 if e["field_key"] == "identity.preferred_name")
+    assert entry["record_key"] == "single"
+    assert entry["value"] == "明远" and entry["certainty"] == "reported"
+
+
+def test_relative_can_supply_subject_alias(client, enhanced, monkeypatch):
+    profile, _ = setup(client)
+
+    def provider(self, system, data):
+        if system == companion.AUDIT_PROMPT:
+            return review(safe=[0])
+        return candidate(json.loads(data), "小时候您和谁一起生活？", [{
+            "field_key": "identity.aliases", "value": ["小远"],
+            "quote": "祖母叫我小远。",
+        }])
+
+    monkeypatch.setattr(OpenAICompatibleClient, "chat_json", provider)
+    result = run_profile(profile, "祖母叫我小远。")
+    assert result["audit"]["verdict"] == "pass"
+    assert any(e["value"] == ["小远"] for e in result["profile"]["entries"])
+
+
+def test_failed_profile_turn_preserves_answer_without_false_revision_or_retry(
+    client, enhanced, monkeypatch,
+):
+    profile, session = setup(client)
+
+    def unavailable(*args):
+        raise httpx.ReadTimeout("synthetic timeout")
+
+    monkeypatch.setattr(OpenAICompatibleClient, "chat_json", unavailable)
+    posted = client.post(f"/v1/interviews/{session['id']}/turns", json={
+        "answer_text": "我1970年出生。", "idempotency_key": str(uuid4()),
+    })
+    assert posted.status_code == 202
+    from lifereel_api.modules.orchestration.service import execute_turn
+
+    with SessionLocal() as db, pytest.raises(ApiError) as caught:
+        execute_turn(db, enhanced.default_tenant_id, UUID(posted.json()["id"]))
+    assert caught.value.code == ErrorCode.INTERVIEW_LLM_REQUEST_FAILED
+    workspace = client.get(f"/v1/interviews/{session['id']}/workspace").json()
+    assert workspace["latest_workflow"]["status"] == "failed"
+    assert workspace["latest_workflow"]["retry_allowed"] is False
+    assert workspace["latest_workflow"]["profile_result"]["audit"]["transport_uncertain"]
+    assert workspace["profile"]["version_number"] == profile["version_number"]
+    assert workspace["session"]["rounds"][-1]["answer_text"] == "我1970年出生。"
+    retry = client.post(f"/v1/jobs/{workspace['latest_workflow']['job_id']}/retry")
+    assert retry.status_code == 409
