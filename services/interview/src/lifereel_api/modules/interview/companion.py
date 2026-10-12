@@ -318,7 +318,9 @@ def program_issues(output, material, *, invalid_changes=None):
         history = material["recent_questions"] + [
             r["question"] for r in material["recent_dialogue"]
         ]
-        if planning.repeated(reply, history):
+        requested = boundary(material["new_answer"])
+        boundary_reply = requested and reply == fallback(requested)
+        if planning.repeated(reply, history) and not boundary_reply:
             issues.append("repeated_question")
         known = (
             material["new_answer"] + json.dumps(material["current_entries"], ensure_ascii=False)
@@ -450,6 +452,9 @@ def generate(client, prompt, material):
             "boundary_quote": boundary_quote(material["new_answer"], requested_boundary),
         })
     departure_unclear = ambiguous_departure(material["new_answer"])
+    if departure_unclear and not requested_boundary:
+        safe_output["next_question"] = DEPARTURE_QUESTION
+        safe_output["decision"]["question_goal"] = "澄清去的所指，不推断死亡"
 
     def validate_extraction(raw):
         extracted = Extraction.model_validate(raw)
@@ -605,7 +610,7 @@ def generate(client, prompt, material):
                 else:
                     raise ValueError("review_rejected")
             if review.verdict != "pass":
-                if not requested_boundary:
+                if not requested_boundary and not departure_unclear:
                     safe_output["next_question"] = (
                         output["next_question"] if trace.get("reply_fallback") else fallback(
                             "pause" if review.verdict == "pause" else "clarify"

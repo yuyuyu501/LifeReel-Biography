@@ -162,8 +162,9 @@ def test_mixed_boundary_keeps_audited_facts(client, enhanced, monkeypatch, answe
     assert any(e["field_key"] == field and e["value"] == value for e in saved["entries"])
 
 
+@pytest.mark.parametrize("verdict", ["pass", "clarify"])
 def test_ambiguous_departure_requires_clarification_without_death_record(
-    client, enhanced, monkeypatch,
+    client, enhanced, monkeypatch, verdict,
 ):
     profile, _ = setup(client)
 
@@ -173,7 +174,7 @@ def test_ambiguous_departure_requires_clarification_without_death_record(
             assert material["candidate"]["next_question"] == (
                 "您说的“去的”，是指去了某个地方，还是去世了？"
             )
-            return review(safe=list(range(len(material["candidate"]["changes"]))))
+            return review(verdict, safe=list(range(len(material["candidate"]["changes"]))))
         return candidate(material, "父亲去世后有何影响？", [{
             "field_key": "family.members[]", "record_key": "new",
             "value": {"name": "父亲", "death_time_raw": "2008年"},
@@ -186,6 +187,18 @@ def test_ambiguous_departure_requires_clarification_without_death_record(
     assert "去了某个地方，还是去世" in result["next_question"]
     assert not any(e["field_key"] == "family.members[]" for e in result["profile"]["entries"])
     assert result["audit"]["departure_clarification"]
+
+
+def test_repeated_boundary_acknowledgment_is_allowed():
+    answer = "1998年我欠过债。金额和原因我不想谈。"
+    output = candidate({"source_ids": ["test"]}, companion.fallback("transition"),
+                       action="transition", boundary_quote="金额和原因我不想谈。")
+    material = {
+        "source_ids": ["test"], "new_answer": answer, "current_entries": [],
+        "recent_questions": [companion.fallback("transition")], "recent_dialogue": [],
+    }
+    _, issues = companion.program_issues(output, material)
+    assert not issues
 
 
 @pytest.mark.parametrize(
