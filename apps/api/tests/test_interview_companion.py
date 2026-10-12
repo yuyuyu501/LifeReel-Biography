@@ -1216,3 +1216,36 @@ def test_omitted_decision_metadata_and_prior_care_years_keep_semantic_review(enh
     output, trace = companion.generate(OpenAICompatibleClient.for_task("interview"), "", material)
     assert trace["verdict"] == "pass" and trace["decision_defaults"] == 1
     assert audits and output["changes"][0]["value"]["time_raw"] == "2012到2016年"
+
+
+def test_repeated_acknowledgment_retains_only_independently_audited_facts(enhanced, monkeypatch):
+    material = {"new_answer": "继续采访。我喜欢电路。",
+                "source_ids": ["current:1"], "current_entries": [],
+                "recent_questions": [companion.FACTS_SAVED_REPLY],
+                "recent_dialogue": [{"question": companion.FACTS_SAVED_REPLY,
+                                     "answer": "今天先休息一下，改天继续。"}]}
+
+    def provider(self, system, data):
+        if system == companion.AUDIT_PROMPT:
+            return {**review("rewrite", safe=[0]), "issues": ["问题有未经确认的迁居起点"]}
+        return candidate(json.loads(data), "您从广州搬回去之后生活如何？", [
+            {"field_key": "learning.interests", "value": "电路", "quote": "我喜欢电路。"},
+            {"field_key": "turning.moves[]", "record_key": "new",
+             "value": {"what": "从广州迁居"}, "quote": "我喜欢电路。"},
+        ])
+
+    monkeypatch.setattr(OpenAICompatibleClient, "chat_json", provider)
+    output, audit = companion.generate(OpenAICompatibleClient.for_task("interview"), "", material)
+    assert audit["verdict"] == "clarify" and audit["reply_fallback"]
+    assert output["next_question"] == companion.FACTS_SAVED_REPLY
+    assert output["decision"]["action"] != "pause"
+    assert len(output["changes"]) == 1 and output["changes"][0]["value"] == "电路"
+
+
+def test_repeated_actual_question_is_still_rejected():
+    material = {"new_answer": "继续。", "source_ids": ["current:1"],
+                "current_entries": [], "recent_questions": ["后来生活有什么变化？"],
+                "recent_dialogue": []}
+    assert "repeated_question" in companion.program_issues(
+        candidate(material, "后来生活有什么变化？"), material,
+    )[1]

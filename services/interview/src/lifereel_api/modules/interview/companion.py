@@ -20,6 +20,7 @@ logger = logging.getLogger(__name__)
 Action = Literal["deepen_scene", "deepen_meaning", "clarify", "transition", "pause", "close"]
 ChangeIndex = Annotated[int, Field(strict=True, ge=0)]
 DEPARTURE_QUESTION = "您说的“去的”，是指去了某个地方，还是去世了？"
+FACTS_SAVED_REPLY = "这段补充已按原话整理，可以继续讲您想留下的经历。"
 
 
 class Decision(BaseModel):
@@ -60,6 +61,8 @@ GUIDANCE = """
 对“去的”、模糊转写、人名指代、矛盾年份先澄清，不能擅自解释成死亡或未陪伴。
 资料certainty为uncertain/disputed/pending时不是已确定事实；需要澄清而非推断。
 用户拒绝某主题立即停问该主题，允许换题或暂停；明确结束时不追加问题。
+本轮new_answer是最新意愿；用户明确继续采访时，上一轮暂停或结束不再阻止本轮提问。
+继续采访不等于重新开放已拒答的具体主题，仍须尊重对应主题的边界。
 state.blocked_quotes是仍需尊重的边界，除非用户明确主动重新打开该话题。
 每次最多一个主要问题；不要重复recent_dialogue里已得到答案的问题。
 同一小故事已有经过、动作及影响时，转到相关的下一段经历或尚未覆盖的人生阶段。
@@ -101,6 +104,7 @@ candidate.changes每条的quote_verified和quote紧邻待审value，true代表�
 公开背景只由真实historical_context.sources摘录支持，不能转成用户亲历。
 查无结果不能否定记忆。没有成功检索不能声称查过。
 拒绝、停止和已保存边界优先；已回答的细节不要重问；最多一个主要问题。
+用户本轮明确继续采访时，不因上一轮暂停或结束拒绝当前提问；已拒答具体主题仍受保护。
 verdict:pass(完整回复有依据且尊重边界),rewrite(可纠正措辞),clarify(缺少个人信息),pause(应停止)。
 safe_change_indices只列出新回答及有效资料完整支持的changes下标；不支持的不得保存。
 safe_change_indices和conflict_change_indices用JSON整数下标，例如[0,1]，不用字符串或field_key。
@@ -354,7 +358,10 @@ def program_issues(output, material, *, invalid_changes=None):
         ]
         requested = boundary(material["new_answer"])
         boundary_reply = requested and reply == fallback(requested)
-        if planning.repeated(reply, history) and not boundary_reply:
+        if (
+            planning.repeated(reply, history) and not boundary_reply
+            and reply != FACTS_SAVED_REPLY
+        ):
             issues.append("repeated_question")
         known = (
             material["new_answer"] + json.dumps(material["current_entries"], ensure_ascii=False)
@@ -666,7 +673,7 @@ def generate(client, prompt, material):
                     )
                     continue
                 if review.safe_change_indices and not invalid_changes:
-                    output["next_question"] = "这段已按您的原话整理。您想接着讲哪段经历？"
+                    output["next_question"] = FACTS_SAVED_REPLY
                     output["decision"] = {
                         **safe_output["decision"], "question_goal": "由讲述者选择下一段经历",
                     }
