@@ -85,6 +85,9 @@ AUDIT_PROMPT = """你是独立纪实审核器，检查完整next_question和每�
 回复里陈述及问句预设的个人行动、身份、时间、原因、动机、情绪都须有用户原话/有效资料依据。
 不只核对quote存在或used_source_ids有效；必须逐项判断value与原文的语义是否相符。
 deterministic_checks.quote_in_new_answer是程序精确匹配结果：false条目不能保存，true仍须语义审核。
+candidate.changes每条的quote_verified和quote紧邻待审value，true代表已验证本轮确有该原文。
+先逐条比较value与quote的语义，再检查旧资料冲突；旧资料没有新事实不代表新事实无依据。
+观念从以前到后来发生变化可以同时成立；不等于与既有生活安排冲突。
 不要重复猜测引用是否存在，不要对程序已确认的连续原文提出“不连续”或标点不符的意见。
 不能从用户欠债推创业失败，不能从住亲戚家推搬出/租房，不能从坏零件推装回，
 不能从“去的”推死亡/未陪伴；父母经历不能变成本人身份。
@@ -367,6 +370,7 @@ def _audit(output, material, *, escalate=False, repair=True):
             AUDIT_PROMPT,
             json.dumps(
                 {
+                    "new_answer": material["new_answer"],
                     "evidence": {
                         key: material[key]
                         for key in (
@@ -378,7 +382,8 @@ def _audit(output, material, *, escalate=False, repair=True):
                     "candidate": {
                         **output,
                         "changes": [
-                            {"index": index, **change}
+                            {"index": index, **change,
+                             "quote_verified": change["quote"] in material["new_answer"]}
                             for index, change in enumerate(output.get("changes", []))
                         ],
                     },

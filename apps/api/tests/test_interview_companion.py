@@ -139,6 +139,8 @@ def test_mixed_boundary_keeps_audited_facts(client, enhanced, monkeypatch, answe
         if system == companion.AUDIT_PROMPT:
             assert material["candidate"]["decision"]["action"] == action
             assert material["candidate"]["next_question"] == companion.fallback(action)
+            assert material["new_answer"] == answer
+            assert material["candidate"]["changes"][0]["quote_verified"] is True
             return review(safe=[0])
         return candidate(material, "欠债的原因是什么？", [{
             "field_key": field, "record_key": "new" if field.endswith("[]") else "single",
