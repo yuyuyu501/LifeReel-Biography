@@ -322,6 +322,35 @@ def test_empty_followup_still_audits_facts_without_stopping_user(
     assert any(e["field_key"] == "present.daily_life" for e in result["profile"]["entries"])
 
 
+def test_ambiguous_departure_drops_death_before_auditing_other_facts(
+    client, enhanced, monkeypatch,
+):
+    profile, _ = setup(client)
+    audited = []
+
+    def provider(self, system, data):
+        material = json.loads(data)
+        if system == companion.AUDIT_PROMPT:
+            audited.append(material)
+            assert len(material["candidate"]["changes"]) == 1
+            assert material["candidate"]["changes"][0]["value"]["name"] == "陈桂芳"
+            return review(safe=[0])
+        return candidate(material, "父亲去世后有何影响？", [
+            {"field_key": "family.members[]", "record_key": "new",
+             "value": {"name": "父亲", "death_time_raw": "2008年"},
+             "quote": "我父亲是2008年去的。"},
+            {"field_key": "family.members[]", "record_key": "new",
+             "value": {"name": "陈桂芳", "relationship": "母亲"}, "quote": "母亲叫陈桂芳。"},
+        ])
+
+    monkeypatch.setattr(OpenAICompatibleClient, "chat_json", provider)
+    result = run_profile(profile, "母亲叫陈桂芳。我父亲是2008年去的。")
+    assert len(audited) == 1
+    assert any(e["value"].get("name") == "陈桂芳" for e in result["profile"]["entries"]
+               if isinstance(e["value"], dict))
+    assert "是指去了某个地方" in result["next_question"]
+
+
 @pytest.mark.parametrize(
     "text,reply",
     [
@@ -1124,6 +1153,9 @@ def test_review_schema_repair_keeps_subset_validation(client, enhanced, monkeypa
             calls += 1
             if calls == 1:
                 return review(safe=[], conflicts=[0])
+            material = json.loads(data)
+            assert material["valid_change_indices"] == [0]
+            assert material["review_repair"]["error"] == "invalid_review_indices"
             return review(safe=[0])
         return candidate(json.loads(data), "您的日常工作是怎样的？", [
             {"field_key": "learning.interests", "value": "电路", "quote": "我喜欢电路。"},

@@ -391,7 +391,7 @@ def program_issues(output, material, *, invalid_changes=None):
     return decision, issues
 
 
-def _audit(output, material, *, escalate=False, repair=True):
+def _audit(output, material, *, escalate=False, repair=True, repair_context=None):
     task = "interview_review" if escalate else "interview"
     client = OpenAICompatibleClient.for_task(task)
     if not client.capabilities().configured:
@@ -402,6 +402,8 @@ def _audit(output, material, *, escalate=False, repair=True):
             json.dumps(
                 {
                     "new_answer": material["new_answer"],
+                    "valid_change_indices": list(range(len(output.get("changes", [])))),
+                    "review_repair": repair_context,
                     "evidence": {
                         key: material[key]
                         for key in (
@@ -433,19 +435,28 @@ def _audit(output, material, *, escalate=False, repair=True):
         result = Review.model_validate(raw)
     except ValidationError:
         if repair:
-            return _audit(output, material, escalate=escalate, repair=False)
+            return _audit(output, material, escalate=escalate, repair=False, repair_context={
+                "previous_review": raw, "error": "invalid_review_schema",
+                "instruction": "重新审核，只用有效整数下标，保持事实与冲突审核。",
+            })
         raise
     indices = set(range(len(output.get("changes", []))))
     safe, conflicts = set(result.safe_change_indices), set(result.conflict_change_indices)
     if not safe <= indices or not conflicts <= safe:
         if repair:
-            return _audit(output, material, escalate=escalate, repair=False)
+            return _audit(output, material, escalate=escalate, repair=False, repair_context={
+                "previous_review": raw, "error": "invalid_review_indices",
+                "instruction": "只用valid_change_indices，冲突下标也必须列入safe_change_indices。",
+            })
         raise ValueError("invalid_review_indices")
     entry_ids = {e["id"] for e in material["current_entries"]}
     for index, entry_id in result.conflict_entry_ids.items():
         if not index.isdigit() or int(index) not in conflicts or entry_id not in entry_ids:
             if repair:
-                return _audit(output, material, escalate=escalate, repair=False)
+                return _audit(output, material, escalate=escalate, repair=False, repair_context={
+                    "previous_review": raw, "error": "invalid_conflict_source",
+                    "instruction": "冲突引用只用有效下标和现有条目ID，不能编造来源。",
+                })
             raise ValueError("invalid_conflict_source")
     for index in list(result.conflict_change_indices):
         change = output["changes"][index]
@@ -573,6 +584,19 @@ def generate(client, prompt, material):
                 )
             invalid_changes = {}
             decision, issues = program_issues(output, material, invalid_changes=invalid_changes)
+            if departure_unclear and invalid_changes:
+                trace["dropped_program_changes"] = len(invalid_changes)
+                output["changes"] = [
+                    change for index, change in enumerate(output["changes"])
+                    if index not in invalid_changes
+                ]
+                invalid_changes = {}
+                decision, issues = program_issues(output, material, invalid_changes=invalid_changes)
+            if departure_unclear and not output["changes"] and not issues:
+                # This fixed question carries no personal factual assertion to audit.
+                output = {**safe_output, "next_question": DEPARTURE_QUESTION}
+                trace["verdict"] = "clarification"
+                break
             if invalid_changes and (attempt == 1 or trace["rewrites"]):
                 trace["dropped_program_changes"] = len(invalid_changes)
                 trace["rejected_changes"] = [
