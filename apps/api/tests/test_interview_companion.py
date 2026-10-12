@@ -584,3 +584,104 @@ def test_failed_profile_turn_preserves_answer_without_false_revision_or_retry(
     assert workspace["session"]["rounds"][-1]["answer_text"] == "我1970年出生。"
     retry = client.post(f"/v1/jobs/{workspace['latest_workflow']['job_id']}/retry")
     assert retry.status_code == 409
+
+
+@pytest.mark.parametrize(
+    "quote,expected",
+    [
+        (
+            "爸爸周守成；父母种水稻，爸爸农闲帮人修农具。",
+            "爸爸周守成、妈妈陈桂芳住一起。父母种水稻，爸爸农闲帮人修农具",
+        ),
+        ("妈妈陈桂芳；父母种水稻。", "妈妈陈桂芳住一起。父母种水稻"),
+        ("妈妈陈桂芳。", "妈妈陈桂芳"),
+        ("爸爸周守成；妈妈李桂芳。", None),
+        ("妈妈陈桂芳；爸爸周守成。", None),
+        ("爸爸周守成；靠修农具补贴家用。", None),
+    ],
+)
+def test_quote_restoration_requires_exact_ordered_fragments(quote, expected):
+    answer = "爸爸周守成、妈妈陈桂芳住一起。父母种水稻，爸爸农闲帮人修农具。"
+    output = {"changes": [{"quote": quote}]}
+    repaired = companion.ground_quotes(output, answer)
+    assert repaired == ([0] if expected else [])
+    assert output["changes"][0]["quote"] == (expected or quote)
+    if expected:
+        assert expected in answer
+
+
+def test_composite_family_answer_restores_sources_before_semantic_review(
+    client, enhanced, monkeypatch,
+):
+    profile, _ = setup(client)
+    answer = (
+        "跟爸爸周守成、妈妈陈桂芳、祖母，还有比我小三岁的妹妹周小兰住一起。"
+        "祖母叫我小远。父母种水稻，爸爸农闲帮人修农具。"
+    )
+
+    def provider(self, system, data):
+        material = json.loads(data)
+        if system == companion.AUDIT_PROMPT:
+            assert all(change["quote"] in answer for change in material["candidate"]["changes"])
+            return review(safe=[0, 1, 2])
+        return candidate(material, "您小时候的日常是怎样的？", [
+            {"field_key": "family.members[]", "record_key": "new",
+             "value": {"name": "周守成", "relationship": "父亲", "what": "农闲修农具"},
+             "quote": "爸爸周守成；父母种水稻，爸爸农闲帮人修农具。"},
+            {"field_key": "family.members[]", "record_key": "new",
+             "value": {"name": "周小兰", "relationship": "妹妹", "what": "比我小三岁"},
+             "quote": "比我小三岁的妹妹周小兰。"},
+            {"field_key": "identity.aliases", "value": ["小远"], "quote": "祖母叫我小远。"},
+        ])
+
+    monkeypatch.setattr(OpenAICompatibleClient, "chat_json", provider)
+    result = run_profile(profile, answer)
+    assert result["audit"]["verdict"] == "pass"
+    assert result["audit"]["rewrites"] == 0
+    assert result["audit"]["quote_repairs"] == [{"attempt": 0, "indices": [0, 1]}]
+    rows = [e for e in result["profile"]["entries"] if e["source"].get("type") == "test"]
+    assert len(rows) == 3
+    assert all(e["source"]["quote"] in answer for e in rows)
+
+
+def test_preference_change_overrides_false_audit_conflict(client, enhanced, monkeypatch):
+    profile, _ = setup(client)
+    existing = next(e for e in profile["entries"] if e["field_key"] == "identity.preferred_name")
+
+    def provider(self, system, data):
+        if system == companion.AUDIT_PROMPT:
+            return review(safe=[0], conflicts=[0], links={"0": existing["id"]})
+        return candidate(json.loads(data), "您想先讲哪段经历？", [
+            {"field_key": "identity.preferred_name", "value": "明远", "quote": "叫我明远就行。"},
+        ])
+
+    monkeypatch.setattr(OpenAICompatibleClient, "chat_json", provider)
+    result = run_profile(profile, "叫我明远就行。")
+    entry = next(
+        e for e in result["profile"]["entries"] if e["field_key"] == "identity.preferred_name"
+    )
+    assert entry["value"] == "明远"
+    assert entry["certainty"] == "reported"
+    assert result["audit"]["conflict_indices"] == []
+
+
+def test_unrelated_negation_does_not_resolve_birth_conflict(client, enhanced, monkeypatch):
+    profile, _ = setup(client)
+    profile = client.patch(f"/v1/life-profiles/{profile['id']}", json={
+        "expected_version": profile["version_number"],
+        "changes": [{"field_key": "identity.birth_time", "value": "1970年"}],
+    }).json()
+    existing = next(e for e in profile["entries"] if e["field_key"] == "identity.birth_time")
+
+    def provider(self, system, data):
+        if system == companion.AUDIT_PROMPT:
+            return review(safe=[0], conflicts=[0], links={"0": existing["id"]})
+        return candidate(json.loads(data), "出生年份需要更正吗？", [
+            {"field_key": "identity.birth_time", "value": "1971年", "quote": "我是1971年出生的。"},
+        ], action="clarify")
+
+    monkeypatch.setattr(OpenAICompatibleClient, "chat_json", provider)
+    result = run_profile(profile, "不是替别人讲。我是1971年出生的。")
+    entry = next(e for e in result["profile"]["entries"] if e["field_key"] == "identity.birth_time")
+    assert entry["certainty"] == "disputed"
+    assert [item["value"] for item in entry["value"]["alternatives"]] == ["1970年", "1971年"]
