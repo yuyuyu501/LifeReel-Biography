@@ -773,3 +773,52 @@ def test_generation_schema_repair_is_bounded_and_preserves_fact_guards(
     assert result["audit"]["schema_rewrites"] == result["audit"]["rewrites"] == 1
     assert result["audit"]["verdict"] == "pass"
     assert any(e["value"] == "电路" for e in result["profile"]["entries"])
+
+
+def test_job_range_can_use_year_from_adjacent_sentence(client, enhanced, monkeypatch):
+    profile, _ = setup(client)
+    answer = "1989年我去深圳。先在一家电子厂当检验员，到1992年。刚到的时候住表哥家。"
+
+    def provider(self, system, data):
+        if system == companion.AUDIT_PROMPT:
+            assert all(c["quote"] in answer for c in json.loads(data)["candidate"]["changes"])
+            return review(safe=[0, 1])
+        return candidate(json.loads(data), "之后您换了什么工作？", [
+            {"field_key": "work.records[]", "record_key": "new",
+             "value": {"title": "电子厂检验员", "time_raw": "1989至1992年"},
+             "quote": "先在一家电子厂当检验员，到1992年。"},
+            {"field_key": "turning.moves[]", "record_key": "new",
+             "value": {"time_raw": "1989年", "what": "去深圳，起初住表哥家"},
+             "quote": "1989年我去深圳。刚到的时候住表哥家。"},
+        ])
+
+    monkeypatch.setattr(OpenAICompatibleClient, "chat_json", provider)
+    result = run_profile(profile, answer)
+    assert result["audit"]["verdict"] == "pass" and result["audit"]["rewrites"] == 0
+    assert any(e["field_key"] == "work.records[]" for e in result["profile"]["entries"])
+
+
+def test_invalid_change_after_rewrite_cannot_erase_independently_audited_facts(
+    client, enhanced, monkeypatch,
+):
+    profile, _ = setup(client)
+    audits = []
+
+    def provider(self, system, data):
+        material = json.loads(data)
+        if system == companion.AUDIT_PROMPT:
+            audits.append(material["candidate"])
+            return review(safe=list(range(len(material["candidate"]["changes"]))))
+        return candidate(material, "师傅教您哪些修理习惯？", [
+            {"field_key": "learning.interests", "value": "电路", "quote": "我喜欢电路。"},
+            {"field_key": "work.events[]", "record_key": "new",
+             "value": {"what": "我在2000年获奖"}, "quote": "我喜欢电路。"},
+        ])
+
+    monkeypatch.setattr(OpenAICompatibleClient, "chat_json", provider)
+    result = run_profile(profile, "我喜欢电路。")
+    assert result["audit"]["verdict"] == "pass"
+    assert result["audit"]["dropped_program_changes"] == 1
+    assert len(audits[-1]["changes"]) == 1
+    assert any(e["value"] == "电路" for e in result["profile"]["entries"])
+    assert not any(e["field_key"] == "work.events[]" for e in result["profile"]["entries"])

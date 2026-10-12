@@ -171,7 +171,9 @@ def ground_quotes(output, answer):
         if quote in answer:
             continue
         # Restore only exact excerpts, never approximate words or missing evidence.
-        fragments = [part.strip().rstrip("。.") for part in re.split(r"[；;]", quote)]
+        fragments = [
+            part.strip().rstrip("。.") for part in re.split(r"[；;。]", quote) if part.strip()
+        ]
         if not fragments or any(len(part) < 2 for part in fragments):
             continue
         positions = []
@@ -190,14 +192,15 @@ def ground_quotes(output, answer):
     return repaired
 
 
-def program_issues(output, material):
+def program_issues(output, material, *, invalid_changes=None):
     decision = Decision.model_validate(output.get("decision"))
     issues = []
     if not set(decision.used_source_ids) <= set(material["source_ids"]):
         issues.append("invalid_source_ids")
     if decision.boundary_quote and decision.boundary_quote not in material["new_answer"]:
         issues.append("unsupported_boundary")
-    for change in output.get("changes", []):
+    for index, change in enumerate(output.get("changes", [])):
+        issue_start = len(issues)
         quote = change["quote"]
         current = next(
             (
@@ -209,7 +212,9 @@ def program_issues(output, material):
         )
         if quote not in material["new_answer"] or change.get("delete"):
             issues.append("unsupported_memory_operation")
-        allowed = quote + (json.dumps(current["value"], ensure_ascii=False) if current else "")
+        allowed = material["new_answer"] + (
+            json.dumps(current["value"], ensure_ascii=False) if current else ""
+        )
         value = json.dumps(change["value"], ensure_ascii=False)
         if set(re.findall(r"(?:18|19|20)\d{2}", value)) - set(
             re.findall(r"(?:18|19|20)\d{2}", allowed)
@@ -224,6 +229,8 @@ def program_issues(output, material):
             and not re.search(r"我是|我出生|我在.{0,12}出生|本人|主角", quote)
         ):
             issues.append("relative_identity_not_subject")
+        if invalid_changes is not None and len(issues) > issue_start:
+            invalid_changes[index] = issues[issue_start:]
     reply = output.get("next_question", "")
     if not isinstance(reply, str) or not 1 <= len(reply) <= 800:
         issues.append("reply_length")
@@ -377,7 +384,21 @@ def generate(client, prompt, material):
                 trace.setdefault("quote_repairs", []).append(
                     {"attempt": attempt, "indices": repaired}
                 )
-            decision, issues = program_issues(output, material)
+            invalid_changes = {}
+            decision, issues = program_issues(output, material, invalid_changes=invalid_changes)
+            if invalid_changes and (attempt == 1 or trace["rewrites"]):
+                trace["dropped_program_changes"] = len(invalid_changes)
+                trace["rejected_changes"] = [
+                    {"field_key": output["changes"][index]["field_key"], "issues": reasons}
+                    for index, reasons in invalid_changes.items()
+                ]
+                output["changes"] = [
+                    change for index, change in enumerate(output["changes"])
+                    if index not in invalid_changes
+                ]
+                if not output["changes"]:
+                    raise ValueError("review_rejected")
+                decision, issues = program_issues(output, material)
             trace["program_issues"] = issues
             if time.monotonic() - started >= settings.interview_turn_budget_seconds - 5:
                 raise ValueError("turn_budget_exhausted")
@@ -452,8 +473,9 @@ def generate(client, prompt, material):
             changes = []
             conflicts = []
             conflict_entries = {}
-            trace["dropped_changes"] = len(output.get("changes", [])) - len(
-                review.safe_change_indices
+            trace["dropped_changes"] = (
+                trace.get("dropped_program_changes", 0)
+                + len(output.get("changes", [])) - len(review.safe_change_indices)
             )
             for i, change in enumerate(output.get("changes", [])):
                 if i in review.safe_change_indices:
