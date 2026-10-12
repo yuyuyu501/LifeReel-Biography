@@ -626,6 +626,7 @@ def test_composite_family_answer_restores_sources_before_semantic_review(
         material = json.loads(data)
         if system == companion.AUDIT_PROMPT:
             assert all(change["quote"] in answer for change in material["candidate"]["changes"])
+            assert material["deterministic_checks"]["quote_in_new_answer"] == [True] * 4
             return review(safe=[0, 1, 2, 3])
         return candidate(material, "您小时候的日常是怎样的？", [
             {"field_key": "family.members[]", "record_key": "new",
