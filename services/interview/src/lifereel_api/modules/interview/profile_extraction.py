@@ -45,6 +45,8 @@ PROMPT = """你负责纪实人生采访，只整理资料表，不生成剧本�
 复用已有id、record_key更新同一事件；多个类别用相同事件引用，不制造重复经历。
 field_key以[]结尾才是多条记录，新增用record_key=new；其他字段必须record_key=single。
 单值字段补充时保留已有直接有出处的内容；姓名和书中称呼是用户偏好，可以按要求更新。
+一段回答涉及多个资料维度时分别归入对应字段，不要把整段塞进日常生活代替困难、兴趣、影响等字段。
+学习阶段和任职阶段逐段记成records[]；选择原因、人物帮助和具体事件另有对应字段，有原话则同时整理。
 明确更正优先：修正原经历的时间、地点及对应内容，不保留旧错值作现行事实。
 指代不清时不更新，next_question只澄清必要内容。不能猜性别、年龄、年份、感受和对白。
 经历value用对象，可含title,time_raw,time_precision,place,people,what,action,result,impact,feelings。

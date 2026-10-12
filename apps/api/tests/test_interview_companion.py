@@ -691,3 +691,34 @@ def test_unrelated_negation_does_not_resolve_birth_conflict(client, enhanced, mo
     entry = next(e for e in result["profile"]["entries"] if e["field_key"] == "identity.birth_time")
     assert entry["certainty"] == "disputed"
     assert [item["value"] for item in entry["value"]["alternatives"]] == ["1970年", "1971年"]
+
+
+@pytest.mark.parametrize("disputed,sol_timeout", [(0, False), (2, False), (2, True)])
+def test_review_escalation_uses_conflicts_and_survives_optional_sol_timeout(
+    enhanced, monkeypatch, disputed, sol_timeout,
+):
+    material = {
+        "source_ids": ["current:1"],
+        "new_answer": "1977到1983读小学，1983到1986读中学，1986到1989学手艺。",
+        "current_entries": [{"id": str(i), "certainty": "disputed"} for i in range(disputed)],
+        "recent_questions": [], "recent_dialogue": [], "state": {},
+    }
+    seen = []
+
+    def provider(self, system, data):
+        return candidate(json.loads(data), "师傅怎么教您修东西？")
+
+    def audit(output, material, *, escalate=False):
+        seen.append(escalate)
+        if escalate and sol_timeout:
+            raise httpx.ReadTimeout("synthetic optional-review timeout")
+        return companion.Review.model_validate(review())
+
+    monkeypatch.setattr(OpenAICompatibleClient, "chat_json", provider)
+    monkeypatch.setattr(companion, "_audit", audit)
+    output, trace = companion.generate(OpenAICompatibleClient.for_task("interview"), "", material)
+    assert trace["verdict"] == "pass" and "师傅" in output["next_question"]
+    assert seen == ([True, False] if sol_timeout else [bool(disputed)])
+    if sol_timeout:
+        assert trace["escalation_failure"]["error_code"] == "ReadTimeout"
+        assert trace["review_model"] == enhanced.interview_llm_model

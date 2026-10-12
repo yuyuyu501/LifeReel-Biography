@@ -343,6 +343,7 @@ def generate(client, prompt, material):
                 ).model_dump(mode="json")
             else:
                 raise ValueError("turn_budget_exhausted")
+        semantic_rewrite = False
         for attempt in range(2):
             repaired = ground_quotes(output, material["new_answer"])
             if repaired:
@@ -354,15 +355,33 @@ def generate(client, prompt, material):
             if time.monotonic() - started >= settings.interview_turn_budget_seconds - 5:
                 raise ValueError("turn_budget_exhausted")
             disputed = sum(e["certainty"] == "disputed" for e in material["current_entries"])
-            years = set(re.findall(r"(?:18|19|20)\d{2}", material["new_answer"]))
             escalate = settings.interview_review_enabled and (
-                disputed >= 2 or len(years) >= 4 or attempt == 1
+                disputed >= 2 or (attempt == 1 and semantic_rewrite)
             )
             trace["review_model"] = settings.model_for(
                 "interview_review" if escalate else "interview"
             )
-            review = _audit(output, material, escalate=escalate)
+            try:
+                review = _audit(output, material, escalate=escalate)
+            except (httpx.RequestError, ApiError) as exc:
+                if (
+                    not escalate
+                    or time.monotonic() - started >= settings.interview_turn_budget_seconds - 10
+                ):
+                    raise
+                # Use a different reviewer once; never retry the uncertain Sol invocation.
+                trace["escalation_failure"] = {"error_code": type(exc).__name__}
+                trace["review_model"] = settings.model_for("interview")
+                review = _audit(output, material, escalate=False)
             if issues or review.verdict == "rewrite":
+                semantic_rewrite = review.verdict == "rewrite" or bool(
+                    set(issues) & {
+                        "relative_identity_not_subject", "unsupported_personal_presupposition",
+                        "unsupported_personal_age", "unsupported_reply_year",
+                        "unsupported_memory_year",
+                        "unsupported_memory_gender", "pretended_search",
+                    }
+                )
                 if (
                     attempt == 0
                     and time.monotonic() - started < settings.interview_turn_budget_seconds - 20
