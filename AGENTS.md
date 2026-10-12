@@ -11,7 +11,7 @@ workflow:
   local_change: 1
   test: 1
   git_sync: 1
-  server_update: 1
+  server_update: 0
 ```
 
 - `local_change: 1`: make approved code or configuration changes in the local
@@ -19,9 +19,10 @@ workflow:
 - `test: 1`: run the relevant checks before committing.
 - `git_sync: 1`: after validation, review, commit, push to `origin`, and verify
   the remote commit.
-- `server_update: 1`: after validation and GitHub synchronization, update the
-  production server to the exact pushed commit for every applicable code or
-  configuration change.
+- `server_update: 0`: stop after local validation and GitHub synchronization.
+  Server Git synchronization and deployment are paused while the Alibaba Cloud
+  server subscription is expired. Resume only after the user explicitly asks
+  following renewal.
 
 ## Repository commands
 
@@ -69,7 +70,9 @@ for routine tests.
 - Do not commit secrets, `.env` files, personal media, or runtime data.
 - `git_sync: 1` means GitHub synchronization; it does not mean that the
   server has been updated.
-- `server_update: 1` is the current default. Follow the global production
+- `server_update: 0` is the current default. Do not connect to the production
+  server for synchronization or deployment until the user explicitly resumes
+  server updates after renewal. When resumed, follow the global production
   checks, back up the database and environment, fetch the exact pushed commit,
   run migrations, verify containers and health endpoints, and report rollback
-  information after every applicable release.
+  information.
