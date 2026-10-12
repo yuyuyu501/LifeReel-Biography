@@ -283,7 +283,10 @@ def program_issues(output, material, *, invalid_changes=None):
         ]
         if planning.repeated(reply, history):
             issues.append("repeated_question")
-        known = material["new_answer"] + json.dumps(material["current_entries"], ensure_ascii=False)
+        known = (
+            material["new_answer"] + json.dumps(material["current_entries"], ensure_ascii=False)
+            + "\n".join(r["answer"] for r in material["recent_dialogue"])
+        )
         for age in re.findall(r"\d{1,3}岁", reply):
             if age not in known:
                 issues.append("unsupported_personal_age")
@@ -520,10 +523,25 @@ def generate(client, prompt, material):
                         )
                     ).model_dump(mode="json")
                     continue
-                raise ValueError("review_rejected")
+                if review.safe_change_indices and not invalid_changes:
+                    output["next_question"] = "这段已按您的原话整理。您想接着讲哪段经历？"
+                    output["decision"] = {
+                        **safe_output["decision"], "question_goal": "由讲述者选择下一段经历",
+                    }
+                    _, remaining = program_issues(output, material)
+                    if not remaining:
+                        trace["reply_fallback"] = True
+                        trace["review_issues"] = review.issues
+                        review.verdict = "clarify"
+                    else:
+                        raise ValueError("review_rejected")
+                else:
+                    raise ValueError("review_rejected")
             if review.verdict != "pass":
-                safe_output["next_question"] = fallback(
-                    "pause" if review.verdict == "pause" else "clarify"
+                safe_output["next_question"] = (
+                    output["next_question"] if trace.get("reply_fallback") else fallback(
+                        "pause" if review.verdict == "pause" else "clarify"
+                    )
                 )
                 safe_output["decision"]["action"] = (
                     "pause" if review.verdict == "pause" else "clarify"

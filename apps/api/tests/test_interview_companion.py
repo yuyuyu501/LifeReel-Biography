@@ -917,3 +917,34 @@ def test_review_schema_repair_keeps_subset_validation(client, enhanced, monkeypa
     monkeypatch.setattr(OpenAICompatibleClient, "chat_json", provider)
     result = run_profile(profile, "我喜欢电路。")
     assert calls == 2 and result["audit"]["verdict"] == "pass"
+
+
+def test_reply_year_can_use_prior_user_answer_but_not_ai_question(enhanced):
+    material = {"new_answer": "2002年下岗。", "source_ids": ["current:1"],
+                "current_entries": [], "recent_questions": [],
+                "recent_dialogue": [{
+                    "question": "您1996年有孩子吗？", "answer": "女儿1997年出生。",
+                }]}
+    output = candidate(material, "女儿1997年出生后，生活有什么变化？")
+    assert companion.program_issues(output, material)[1] == []
+    output["next_question"] = "您1996年有孩子时生活如何？"
+    assert "unsupported_reply_year" in companion.program_issues(output, material)[1]
+
+
+def test_rejected_reply_after_rewrite_preserves_only_audited_facts(
+    client, enhanced, monkeypatch,
+):
+    profile, _ = setup(client)
+
+    def provider(self, system, data):
+        if system == companion.AUDIT_PROMPT:
+            return {**review("rewrite", safe=[0]), "issues": ["回复包含两件事"]}
+        return candidate(json.loads(data), "师傅怎么教您，后来如何使用这些方法？", [
+            {"field_key": "learning.interests", "value": "电路", "quote": "我喜欢电路。"},
+        ])
+
+    monkeypatch.setattr(OpenAICompatibleClient, "chat_json", provider)
+    result = run_profile(profile, "我喜欢电路。")
+    assert result["audit"]["verdict"] == "clarify"
+    assert result["audit"]["reply_fallback"]
+    assert any(e["value"] == "电路" for e in result["profile"]["entries"])
