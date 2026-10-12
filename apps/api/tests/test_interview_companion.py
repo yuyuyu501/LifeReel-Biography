@@ -222,6 +222,48 @@ def test_departure_resolution_requires_same_relative_year_and_confirmed_meaning(
     assert not companion.departure_resolved(material)
 
 
+def test_unuploaded_physical_photo_cannot_create_asset_or_caption(client, enhanced, monkeypatch):
+    profile, _ = setup(client)
+
+    def provider(self, system, data):
+        material = json.loads(data)
+        if system == companion.AUDIT_PROMPT:
+            return review(safe=list(range(len(material["candidate"]["changes"]))))
+        return candidate(material, "您想先讲哪段经历？", [
+            {"field_key": key, "record_key": "new" if key.endswith("[]") else "single",
+             "value": value, "quote": "1995年婚礼纸质合照还没上传。"}
+            for key, value in [
+                ("materials.assets[]", {"description": "1995年婚礼照片", "asset_id": str(uuid4())}),
+                ("materials.captions", "1995年婚礼合照"),
+                ("legacy.open_threads", "待提供1995年婚礼纸质合照"),
+            ]
+        ])
+
+    monkeypatch.setattr(OpenAICompatibleClient, "chat_json", provider)
+    result = run_profile(profile, "1995年婚礼纸质合照还没上传。")
+    assert not any(e["field_key"].startswith("materials.") for e in result["profile"]["entries"])
+    assert any(e["field_key"] == "legacy.open_threads" for e in result["profile"]["entries"])
+
+
+def test_cross_field_year_from_saved_memory_still_requires_semantic_review():
+    material = {
+        "new_answer": "下岗后不再找工厂岗位，凭手艺摆摊。",
+        "current_entries": [{"field_key": "work.choices[]", "record_key": "old",
+                             "value": "2002年下岗，2003年摆摊"}],
+        "recent_dialogue": [], "recent_questions": [], "source_ids": ["test"],
+    }
+    output = candidate(material, "您想先讲哪段经历？", [{
+        "field_key": "turning.decisions[]", "record_key": "new",
+        "value": {"what": "2002年下岗，2003年摆摊"},
+        "quote": material["new_answer"],
+    }])
+    _, issues = companion.program_issues(output, material)
+    assert not issues
+    output["changes"][0]["value"]["what"] = "2004年摆摊"
+    _, issues = companion.program_issues(output, material)
+    assert "unsupported_memory_year" in issues
+
+
 @pytest.mark.parametrize(
     "text,reply",
     [

@@ -53,6 +53,8 @@ field_key以[]结尾才是多条记录，新增用record_key=new；其他字段�
 有依据才填；时间不清楚保留原话。普通字段可用字符串，重复字段新增record_key为new。
 不记得、不愿回答、不适用、暂时跳过分别用unknown,declined,not_applicable,deferred。
 用户禁止写进作品则use_scope=internal；化名用pseudonym，pseudonyms提供原称呼到化名的映射。
+materials.assets[]只能由实际上传附件建立，口述有纸质照片不等于已上传，不能新增素材条目。
+未上传材料只作为legacy.open_threads的待提供说明；materials.captions仅补充现有上传素材。
 只有用户明确提供时才能建立，不得擅自扩大原有使用范围。
 填入有来源的陈述为reported，自述不确定用uncertain，矛盾未解决为disputed。
 next_question先承接新回答，再围绕相关缺项问一个主要问题，不机械按出生顺序问。
@@ -362,7 +364,8 @@ def process(db, tenant, profile_id, text, source, request_id, workflow=None):
                     }
             allowed_years = set(re.findall(
                 r"(?:18|19|20)\d{2}",
-                text + "\n".join(r["answer"] for r in dialogue["recent_dialogue"]),
+                text + "\n".join(r["answer"] for r in dialogue["recent_dialogue"])
+                + "\n".join(profiles.value_text(e["value"]) for e in workspace["entries"]),
             ))
             if current:
                 allowed_years |= set(

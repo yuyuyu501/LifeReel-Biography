@@ -302,13 +302,21 @@ def program_issues(output, material, *, invalid_changes=None):
             ),
             None,
         )
-        if quote not in material["new_answer"] or change.get("delete"):
+        if (
+            quote not in material["new_answer"] or change.get("delete")
+            or (change["field_key"] == "materials.assets[]" and not (
+                current and current["source"].get("type") != "source_asset"
+                and change["state"] in {"unknown", "deferred"}
+            ))
+            or (change["field_key"] == "materials.captions" and not any(
+                e["field_key"] == "materials.assets[]" and e["source"].get("type") == "source_asset"
+                for e in material["current_entries"]
+            ))
+        ):
             issues.append("unsupported_memory_operation")
         allowed = material["new_answer"] + "\n".join(
             r["answer"] for r in material["recent_dialogue"]
-        ) + (
-            json.dumps(current["value"], ensure_ascii=False) if current else ""
-        )
+        ) + json.dumps(material["current_entries"], ensure_ascii=False)
         value = json.dumps(change["value"], ensure_ascii=False)
         if (
             ambiguous_departure(material["new_answer"])
