@@ -948,3 +948,24 @@ def test_rejected_reply_after_rewrite_preserves_only_audited_facts(
     assert result["audit"]["verdict"] == "clarify"
     assert result["audit"]["reply_fallback"]
     assert any(e["value"] == "电路" for e in result["profile"]["entries"])
+
+
+def test_omitted_decision_metadata_and_prior_care_years_keep_semantic_review(enhanced, monkeypatch):
+    material = {"new_answer": "每天陪母亲走十几步，后来能走到院门。",
+                "source_ids": ["current:1"], "current_entries": [], "recent_questions": [],
+                "recent_dialogue": [{"question": "何时照护？", "answer": "2012到2016照护母亲。"}]}
+    audits = []
+
+    def provider(self, system, data):
+        if system == companion.AUDIT_PROMPT:
+            audits.append(json.loads(data)["candidate"])
+            return review(safe=[0])
+        return {"changes": [{"field_key": "care.events[]", "record_key": "new",
+                             "value": {"time_raw": "2012到2016年", "what": "陪母亲康复走路"},
+                             "quote": "每天陪母亲走十几步，后来能走到院门。"}],
+                "next_question": "这段经历对生活有什么影响？"}
+
+    monkeypatch.setattr(OpenAICompatibleClient, "chat_json", provider)
+    output, trace = companion.generate(OpenAICompatibleClient.for_task("interview"), "", material)
+    assert trace["verdict"] == "pass" and trace["decision_defaults"] == 1
+    assert audits and output["changes"][0]["value"]["time_raw"] == "2012到2016年"

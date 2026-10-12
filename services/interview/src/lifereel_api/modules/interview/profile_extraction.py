@@ -360,7 +360,10 @@ def process(db, tenant, profile_id, text, source, request_id, workflow=None):
                         k: v.replace(old[1], new[1]) if isinstance(v, str) else v
                         for k, v in change.value.items()
                     }
-            allowed_years = set(re.findall(r"(?:18|19|20)\d{2}", text))
+            allowed_years = set(re.findall(
+                r"(?:18|19|20)\d{2}",
+                text + "\n".join(r["answer"] for r in dialogue["recent_dialogue"]),
+            ))
             if current:
                 allowed_years |= set(
                     re.findall(r"(?:18|19|20)\d{2}", profiles.value_text(current["value"]))

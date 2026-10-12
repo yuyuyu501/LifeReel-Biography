@@ -253,7 +253,9 @@ def program_issues(output, material, *, invalid_changes=None):
         )
         if quote not in material["new_answer"] or change.get("delete"):
             issues.append("unsupported_memory_operation")
-        allowed = material["new_answer"] + (
+        allowed = material["new_answer"] + "\n".join(
+            r["answer"] for r in material["recent_dialogue"]
+        ) + (
             json.dumps(current["value"], ensure_ascii=False) if current else ""
         )
         value = json.dumps(change["value"], ensure_ascii=False)
@@ -273,7 +275,7 @@ def program_issues(output, material, *, invalid_changes=None):
         if invalid_changes is not None and len(issues) > issue_start:
             invalid_changes[index] = issues[issue_start:]
     reply = output.get("next_question", "")
-    if not isinstance(reply, str) or not 1 <= len(reply) <= 800:
+    if not isinstance(reply, str) or not 5 <= len(reply) <= 800:
         issues.append("reply_length")
     elif len(re.findall(r"[?？]", reply)) > 1:
         issues.append("multiple_questions")
@@ -403,10 +405,19 @@ def generate(client, prompt, material):
         },
     }
 
+    def validate_extraction(raw):
+        extracted = Extraction.model_validate(raw)
+        if extracted.decision is None:
+            extracted.decision = Decision.model_validate({
+                **safe_output["decision"], "question_goal": "围绕讲述者原话继续采访",
+            })
+            trace["decision_defaults"] = trace.get("decision_defaults", 0) + 1
+        return extracted.model_dump(mode="json")
+
     def extract(input_material):
         raw = client.chat_json(prompt + GUIDANCE, json.dumps(input_material, ensure_ascii=False))
         try:
-            return Extraction.model_validate(raw).model_dump(mode="json")
+            return validate_extraction(raw)
         except ValidationError as exc:
             if (
                 trace["rewrites"]
@@ -424,9 +435,9 @@ def generate(client, prompt, material):
                 ],
                 "rewrite_instruction": "只修正JSON结构和枚举，保持原话依据，不增加事实。",
             }
-            return Extraction.model_validate(
+            return validate_extraction(
                 client.chat_json(prompt + GUIDANCE, json.dumps(repair_material, ensure_ascii=False))
-            ).model_dump(mode="json")
+            )
 
     try:
         output = extract(material)
@@ -505,7 +516,7 @@ def generate(client, prompt, material):
                     and time.monotonic() - started < settings.interview_turn_budget_seconds - 20
                 ):
                     trace["rewrites"] = 1
-                    output = Extraction.model_validate(
+                    output = validate_extraction(
                         client.chat_json(
                             prompt + GUIDANCE,
                             json.dumps(
@@ -521,7 +532,7 @@ def generate(client, prompt, material):
                                 ensure_ascii=False,
                             ),
                         )
-                    ).model_dump(mode="json")
+                    )
                     continue
                 if review.safe_change_indices and not invalid_changes:
                     output["next_question"] = "这段已按您的原话整理。您想接着讲哪段经历？"
