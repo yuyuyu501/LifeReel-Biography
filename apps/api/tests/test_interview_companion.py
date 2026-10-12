@@ -203,6 +203,25 @@ def test_repeated_boundary_acknowledgment_is_allowed():
     assert not issues
 
 
+def test_departure_resolution_requires_same_relative_year_and_confirmed_meaning():
+    material = {
+        "new_answer": "我父亲是2008年去的。",
+        "current_entries": [{
+            "certainty": "reported",
+            "value": {"what": "父亲2008年去了苏州叔叔家长住，并非去世"},
+        }],
+    }
+    assert companion.departure_resolved(material)
+    for value in ["母亲2008年去了苏州，并非去世", "父亲2009年去苏州，并非去世",
+                  "父亲2008年去世"]:
+        material["current_entries"][0]["value"] = value
+        assert not companion.departure_resolved(material)
+    material["current_entries"][0] = {
+        "certainty": "disputed", "value": "父亲2008年去苏州，并非去世",
+    }
+    assert not companion.departure_resolved(material)
+
+
 @pytest.mark.parametrize(
     "text,reply",
     [

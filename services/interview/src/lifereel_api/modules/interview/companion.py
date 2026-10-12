@@ -169,6 +169,23 @@ def ambiguous_departure(text):
     )
 
 
+def departure_resolved(material):
+    text = material["new_answer"]
+    years = re.findall(r"\d{4}年", text)
+    relatives = re.findall(r"父亲|爸爸|母亲|妈妈|爷爷|奶奶|祖父|祖母", text)
+    for entry in material["current_entries"]:
+        if entry["certainty"] not in {"reported", "confirmed"}:
+            continue
+        value = json.dumps(entry["value"], ensure_ascii=False)
+        if (
+            any(year in value for year in years)
+            and any(relative in value for relative in relatives)
+            and re.search(r"(?:不是|并非|没有)去世", value)
+        ):
+            return True
+    return False
+
+
 def dialogue_context(db, tenant, profile_id, source, workflow):
     session = db.get(InterviewSession, workflow.session_id) if workflow else None
     if session and (session.tenant_id != tenant or session.profile_id != profile_id):
@@ -293,8 +310,11 @@ def program_issues(output, material, *, invalid_changes=None):
             json.dumps(current["value"], ensure_ascii=False) if current else ""
         )
         value = json.dumps(change["value"], ensure_ascii=False)
-        if ambiguous_departure(material["new_answer"]) and re.search(
+        if (
+            ambiguous_departure(material["new_answer"])
+            and not departure_resolved(material) and re.search(
             r"death|死亡|去世|过世|离世|亡故|病故", value, re.I,
+            )
         ):
             issues.append("unsupported_death_interpretation")
         if set(re.findall(r"(?:18|19|20)\d{2}", value)) - set(
@@ -456,7 +476,9 @@ def generate(client, prompt, material):
             "question_goal": "保留已讲事实并尊重用户边界",
             "boundary_quote": boundary_quote(material["new_answer"], requested_boundary),
         })
-    departure_unclear = ambiguous_departure(material["new_answer"])
+    departure_unclear = (
+        ambiguous_departure(material["new_answer"]) and not departure_resolved(material)
+    )
     if departure_unclear and not requested_boundary:
         safe_output["next_question"] = DEPARTURE_QUESTION
         safe_output["decision"]["question_goal"] = "澄清去的所指，不推断死亡"
