@@ -264,6 +264,42 @@ def test_cross_field_year_from_saved_memory_still_requires_semantic_review():
     assert "unsupported_memory_year" in issues
 
 
+def test_long_profile_retains_single_field_context_and_defers_unuploaded_description(
+    client, enhanced, monkeypatch,
+):
+    profile, _ = setup(client)
+    with SessionLocal() as db:
+        profile = profile_service.patch(db, enhanced.default_tenant_id, UUID(profile["id"]),
+                                        ProfilePatch.model_validate({
+            "expected_version": profile["version_number"], "request_id": str(uuid4()),
+            "changes": [
+                {"field_key": "legacy.events[]", "record_key": f"scene-{index}",
+                 "value": {"title": f"修理故事{index}", "what": "帮邻居修理"}}
+                for index in range(45)
+            ] + [
+                {"field_key": "care.messages", "value": "对女儿说不必走父亲的道路"},
+                {"field_key": "materials.assets[]", "record_key": "paper-photo",
+                 "value": {"description": "1995年婚礼纸质合照，未上传"}},
+            ],
+        }), source={"type": "interview_round", "id": "old-answer", "quote": "旧讲述"})
+
+    def provider(self, system, data):
+        material = json.loads(data)
+        if system == companion.AUDIT_PROMPT:
+            return review()
+        assert any(e["field_key"] == "care.messages" for e in material["current_entries"])
+        assert len(material["current_entries"]) > 40
+        return candidate(material, "您想接着讲哪段经历？")
+
+    monkeypatch.setattr(OpenAICompatibleClient, "chat_json", provider)
+    result = run_profile(profile, "对妹妹说，谢谢轮流照顾母亲。")
+    photo = next(e for e in result["profile"]["entries"] if e["record_key"] == "paper-photo")
+    assert photo["state"] == "deferred" and photo["use_scope"] == "internal"
+    with SessionLocal() as db:
+        history = profile_service.history(db, enhanced.default_tenant_id, UUID(profile["id"]))
+        assert any(rev["actor"] == "material_validation" for rev in history)
+
+
 @pytest.mark.parametrize(
     "text,reply",
     [

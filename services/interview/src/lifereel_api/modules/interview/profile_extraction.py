@@ -164,6 +164,22 @@ def process(db, tenant, profile_id, text, source, request_id, workflow=None):
     workspace = profiles.read(db, tenant, profile_id)
     settings = get_settings()
     session, dialogue = companion.dialogue_context(db, tenant, profile_id, source, workflow)
+    unuploaded = [
+        EntryChange(
+            id=e["id"], field_key=e["field_key"], record_key=e["record_key"],
+            value=e["value"], state="deferred", certainty=e["certainty"], use_scope="internal",
+        )
+        for e in workspace["entries"]
+        if e["field_key"] == "materials.assets[]" and e["state"] == "filled"
+        and e["source"].get("type") == "interview_round"
+        and isinstance(e["value"], dict) and not e["value"].get("asset_id")
+    ]
+    if unuploaded:
+        # Earlier interview extraction could mark physical descriptions as uploaded assets.
+        workspace = profiles.patch(db, tenant, profile_id, ProfilePatch(
+            expected_version=workspace["version_number"],
+            request_id=uuid5(request_id, "unuploaded-materials"), changes=unuploaded,
+        ), actor="material_validation", source={"type": "material_validation"})
     prior = (
         db.query(LifeProfileRevision)
         .filter_by(tenant_id=tenant, profile_id=profile_id, request_id=request_id)
@@ -238,8 +254,11 @@ def process(db, tenant, profile_id, text, source, request_id, workflow=None):
                 for term in re.findall(r"[\u4e00-\u9fff]{2,6}", text)
             )
 
-        candidates = sorted(workspace["entries"], key=relevance, reverse=True)
-        for entry in candidates[:40]:
+        candidates = sorted(
+            workspace["entries"],
+            key=lambda e: (not e["field_key"].endswith("[]"), relevance(e)), reverse=True,
+        )
+        for entry in candidates[:100]:
             value = entry["value"]
             if isinstance(value, str):
                 value = value[:1500]
@@ -247,7 +266,12 @@ def process(db, tenant, profile_id, text, source, request_id, workflow=None):
                 value = {k: v[:1500] if isinstance(v, str) else v for k, v in value.items()}
             context_entries.append(
                 {
-                    **entry,
+                    **{k: entry[k] for k in (
+                        "id", "field_key", "record_key", "state", "certainty", "use_scope",
+                        "version_number", "pseudonyms",
+                    )},
+                    "source": {**entry["source"],
+                               "quote": entry["source"].get("quote", "")[:500]},
                     "value": value,
                     "source_id": f"entry:{entry['id']}:v{entry['version_number']}",
                 }
