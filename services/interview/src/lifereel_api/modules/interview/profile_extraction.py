@@ -389,6 +389,14 @@ def process(db, tenant, profile_id, text, source, request_id, workflow=None):
                     item.quote,
                 )
             )
+            if current and not correction:
+                old = re.search(r"不是\s*(\d{4})年?", text)
+                new = re.search(r"(?:应该是|改成|更正为|(?<!不)是)\s*(\d{4})年?", text)
+                correction = bool(
+                    old and new
+                    and old[1] in profiles.value_text(current["value"])
+                    and new[1] in profiles.value_text(change.value)
+                )
             conflict = index in audit.get("conflict_indices", [])
             if conflict and not current:
                 # Unresolved candidates cannot become usable memories without the other side.

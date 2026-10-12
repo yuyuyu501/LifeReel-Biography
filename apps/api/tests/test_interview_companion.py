@@ -822,3 +822,51 @@ def test_invalid_change_after_rewrite_cannot_erase_independently_audited_facts(
     assert len(audits[-1]["changes"]) == 1
     assert any(e["value"] == "电路" for e in result["profile"]["entries"])
     assert not any(e["field_key"] == "work.events[]" for e in result["profile"]["entries"])
+
+
+def test_unused_review_metadata_cannot_authorize_unsafe_changes(client, enhanced, monkeypatch):
+    profile, _ = setup(client)
+
+    def provider(self, system, data):
+        if system == companion.AUDIT_PROMPT:
+            return {**review(), "conflict_change_ids": [], "extra_safe_indices": [0]}
+        return candidate(json.loads(data), "您想继续说哪段生活？", [
+            {"field_key": "turning.hardships[]", "record_key": "new",
+             "value": {"what": "创业失败所以欠债"}, "quote": "我欠过债。"},
+        ])
+
+    monkeypatch.setattr(OpenAICompatibleClient, "chat_json", provider)
+    result = run_profile(profile, "我欠过债。")
+    assert result["audit"]["verdict"] == "pass"
+    assert result["audit"]["dropped_changes"] == 1
+    assert not any(e["field_key"] == "turning.hardships[]" for e in result["profile"]["entries"])
+
+
+def test_targeted_date_correction_applies_to_adjacent_job_evidence(
+    client, enhanced, monkeypatch,
+):
+    profile, _ = setup(client)
+    profile = client.patch(f"/v1/life-profiles/{profile['id']}", json={
+        "expected_version": profile["version_number"],
+        "changes": [{"field_key": "work.records[]", "record_key": "factory-job",
+                     "value": {"title": "家电厂维修工", "time_raw": "1992到2001年"}}],
+    }).json()
+
+    def provider(self, system, data):
+        if system == companion.AUDIT_PROMPT:
+            return {**review(safe=[0]), "conflict_change_ids": {}}
+        return candidate(json.loads(data), "您和爱人是怎么认识的？", [
+            {"field_key": "work.records[]", "record_key": "factory-job",
+             "value": {"title": "家电厂维修工", "time_raw": "1992到2002年"},
+             "quote": "家电厂那段工作是1992到2002年。"},
+        ])
+
+    monkeypatch.setattr(OpenAICompatibleClient, "chat_json", provider)
+    result = run_profile(
+        profile, "刚才记错了，下岗不是2001年，应该是2002年。家电厂那段工作是1992到2002年。"
+    )
+    entries = [e for e in result["profile"]["entries"] if e["field_key"] == "work.records[]"]
+    assert len(entries) == 1
+    assert entries[0]["certainty"] == "reported"
+    assert entries[0]["value"]["time_raw"] == "1992到2002年"
+    assert result["decision"]["action"] != "clarify"

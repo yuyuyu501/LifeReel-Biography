@@ -32,7 +32,7 @@ class Decision(BaseModel):
 
 
 class Review(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="ignore")
     verdict: Literal["pass", "rewrite", "clarify", "pause"]
     safe_change_indices: list[ChangeIndex] = Field(max_length=40)
     conflict_change_indices: list[ChangeIndex] = Field(default_factory=list, max_length=40)
