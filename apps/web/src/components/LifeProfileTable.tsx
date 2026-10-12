@@ -4,7 +4,6 @@ import type {
   ProfileField,
   ProfileChange,
   ProfileState,
-  ProfileValue,
 } from "@lifereel/contracts";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -83,19 +82,37 @@ const sectionIcons: Record<string, LucideIcon> = {
   K: MessagesSquare,
   L: Files,
 };
-function display(value: ProfileValue): string {
+function display(value: unknown): string {
+  if (value == null) return "";
   if (typeof value === "string") return value;
-  if (Array.isArray(value)) return value.map(String).join("、");
+  if (Array.isArray(value))
+    return value.map(display).filter(Boolean).join("、");
+  if (typeof value !== "object") return String(value);
   const labels: Record<string, string> = Object.fromEntries(eventFields);
   return Object.entries(value)
     .filter(
       ([key]) =>
         !["asset_id", "kind", "event_id", "source_asset_id"].includes(key),
     )
-    .map(
-      ([key, v]) =>
-        `${labels[key] || ({ name: "名称", relationship: "关系", role: "角色", institution: "机构", description: "补充说明", sections: "记录范围", result: "结果" } as Record<string, string>)[key] || "补充信息"}：${Array.isArray(v) ? v.join("、") : String(v)}`,
-    )
+    .map(([key, v]) => {
+      const content = display(v);
+      const label =
+        labels[key] ||
+        (
+          {
+            name: "名称",
+            relationship: "关系",
+            role: "角色",
+            institution: "机构",
+            description: "补充说明",
+            sections: "记录范围",
+            result: "结果",
+          } as Record<string, string>
+        )[key] ||
+        "补充信息";
+      return content ? `${label}：${content}` : "";
+    })
+    .filter(Boolean)
     .join("\n");
 }
 

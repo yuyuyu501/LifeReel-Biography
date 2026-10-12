@@ -383,3 +383,31 @@ test("long content expands and collapses without losing its source text", () => 
     "false",
   );
 });
+
+test("nested profile objects and arrays display their content without object coercion", () => {
+  table({
+    ...profile,
+    entries: [
+      entry("birth-1", "birth", "", {
+        value: [
+          {
+            place: "安徽芜湖无为乡下",
+            type: "出生地",
+            details: {
+              people: [{ name: "祖母", asset_id: "hidden-asset" }],
+              death_time: null,
+            },
+          },
+        ],
+      }),
+    ],
+  });
+  const row = screen
+    .getByText("出生时间")
+    .closest(".profile-field") as HTMLElement;
+  expect(row).toHaveTextContent("安徽芜湖无为乡下");
+  expect(row).toHaveTextContent("祖母");
+  expect(row).not.toHaveTextContent("[object Object]");
+  expect(row).not.toHaveTextContent("null");
+  expect(row).not.toHaveTextContent("hidden-asset");
+});
