@@ -522,14 +522,17 @@ def test_father_birth_year_cannot_be_saved_as_subject_identity(client, enhanced,
     assert not any(e["field_key"] == "identity.birth_year" for e in result["profile"]["entries"])
 
 
-def test_preferred_name_update_and_single_record_protocol(client, enhanced, monkeypatch):
+@pytest.mark.parametrize("record_key", ["new", "single", "a2d56808-0c49-4e60-bf06-19e870df7271"])
+def test_preferred_name_update_and_single_record_protocol(
+    client, enhanced, monkeypatch, record_key,
+):
     profile, _ = setup(client)
 
     def provider(self, system, data):
         if system == companion.AUDIT_PROMPT:
             return review(safe=[0])
         return candidate(json.loads(data), "您想从哪段经历讲起？", [{
-            "field_key": "identity.preferred_name", "record_key": "new",
+            "field_key": "identity.preferred_name", "record_key": record_key,
             "value": "明远", "quote": "书中叫我明远。",
         }])
 

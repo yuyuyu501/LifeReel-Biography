@@ -426,6 +426,11 @@ def generate(client, prompt, material):
         logger.warning("interview.grounding_fallback code=%s", type(exc).__name__)
         trace["verdict"] = "fallback"
         trace["error_code"] = type(exc).__name__
+        if isinstance(exc, ValidationError):
+            trace["validation_issues"] = [
+                {"loc": list(issue["loc"]), "type": issue["type"]}
+                for issue in exc.errors(include_input=False, include_context=False)[:8]
+            ]
         if isinstance(exc, ValueError) and str(exc) in {
             "review_unconfigured", "invalid_review_indices", "invalid_conflict_source",
             "turn_budget_exhausted", "review_rejected",

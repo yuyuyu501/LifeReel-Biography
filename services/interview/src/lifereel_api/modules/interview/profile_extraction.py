@@ -25,7 +25,7 @@ class Suggestion(EntryChange):
             isinstance(data, dict)
             and data.get("field_key") in FIELD_MAP
             and not data["field_key"].endswith("[]")
-            and data.get("record_key") == "new"
+            and data.get("record_key", "single") != "single"
         ):
             return {**data, "record_key": "single"}
         return data
