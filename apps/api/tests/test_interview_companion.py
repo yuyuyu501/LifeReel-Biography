@@ -871,3 +871,49 @@ def test_targeted_date_correction_applies_to_adjacent_job_evidence(
     assert entries[0]["certainty"] == "reported"
     assert entries[0]["value"]["time_raw"] == "1992到2002年"
     assert result["decision"]["action"] != "clarify"
+
+
+def test_date_correction_includes_omitted_linked_event_in_independent_audit(
+    client, enhanced, monkeypatch,
+):
+    profile, _ = setup(client)
+    profile = client.patch(f"/v1/life-profiles/{profile['id']}", json={
+        "expected_version": profile["version_number"],
+        "changes": [{"field_key": "work.choices[]", "record_key": "stall-choice",
+                     "value": {"title": "下岗后开摊", "what": "2001年下岗后2003年开摊"}}],
+    }).json()
+    audited = []
+
+    def provider(self, system, data):
+        material = json.loads(data)
+        if system == companion.AUDIT_PROMPT:
+            audited.extend(material["candidate"]["changes"])
+            return review(safe=[0])
+        return candidate(material, "您之后的生活有什么变化？")
+
+    monkeypatch.setattr(OpenAICompatibleClient, "chat_json", provider)
+    result = run_profile(profile, "下岗不是2001年，应该是2002年。")
+    assert audited[0]["value"]["what"] == "2002年下岗后2003年开摊"
+    entry = next(e for e in result["profile"]["entries"] if e["field_key"] == "work.choices[]")
+    assert entry["value"]["what"] == "2002年下岗后2003年开摊"
+    assert result["audit"]["linked_date_corrections"] == ["work.choices[]"]
+
+
+def test_review_schema_repair_keeps_subset_validation(client, enhanced, monkeypatch):
+    profile, _ = setup(client)
+    calls = 0
+
+    def provider(self, system, data):
+        nonlocal calls
+        if system == companion.AUDIT_PROMPT:
+            calls += 1
+            if calls == 1:
+                return review(safe=[], conflicts=[0])
+            return review(safe=[0])
+        return candidate(json.loads(data), "您的日常工作是怎样的？", [
+            {"field_key": "learning.interests", "value": "电路", "quote": "我喜欢电路。"},
+        ])
+
+    monkeypatch.setattr(OpenAICompatibleClient, "chat_json", provider)
+    result = run_profile(profile, "我喜欢电路。")
+    assert calls == 2 and result["audit"]["verdict"] == "pass"

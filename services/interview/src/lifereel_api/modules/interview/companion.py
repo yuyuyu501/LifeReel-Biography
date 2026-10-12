@@ -90,6 +90,7 @@ deterministic_checks.quote_in_new_answer是程序精确匹配结果：false条�
 不要把未知/争议信息当事实。明确更正可以保留同一事件的其他已有事实。
 姓名和书中称呼属于用户偏好，用户要求换称呼不是事实冲突；person来源的初始称呼只是种子。
 新昵称是补充，不能因为与姓名不同就标成冲突。更正必须针对该条事实的证据，不能套用全轮。
+单值字段保留旧内容后增加新信息属于补充，并非冲突；只有互相不能同时成立的事实才列入冲突。
 公开背景只由真实historical_context.sources摘录支持，不能转成用户亲历。
 查无结果不能否定记忆。没有成功检索不能声称查过。
 拒绝、停止和已保存边界优先；已回答的细节不要重问；最多一个主要问题。
@@ -193,6 +194,45 @@ def ground_quotes(output, answer):
     return repaired
 
 
+def linked_date_corrections(output, material):
+    match = re.search(
+        r"(?P<event>下岗|离职|入职|毕业|结婚|搬家)不是\s*(?P<old>\d{4})年?[^。！？!?]{0,15}?"
+        r"(?:应该是|而是|改成)\s*(?P<new>\d{4})年?",
+        material["new_answer"],
+    )
+    if not match:
+        return []
+    existing = {(c["field_key"], c["record_key"]) for c in output["changes"]}
+    added = []
+    for entry in material["current_entries"]:
+        if (entry["field_key"], entry["record_key"]) in existing:
+            continue
+        value = json.dumps(entry["value"], ensure_ascii=False)
+        if (
+            match["event"] in value and match["old"] in value
+            and entry["certainty"] in {"reported", "confirmed"}
+            and len(output["changes"]) < 40
+        ):
+            def replace_year(item):
+                if isinstance(item, str):
+                    return re.sub(rf"(?<!\d){match['old']}(?!\d)", match["new"], item)
+                if isinstance(item, list):
+                    return [replace_year(v) for v in item]
+                if isinstance(item, dict):
+                    return {k: replace_year(v) for k, v in item.items()}
+                return item
+
+            output["changes"].append({
+                **{k: entry[k] for k in (
+                    "id", "field_key", "record_key", "state", "use_scope", "pseudonyms",
+                )},
+                "certainty": "reported", "value": replace_year(entry["value"]),
+                "quote": match[0], "delete": False,
+            })
+            added.append(entry["field_key"])
+    return added
+
+
 def program_issues(output, material, *, invalid_changes=None):
     decision = Decision.model_validate(output.get("decision"))
     issues = []
@@ -273,12 +313,12 @@ def program_issues(output, material, *, invalid_changes=None):
     return decision, issues
 
 
-def _audit(output, material, *, escalate=False):
+def _audit(output, material, *, escalate=False, repair=True):
     task = "interview_review" if escalate else "interview"
     client = OpenAICompatibleClient.for_task(task)
     if not client.capabilities().configured:
         raise ValueError("review_unconfigured")
-    result = Review.model_validate(
+    raw = (
         client.chat_json(
             AUDIT_PROMPT,
             json.dumps(
@@ -291,7 +331,13 @@ def _audit(output, material, *, escalate=False):
                         )
                         if key in material
                     },
-                    "candidate": output,
+                    "candidate": {
+                        **output,
+                        "changes": [
+                            {"index": index, **change}
+                            for index, change in enumerate(output.get("changes", []))
+                        ],
+                    },
                     "deterministic_checks": {
                         "quote_in_new_answer": [
                             change["quote"] in material["new_answer"]
@@ -303,13 +349,23 @@ def _audit(output, material, *, escalate=False):
             ),
         )
     )
+    try:
+        result = Review.model_validate(raw)
+    except ValidationError:
+        if repair:
+            return _audit(output, material, escalate=escalate, repair=False)
+        raise
     indices = set(range(len(output.get("changes", []))))
     safe, conflicts = set(result.safe_change_indices), set(result.conflict_change_indices)
     if not safe <= indices or not conflicts <= safe:
+        if repair:
+            return _audit(output, material, escalate=escalate, repair=False)
         raise ValueError("invalid_review_indices")
     entry_ids = {e["id"] for e in material["current_entries"]}
     for index, entry_id in result.conflict_entry_ids.items():
         if not index.isdigit() or int(index) not in conflicts or entry_id not in entry_ids:
+            if repair:
+                return _audit(output, material, escalate=escalate, repair=False)
             raise ValueError("invalid_conflict_source")
     for index in list(result.conflict_change_indices):
         change = output["changes"][index]
@@ -386,6 +442,9 @@ def generate(client, prompt, material):
                 raise ValueError("turn_budget_exhausted")
         semantic_rewrite = False
         for attempt in range(2):
+            linked = linked_date_corrections(output, material)
+            if linked:
+                trace["linked_date_corrections"] = linked
             repaired = ground_quotes(output, material["new_answer"])
             if repaired:
                 trace.setdefault("quote_repairs", []).append(
