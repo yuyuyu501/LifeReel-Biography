@@ -267,7 +267,10 @@ def process(db, tenant, profile_id, text, source, request_id, workflow=None):
         )
         for entry in candidates[:100]:
             value = entry["value"]
-            if isinstance(value, str):
+            if (
+                isinstance(value, str)
+                and entry["field_key"] not in companion.RETAIN_NARRATIVE_FIELDS
+            ):
                 value = value[:1500]
             elif isinstance(value, dict):
                 value = {k: v[:1500] if isinstance(v, str) else v for k, v in value.items()}

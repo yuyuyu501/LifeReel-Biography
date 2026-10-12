@@ -1249,3 +1249,63 @@ def test_repeated_actual_question_is_still_rejected():
     assert "repeated_question" in companion.program_issues(
         candidate(material, "后来生活有什么变化？"), material,
     )[1]
+
+
+def test_additive_daily_details_preserve_previous_fact_before_review(client, enhanced, monkeypatch):
+    profile, _ = setup(client)
+    audits = []
+
+    def provider(self, system, data):
+        material = json.loads(data)
+        if system == companion.AUDIT_PROMPT:
+            audits.append(material["candidate"]["changes"][0]["value"])
+            return review(safe=[0])
+        return candidate(material, "最近有什么新的爱好？", [
+            {"field_key": "present.daily_life", "value": material["new_answer"],
+             "quote": material["new_answer"]},
+        ])
+
+    monkeypatch.setattr(OpenAICompatibleClient, "chat_json", provider)
+    run_profile(profile, "每周开店三天。")
+    result = run_profile(profile, "早上买菜，晚上散步。")
+    entry = next(e for e in result["profile"]["entries"] if e["field_key"] == "present.daily_life")
+    assert "每周开店三天" in entry["value"] and "晚上散步" in entry["value"]
+    assert audits[-1] == entry["value"]
+    assert entry["source"]["quote"] == "早上买菜，晚上散步。"
+
+
+@pytest.mark.parametrize("answer,expected", [
+    ("更正，开店安排应该是每周五天。", "每周五天"),
+    ("记错了，应该每周五天。", "每周五天"),
+])
+def test_explicit_narrative_correction_can_replace_old_fact(answer, expected):
+    material = {"current_entries": [{"field_key": "present.daily_life", "record_key": "single",
+                                      "state": "filled", "certainty": "reported",
+                                      "value": "每周开店三天"}]}
+    output = {"changes": [{"field_key": "present.daily_life", "state": "filled",
+                            "value": expected, "quote": answer}]}
+    assert companion.retain_narrative_context(output, material) == []
+    assert output["changes"][0]["value"] == expected
+
+
+def test_narrative_merge_still_requires_conflict_review(enhanced, monkeypatch):
+    material = {"new_answer": "每周开店五天。", "source_ids": ["current:1"],
+                "recent_questions": [], "recent_dialogue": [],
+                "current_entries": [{"id": "prior", "field_key": "present.daily_life",
+                                     "record_key": "single", "state": "filled",
+                                     "certainty": "reported", "value": "每周开店三天"}]}
+
+    def provider(self, system, data):
+        if system == companion.AUDIT_PROMPT:
+            changes = json.loads(data)["candidate"]["changes"]
+            assert "三天" in changes[0]["value"] and "五天" in changes[0]["value"]
+            return review("clarify", safe=[0], conflicts=[0], links={"0": "prior"})
+        return candidate(json.loads(data), "您想记录哪个安排？", [
+            {"field_key": "present.daily_life", "value": "每周开店五天。",
+             "quote": "每周开店五天。"},
+        ])
+
+    monkeypatch.setattr(OpenAICompatibleClient, "chat_json", provider)
+    output, audit = companion.generate(OpenAICompatibleClient.for_task("interview"), "", material)
+    assert audit["verdict"] == "clarify" and audit["conflict_indices"] == [0]
+    assert audit["conflict_entry_ids"] == {"0": "prior"}

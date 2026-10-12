@@ -21,6 +21,15 @@ Action = Literal["deepen_scene", "deepen_meaning", "clarify", "transition", "pau
 ChangeIndex = Annotated[int, Field(strict=True, ge=0)]
 DEPARTURE_QUESTION = "您说的“去的”，是指去了某个地方，还是去世了？"
 FACTS_SAVED_REPLY = "这段补充已按原话整理，可以继续讲您想留下的经历。"
+RETAIN_NARRATIVE_FIELDS = frozenset({
+    "family.origin", "family.home_environment", "family.livelihood", "family.traditions",
+    "childhood.daily_life", "childhood.interests", "childhood.impressions",
+    "learning.interests", "learning.impact", "work.responsibilities", "work.meaning",
+    "relationships.shared_life", "relationships.reflections", "care.life_changes", "care.messages",
+    "turning.support", "turning.impact", "values.beliefs", "values.changes",
+    "present.daily_life", "present.interests", "present.relationships", "present.wishes",
+    "legacy.messages", "legacy.lessons",
+})
 
 
 class Decision(BaseModel):
@@ -101,6 +110,8 @@ candidate.changes每条的quote_verified和quote紧邻待审value，true代表�
 姓名和书中称呼属于用户偏好，用户要求换称呼不是事实冲突；person来源的初始称呼只是种子。
 新昵称是补充，不能因为与姓名不同就标成冲突。更正必须针对该条事实的证据，不能套用全轮。
 单值字段保留旧内容后增加新信息属于补充，并非冲突；只有互相不能同时成立的事实才列入冲突。
+单值叙述可能由程序保留已有内容；旧内容依据current_entries，新内容依据本轮quote。
+合并不代表消除了矛盾；如果新旧事实不能同时成立，仍须标记冲突并请用户澄清。
 公开背景只由真实historical_context.sources摘录支持，不能转成用户亲历。
 查无结果不能否定记忆。没有成功检索不能声称查过。
 拒绝、停止和已保存边界优先；已回答的细节不要重问；最多一个主要问题。
@@ -289,6 +300,31 @@ def linked_date_corrections(output, material):
             })
             added.append(entry["field_key"])
     return added
+
+
+def retain_narrative_context(output, material):
+    retained = []
+    for index, change in enumerate(output["changes"]):
+        if change["field_key"] not in RETAIN_NARRATIVE_FIELDS or change["state"] != "filled":
+            continue
+        current = next((entry for entry in material["current_entries"] if (
+            entry["field_key"] == change["field_key"] and entry["record_key"] == "single"
+            and entry["state"] == "filled" and entry["certainty"] in {"reported", "confirmed"}
+        )), None)
+        if (
+            not current or not isinstance(current["value"], str)
+            or not isinstance(change["value"], str)
+            or re.search(r"更正|记错|改成|修正|修改|不是.{1,30}(?:而是|应该是)", change["quote"])
+        ):
+            continue
+        old, new = current["value"], change["value"]
+        if old and old not in new:
+            merged = old if new in old else old + "\n" + new
+            if len(json.dumps(merged, ensure_ascii=False)) > 12000:
+                raise ValueError("profile_value_too_large")
+            change["value"] = merged
+            retained.append(index)
+    return retained
 
 
 def program_issues(output, material, *, invalid_changes=None):
@@ -584,6 +620,11 @@ def generate(client, prompt, material):
             linked = linked_date_corrections(output, material)
             if linked:
                 trace["linked_date_corrections"] = linked
+            retained = retain_narrative_context(output, material)
+            if retained:
+                trace.setdefault("retained_narrative_context", []).append(
+                    {"attempt": attempt, "indices": retained}
+                )
             repaired = ground_quotes(output, material["new_answer"])
             if repaired:
                 trace.setdefault("quote_repairs", []).append(
