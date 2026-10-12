@@ -120,6 +120,75 @@ def test_boundary_precedes_providers_and_persists(client, enhanced, monkeypatch)
 
 
 @pytest.mark.parametrize(
+    "answer,action,field,value",
+    [
+        ("1998年我欠过债。金额和原因我不想谈。后来做事更谨慎了。",
+         "transition", "turning.hardships[]", {"what": "1998年欠过债"}),
+        ("我每周开店三天。今天先不聊了。",
+         "close", "present.daily_life", "每周开店三天"),
+        ("我是1970年出生的。今天先休息一下，改天继续。",
+         "pause", "identity.birth_time", "1970年"),
+    ],
+)
+def test_mixed_boundary_keeps_audited_facts(client, enhanced, monkeypatch, answer, action,
+                                          field, value):
+    profile, session = setup(client)
+
+    def provider(self, system, data):
+        material = json.loads(data)
+        if system == companion.AUDIT_PROMPT:
+            assert material["candidate"]["decision"]["action"] == action
+            assert material["candidate"]["next_question"] == companion.fallback(action)
+            return review(safe=[0])
+        return candidate(material, "欠债的原因是什么？", [{
+            "field_key": field, "record_key": "new" if field.endswith("[]") else "single",
+            "value": value, "quote": answer.split("。")[0],
+        }])
+
+    monkeypatch.setattr(OpenAICompatibleClient, "chat_json", provider)
+    result = client.post(f"/v1/interviews/{session['id']}/turns", json={
+        "answer_text": answer, "idempotency_key": str(uuid4()),
+    })
+    from lifereel_api.modules.orchestration.service import execute_turn
+
+    with SessionLocal() as db:
+        workflow = execute_turn(db, enhanced.default_tenant_id, UUID(result.json()["id"]))
+        assert workflow.status == "completed"
+        assert workflow.next_question == companion.fallback(action)
+        assert workflow.profile_result["audit"]["boundary_reply"] == action
+        state = db.get(InterviewSession, UUID(session["id"])).interview_state
+        assert state["action"] == action and state["blocked_quotes"]
+    saved = client.get(f"/v1/life-profiles/{profile['id']}").json()
+    assert any(e["field_key"] == field and e["value"] == value for e in saved["entries"])
+
+
+def test_ambiguous_departure_requires_clarification_without_death_record(
+    client, enhanced, monkeypatch,
+):
+    profile, _ = setup(client)
+
+    def provider(self, system, data):
+        material = json.loads(data)
+        if system == companion.AUDIT_PROMPT:
+            assert material["candidate"]["next_question"] == (
+                "您说的“去的”，是指去了某个地方，还是去世了？"
+            )
+            return review(safe=list(range(len(material["candidate"]["changes"]))))
+        return candidate(material, "父亲去世后有何影响？", [{
+            "field_key": "family.members[]", "record_key": "new",
+            "value": {"name": "父亲", "death_time_raw": "2008年"},
+            "quote": "我父亲是2008年去的。",
+        }])
+
+    monkeypatch.setattr(OpenAICompatibleClient, "chat_json", provider)
+    result = run_profile(profile, "我父亲是2008年去的。")
+    assert result["decision"]["action"] == "clarify"
+    assert "去了某个地方，还是去世" in result["next_question"]
+    assert not any(e["field_key"] == "family.members[]" for e in result["profile"]["entries"])
+    assert result["audit"]["departure_clarification"]
+
+
+@pytest.mark.parametrize(
     "text,reply",
     [
         ("当时欠了不少钱。", "创业失败以后，您怎样还债？"),
@@ -377,6 +446,18 @@ def test_history_adapter_uses_real_page_not_rss_summary_and_no_private_query(mon
         "status": "insufficient_context",
         "sources": [],
     }
+
+
+def test_history_page_honors_declared_legacy_encoding(monkeypatch):
+    body = (
+        '<meta http-equiv="content-type" content="text/html;charset=GB2312">'
+        '<p>1977年恢复高考。</p>'
+    )
+    with httpx.Client(transport=httpx.MockTransport(lambda request: httpx.Response(
+        200, content=body.encode("gb2312"), headers={"content-type": "text/html"},
+    ))) as client:
+        monkeypatch.setattr(httpx, "stream", client.stream)
+        assert "1977年恢复高考" in historical_context._fetch("https://x.gov.cn/history")
 
 
 @pytest.mark.parametrize(

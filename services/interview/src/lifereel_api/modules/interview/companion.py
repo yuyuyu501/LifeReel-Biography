@@ -19,6 +19,7 @@ from lifereel_api.providers.openai_compatible import OpenAICompatibleClient
 logger = logging.getLogger(__name__)
 Action = Literal["deepen_scene", "deepen_meaning", "clarify", "transition", "pause", "close"]
 ChangeIndex = Annotated[int, Field(strict=True, ge=0)]
+DEPARTURE_QUESTION = "您说的“去的”，是指去了某个地方，还是去世了？"
 
 
 class Decision(BaseModel):
@@ -133,6 +134,36 @@ def fallback(action="clarify"):
     if action == "transition":
         return "好的，这件事先不谈。您想换一段经历，还是先休息一下？"
     return "这一段您最想让我记住的是什么？"
+
+
+def boundary_only(text):
+    clauses = [c.strip() for c in re.split(r"[，。！？,.!?\n]", text) if c.strip()]
+    return bool(clauses) and all(
+        re.fullmatch(
+            r"(?:(?:我|今天|我们|采访|这件事|这个|这段)\s*)?"
+            r"(?:(?:先|想|要|就|一直|暂时|现在|真的|还是)\s*)*"
+            r"(?:结束采访|结束了|不聊了|聊到这里|到此为止|暂停|休息一下|不说了|"
+            r"(?:不太想|不想|不愿)(?:说|聊|谈)(?:这件事|这个|这段)?|跳过|"
+            r"改天继续|下次继续|我有点累)",
+            clause,
+        )
+        for clause in clauses
+    )
+
+
+def boundary_quote(text, action):
+    return next(
+        (part.strip()[:500] for part in re.split(r"(?<=[。！？!?])|\n", text)
+         if boundary(part) == action),
+        text[:500],
+    )
+
+
+def ambiguous_departure(text):
+    return bool(
+        re.search(r"(?:\d{4}|[〇零一二三四五六七八九十]{4,6})年.{0,3}去的", text)
+        and not re.search(r"去世|过世|死亡|离世|亡故|病故", text)
+    )
 
 
 def dialogue_context(db, tenant, profile_id, source, workflow):
@@ -259,6 +290,10 @@ def program_issues(output, material, *, invalid_changes=None):
             json.dumps(current["value"], ensure_ascii=False) if current else ""
         )
         value = json.dumps(change["value"], ensure_ascii=False)
+        if ambiguous_departure(material["new_answer"]) and re.search(
+            r"death|死亡|去世|过世|离世|亡故|病故", value, re.I,
+        ):
+            issues.append("unsupported_death_interpretation")
         if set(re.findall(r"(?:18|19|20)\d{2}", value)) - set(
             re.findall(r"(?:18|19|20)\d{2}", allowed)
         ):
@@ -306,6 +341,8 @@ def program_issues(output, material, *, invalid_changes=None):
             ("坏零件", "装回"),
             ("去的", "去世"),
         ):
+            if cue == "去的" and reply == DEPARTURE_QUESTION:
+                continue
             if cue in material["new_answer"] and invented in reply and invented not in known:
                 issues.append("unsupported_personal_presupposition")
     desired = boundary(material["new_answer"])
@@ -404,6 +441,15 @@ def generate(client, prompt, material):
             "boundary_quote": "",
         },
     }
+    requested_boundary = boundary(material["new_answer"])
+    if requested_boundary:
+        safe_output["next_question"] = fallback(requested_boundary)
+        safe_output["decision"].update({
+            "action": requested_boundary,
+            "question_goal": "保留已讲事实并尊重用户边界",
+            "boundary_quote": boundary_quote(material["new_answer"], requested_boundary),
+        })
+    departure_unclear = ambiguous_departure(material["new_answer"])
 
     def validate_extraction(raw):
         extracted = Extraction.model_validate(raw)
@@ -412,6 +458,16 @@ def generate(client, prompt, material):
                 **safe_output["decision"], "question_goal": "围绕讲述者原话继续采访",
             })
             trace["decision_defaults"] = trace.get("decision_defaults", 0) + 1
+        if requested_boundary:
+            extracted.next_question = safe_output["next_question"]
+            extracted.decision = Decision.model_validate(safe_output["decision"])
+            trace["boundary_reply"] = requested_boundary
+        elif departure_unclear:
+            extracted.next_question = DEPARTURE_QUESTION
+            extracted.decision = Decision.model_validate({
+                **safe_output["decision"], "question_goal": "澄清去的所指，不推断死亡",
+            })
+            trace["departure_clarification"] = True
         return extracted.model_dump(mode="json")
 
     def extract(input_material):
@@ -476,7 +532,7 @@ def generate(client, prompt, material):
                     change for index, change in enumerate(output["changes"])
                     if index not in invalid_changes
                 ]
-                if not output["changes"]:
+                if not output["changes"] and not departure_unclear:
                     raise ValueError("review_rejected")
                 decision, issues = program_issues(output, material)
             trace["program_issues"] = issues
@@ -549,14 +605,15 @@ def generate(client, prompt, material):
                 else:
                     raise ValueError("review_rejected")
             if review.verdict != "pass":
-                safe_output["next_question"] = (
-                    output["next_question"] if trace.get("reply_fallback") else fallback(
+                if not requested_boundary:
+                    safe_output["next_question"] = (
+                        output["next_question"] if trace.get("reply_fallback") else fallback(
+                            "pause" if review.verdict == "pause" else "clarify"
+                        )
+                    )
+                    safe_output["decision"]["action"] = (
                         "pause" if review.verdict == "pause" else "clarify"
                     )
-                )
-                safe_output["decision"]["action"] = (
-                    "pause" if review.verdict == "pause" else "clarify"
-                )
                 # Stop is only allowed for an actual user boundary.
                 if review.verdict == "pause" and not boundary(material["new_answer"]):
                     safe_output["next_question"] = fallback()

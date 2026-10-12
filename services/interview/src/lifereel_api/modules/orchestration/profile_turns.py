@@ -100,7 +100,17 @@ def execute_profile_turn(db, tenant, workflow, session):
     command = planning.control(text)
     enhanced = get_settings().interview_enhancements_enabled
     action = companion.boundary(text) if enhanced else None
-    if command == "continue" and not action:
+    if action:
+        # Persist boundaries even if auditing the accompanying facts later fails.
+        session.interview_state = companion.next_state(
+            session.interview_state,
+            {"action": action, "boundary_quote": companion.boundary_quote(text, action)},
+            {"id": str(round_.id), "version": round_.answer_version},
+        )
+        db.commit()
+    if (command == "continue" and not action) or (
+        action and not companion.boundary_only(text)
+    ):
         record_stage(db, workflow, "organizing_profile")
         result = process(
             db,

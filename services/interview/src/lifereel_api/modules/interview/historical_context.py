@@ -91,8 +91,17 @@ class PageText(HTMLParser):
         super().__init__()
         self.ignored = 0
         self.parts = []
+        self.encoding = None
 
     def handle_starttag(self, tag, attrs):
+        if tag == "meta":
+            attributes = dict(attrs)
+            encoding = attributes.get("charset")
+            if not encoding:
+                match = re.search(r"charset\s*=\s*([\w-]+)", attributes.get("content", ""), re.I)
+                encoding = match[1] if match else None
+            if encoding:
+                self.encoding = encoding
         if tag in {"script", "style", "noscript"}:
             self.ignored += 1
 
@@ -140,14 +149,21 @@ def _fetch(url, *, params=None, remaining=6):
             if size > 600_000 or time.monotonic() > deadline:
                 raise ValueError("history_page_limit")
             chunks.append(chunk)
-        return b"".join(chunks).decode(response.encoding or "utf-8", "replace")
+        body = b"".join(chunks)
+        metadata = PageText()
+        metadata.feed(body[:8192].decode("ascii", "ignore"))
+        encoding = response.charset_encoding or metadata.encoding or "utf-8"
+        try:
+            return body.decode(encoding, "replace")
+        except LookupError:
+            return body.decode("utf-8", "replace")
 
 
 @lru_cache(maxsize=128)
 def _lookup(event, region, year_start, year_end, hour):
     started = time.monotonic()
     year = str(year_start) if year_start == year_end else f"{year_start}至{year_end}"
-    query = f"{region if region != '全国' else ''}{year}年{EVENTS[event][0]}"
+    query = f'"{EVENTS[event][0]}" {year}年 {region if region != "全国" else ""}'.strip()
     result = {
         "status": "no_results",
         "query": query,
@@ -159,46 +175,50 @@ def _lookup(event, region, year_start, year_end, hour):
         "limits": "公开页面摘录可能不完整；公共历史不能证明个人亲历，查无结果不能否定回忆。",
     }
     try:
-        rss = ElementTree.fromstring(
-            _fetch(
-            "https://cn.bing.com/search",
-                params={"q": query, "format": "rss", "setlang": "zh-hans"},
-            )
-        )
-        for item in rss.findall("./channel/item")[:10]:
-            url = item.findtext("link", "")
-            if not trusted_url(url):
-                continue
+        seen = set()
+        for search_query in (query, f'"{EVENTS[event][0]}"'):
             remaining = 8 - (time.monotonic() - started)
             if remaining <= 0.5:
                 break
-            try:
-                parser = PageText()
-                parser.feed(_fetch(url, remaining=remaining))
-                full_text = " ".join(parser.parts)
-                keywords = EVENTS[event][1]
-                hits = [full_text.find(k) for k in keywords if k in full_text]
-                if not hits:
+            rss = ElementTree.fromstring(_fetch(
+                "https://cn.bing.com/search",
+                params={"q": search_query, "format": "rss", "setlang": "zh-hans"},
+                remaining=remaining,
+            ))
+            for item in rss.findall("./channel/item")[:10]:
+                url = item.findtext("link", "")
+                if not trusted_url(url) or url in seen:
                     continue
-                position = min(hits)
-                excerpt = full_text[max(0, position - 300) : position + 1500]
-                # Search snippets are never used as historical evidence.
-                if not re.search(r"(?:19|20)\d{2}", excerpt):
-                    continue
-                result["sources"].append(
-                    {
+                seen.add(url)
+                remaining = 8 - (time.monotonic() - started)
+                if remaining <= 0.5:
+                    break
+                try:
+                    parser = PageText()
+                    parser.feed(_fetch(url, remaining=remaining))
+                    full_text = " ".join(parser.parts)
+                    excerpts = [
+                        full_text[max(0, hit.start() - 300):hit.start() + 1500]
+                        for keyword in EVENTS[event][1]
+                        for hit in re.finditer(re.escape(keyword), full_text)
+                    ]
+                    # Only the fetched page and the requested period support evidence.
+                    excerpt = next((part for part in excerpts if any(
+                        str(y) in part for y in range(year_start, year_end + 1)
+                    )), None)
+                    if not excerpt:
+                        continue
+                    result["sources"].append({
                         "id": f"history:{len(result['sources']) + 1}",
                         "title": item.findtext("title", "公开历史资料")[:200],
-                        "url": url,
-                        "excerpt": excerpt,
-                        "region": region,
-                        "year_start": year_start,
-                        "year_end": year_end,
-                    }
-                )
-            except (httpx.HTTPError, ValueError):
-                continue
-            if len(result["sources"]) == 2:
+                        "url": url, "excerpt": excerpt, "region": region,
+                        "year_start": year_start, "year_end": year_end,
+                    })
+                except (httpx.HTTPError, ValueError):
+                    continue
+                if len(result["sources"]) == 2:
+                    break
+            if result["sources"]:
                 break
         if result["sources"]:
             result["status"] = "found"
