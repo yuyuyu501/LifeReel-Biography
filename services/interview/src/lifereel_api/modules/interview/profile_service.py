@@ -347,6 +347,17 @@ def patch(db, tenant, profile_id, payload: ProfilePatch, *, actor="manual", sour
                     **row.source,
                     "quote": source["quotes"].get(change.field_key + ":" + change.record_key, ""),
                 }
+            if actor == "ai":
+                from lifereel_api.modules.interview import profile_updates
+
+                row.source = {**row.source, "evidence": profile_updates.evidence(
+                    before["source"] if before else {}, row.source,
+                    corrected=profile_updates.correction(row.source.get("quote", "")),
+                    retained_keys=[k for k, v in before["value"].items()
+                                   if row.value.get(k) == v]
+                    if before and isinstance(before["value"], dict) and isinstance(row.value, dict)
+                    else [],
+                )}
             row.version_number = (before["version_number"] if before else 0) + 1
             after = entry_data(row)
         changes.append({"before": before, "after": after})

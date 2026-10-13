@@ -127,10 +127,11 @@ class Settings(BaseSettings):
     interview_enhancements_enabled: bool = False
     interview_history_enabled: bool = False
     interview_review_enabled: bool = False
+    interview_advice_cooldown_turns: int = Field(default=4, ge=2, le=20)
     interview_review_llm_model: str = "gpt-6.1-sol"
     interview_review_llm_stream: bool = False
     interview_review_llm_connect_timeout_seconds: TimeoutSeconds = 4
-    interview_review_llm_read_timeout_seconds: TimeoutSeconds = 25
+    interview_review_llm_read_timeout_seconds: TimeoutSeconds = 60
     interview_review_llm_write_timeout_seconds: TimeoutSeconds = 5
     interview_review_llm_pool_timeout_seconds: TimeoutSeconds = 3
     interview_turn_budget_seconds: float = Field(default=75, ge=10, le=120)

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 from datetime import UTC, datetime
 from uuid import NAMESPACE_URL, UUID, uuid5
 
@@ -45,6 +46,7 @@ from lifereel_api.modules.script.schemas import (
 )
 from lifereel_api.providers.openai_compatible import OpenAICompatibleClient
 
+logger = logging.getLogger(__name__)
 
 def _get_workflow(db: Session, tenant_id: UUID, workflow_id: UUID) -> InterviewTurnWorkflow:
     workflow = db.scalar(
@@ -594,6 +596,14 @@ def _complete_turn_follow_up(db, tenant_id, workflow):
                 else None,
             },
         )
+    if workflow.profile_result.get("decision"):
+        from lifereel_api.modules.interview import advice
+
+        try:
+            advice.schedule(db, tenant_id, workflow, db.get(InterviewSession, workflow.session_id))
+        except Exception:
+            db.rollback()
+            logger.warning("interview.advice_schedule_failed")
     return workflow
 
 

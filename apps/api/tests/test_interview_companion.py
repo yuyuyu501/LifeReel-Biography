@@ -383,7 +383,7 @@ def test_question_presuppositions_and_fake_search_never_published(
     assert result["next_question"] == companion.fallback()
     assert result["audit"]["rewrites"] == 1
     assert result["audit"]["verdict"] == "fallback"
-    assert calls == ["synthetic-lite", "synthetic-lite", "synthetic-lite", "gpt-6.1-sol"]
+    assert calls == ["synthetic-lite"] * 4
 
 
 def test_semantic_check_drops_unfounded_value_despite_exact_quote(client, enhanced, monkeypatch):
@@ -938,9 +938,9 @@ def test_unrelated_negation_does_not_resolve_birth_conflict(client, enhanced, mo
     assert [item["value"] for item in entry["value"]["alternatives"]] == ["1970年", "1971年"]
 
 
-@pytest.mark.parametrize("disputed,sol_timeout", [(0, False), (2, False), (2, True)])
-def test_review_escalation_uses_conflicts_and_survives_optional_sol_timeout(
-    enhanced, monkeypatch, disputed, sol_timeout,
+@pytest.mark.parametrize("disputed", [0, 2])
+def test_primary_review_never_waits_for_optional_sol(
+    enhanced, monkeypatch, disputed,
 ):
     material = {
         "source_ids": ["current:1"],
@@ -955,18 +955,15 @@ def test_review_escalation_uses_conflicts_and_survives_optional_sol_timeout(
 
     def audit(output, material, *, escalate=False):
         seen.append(escalate)
-        if escalate and sol_timeout:
-            raise httpx.ReadTimeout("synthetic optional-review timeout")
+        assert not escalate, "Sol must run in a separate durable job"
         return companion.Review.model_validate(review())
 
     monkeypatch.setattr(OpenAICompatibleClient, "chat_json", provider)
     monkeypatch.setattr(companion, "_audit", audit)
     output, trace = companion.generate(OpenAICompatibleClient.for_task("interview"), "", material)
     assert trace["verdict"] == "pass" and "师傅" in output["next_question"]
-    assert seen == ([True, False] if sol_timeout else [bool(disputed)])
-    if sol_timeout:
-        assert trace["escalation_failure"]["error_code"] == "ReadTimeout"
-        assert trace["review_model"] == enhanced.interview_llm_model
+    assert seen == [False]
+    assert trace["review_model"] == enhanced.interview_llm_model
 
 
 @pytest.mark.parametrize("indices", [[True], [0.0], ["0.5"], ["-1"], ["work.events[]"]])

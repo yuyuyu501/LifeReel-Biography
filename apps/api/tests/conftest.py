@@ -16,6 +16,10 @@ os.environ["SMS_ENABLED"] = "false"
 os.environ["DATABASE_URL"] = f"sqlite:///{TEST_DB.as_posix()}"
 os.environ["AUTO_CREATE_SCHEMA"] = "true"
 os.environ["LLM_PROVIDER"] = "mock"
+os.environ["INTERVIEW_ENHANCEMENTS_ENABLED"] = "false"
+os.environ["INTERVIEW_HISTORY_ENABLED"] = "false"
+os.environ["INTERVIEW_REVIEW_ENABLED"] = "false"
+os.environ["INTERVIEW_LLM_BACKEND"] = "inherit"
 os.environ["ASR_PROVIDER"] = "mock"
 os.environ["IMAGE_PROVIDER"] = "mock"
 os.environ["PHOTO_REDRAW_PROVIDER"] = "disabled"
@@ -33,8 +37,10 @@ os.environ["OSS_DIRECT_UPLOAD_ENABLED"] = "false"
 os.environ["BILLING_TEXT_MODE"] = "per_successful_chapter_update"
 os.environ["BILLING_VIDEO_MODE"] = "per_second"
 
-from lifereel_api.core.config import get_settings  # noqa: E402
+from lifereel_api.core.config import Settings, get_settings  # noqa: E402
 
+# Routine tests use explicit synthetic settings, never the developer's private env file.
+Settings.model_config["env_file"] = None
 get_settings.cache_clear()
 
 from lifereel_api.core.database import Base, engine  # noqa: E402

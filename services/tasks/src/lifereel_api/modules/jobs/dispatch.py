@@ -8,7 +8,7 @@ from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, Header
 from pydantic import BaseModel
-from sqlalchemy import func, or_, select, text, update
+from sqlalchemy import case, func, or_, select, text, update
 from sqlalchemy.orm import Session
 
 from lifereel_api.architecture.topology import distributed, service_name
@@ -61,7 +61,7 @@ def claim_job(db: Session, lane: str):
     kinds = (
         [kind, "production.cleanup", "evidence.photo_redraw", "photo.restoration"]
         if lane == "video"
-        else [kind]
+        else [kind, "interview.advice"] if lane == "interview" else [kind]
     )
     limit = {"interview": settings.interview_concurrency,
              "video": settings.video_concurrency, "book": 1}[lane]
@@ -84,6 +84,13 @@ def claim_job(db: Session, lane: str):
     if active >= limit:
         db.rollback()
         return None
+    if lane == "interview":
+        advisor_running = db.scalar(select(func.count()).select_from(Job).where(
+            Job.kind == "interview.advice", Job.status.in_(ACTIVE), Job.lease_expires_at > now,
+        ))
+        # At most one advisor; reserve capacity for the immediate interview lane.
+        if advisor_running or active >= max(0, limit - 1):
+            kinds = [kind]
     job = db.scalar(
         select(Job)
         .where(
@@ -92,7 +99,7 @@ def claim_job(db: Session, lane: str):
             Job.status.in_(ACTIVE),
             or_(Job.lease_expires_at.is_(None), Job.lease_expires_at <= now),
         )
-        .order_by(Job.created_at, Job.id)
+        .order_by(case((Job.kind == "interview.advice", 1), else_=0), Job.created_at, Job.id)
         .with_for_update(skip_locked=True)
         .limit(1)
     )
@@ -168,6 +175,7 @@ def execute_claim(db: Session, job_id: UUID, token: UUID):
             return {"status": job.status}
         if distributed():
             expected = {KINDS["interview"]: "worker-interview",
+                        "interview.advice": "worker-interview",
                         KINDS["book"]: "worker-book"}.get(job.kind, "worker-media")
             if service_name() != expected:
                 raise ApiError(403, ErrorCode.AUTH_READ_ONLY)
@@ -185,6 +193,10 @@ def execute_claim(db: Session, job_id: UUID, token: UUID):
                 interviews.execute_turn(
                     db, job.tenant_id, UUID(job.payload["workflow_id"]), recover_interrupted=True
                 )
+            elif job.kind == "interview.advice":
+                from lifereel_api.modules.interview.advice import execute as advise
+
+                advise(db, job.tenant_id, job.id)
             elif job.kind == KINDS["video"]:
                 run = db.scalar(
                     select(ProductionRun).where(

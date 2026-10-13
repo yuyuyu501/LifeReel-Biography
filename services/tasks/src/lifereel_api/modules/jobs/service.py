@@ -65,7 +65,7 @@ def list_jobs(db: Session, tenant_id: UUID) -> list[Job]:
             select(Job)
             .where(
                 Job.tenant_id == tenant_id,
-                Job.kind != "production.cleanup",
+                Job.kind.not_in(["production.cleanup", "interview.advice"]),
             )
             .order_by(Job.created_at.desc())
         )
@@ -90,6 +90,8 @@ def retry_job(
     if resume_original and reference_asset_id:
         raise ApiError(409, ErrorCode.JOB_RETRY_NOT_ALLOWED)
     job = get_job(db, tenant_id, job_id)
+    if job.kind == "interview.advice":
+        raise ApiError(409, ErrorCode.JOB_RETRY_NOT_ALLOWED)
     from lifereel_api.architecture.topology import distributed, service_name
 
     if distributed() and service_name() == "tasks":

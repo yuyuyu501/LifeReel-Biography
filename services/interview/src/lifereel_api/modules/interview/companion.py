@@ -12,7 +12,7 @@ from sqlalchemy import select
 
 from lifereel_api.core.config import get_settings
 from lifereel_api.core.errors import ApiError
-from lifereel_api.modules.interview import historical_context, planning
+from lifereel_api.modules.interview import historical_context, planning, profile_updates
 from lifereel_api.modules.interview.models import InterviewRound, InterviewSession
 from lifereel_api.providers.openai_compatible import OpenAICompatibleClient
 
@@ -75,6 +75,11 @@ GUIDANCE = """
 state.blocked_quotes是仍需尊重的边界，除非用户明确主动重新打开该话题。
 每次最多一个主要问题；不要重复recent_dialogue里已得到答案的问题。
 同一小故事已有经过、动作及影响时，转到相关的下一段经历或尚未覆盖的人生阶段。
+用户说记不清某个细节时，不换措辞继续逼问同一细节；沿已知人物、技能或生活变化换方向。
+interview_policy.change_stage=true且本轮没有新的具体经历时，转到另一个人生阶段，
+不能在同一时期轮流追问父母、物件等相邻细节。新回答有具体故事时先承接新故事。
+interview_policy给出本轮推进限制；strategy_advice是按出处审核前的可选建议，不能当个人事实。
+建议只帮助选择追问方向，回复和changes仍须通过本轮独立审核。每轮只执行一个目标。
 用户明确留作以后、下次再讲的主题先记为待续，转到其他主题，不能继续追问该故事细节。
 不要连续追问微小动作、评价和感受；可沿人物、技能、生活变化联想到新的相关话题。
 actions只允许deepen_scene/deepen_meaning/clarify/transition/pause/close。
@@ -91,6 +96,13 @@ historical_context.status=found才可说查到，用实际摘录和URL支持公�
 若没检索或失败，不声称查过，不凭常识补出确切公开事件。个人经历只来自用户原话。
 不能为用户制造动机、身份、因果或感受；问句里的预设也必须有依据。
 changes只保存新回答直接支持的事实；已有字段补充须有原出处，不把AI回复当记忆。
+在某地长大不等于出生在该地，上过学校不等于毕业，孩子出生不等于亲自抚育。
+identity.birth_place是“出生地与成长地”合并字段，只有成长信息时用{growth_place:原话地名}，
+不能不加说明地写成出生地，也不能补出所属省份。出生信息另用birth_place键，有依据才填。
+identity.preferred_name就是“书中称呼”，不是证件或法定姓名；书里叫我某某直接支持该称呼。
+父亲或母亲搬家不是主角搬家，亲属行动归入家人记录，不能借主角字段省略实际人物。
+澄清回答可省略主语，须结合上一轮原话辨认人物；“去的是长沙……父亲还活着”仍是父亲经历。
+同一事件的补充只提供新增细节；程序在审核前保留旧对象中已有的经过、动作、人物和出处。
 当前字段与新回答冲突又没有明确更正时，列出disputed候选，追问一次澄清；不覆盖旧值。
 仅用户明确纠正时更新有效版本；不要把普通补充当作更正。
 """
@@ -102,15 +114,22 @@ AUDIT_PROMPT = """你是独立纪实审核器，检查完整next_question和每�
 deterministic_checks.quote_in_new_answer是程序精确匹配结果：false条目不能保存，true仍须语义审核。
 candidate.changes每条的quote_verified和quote紧邻待审value，true代表已验证本轮确有该原文。
 先逐条比较value与quote的语义，再检查旧资料冲突；旧资料没有新事实不代表新事实无依据。
+current_answer_evidence是讲述者本轮直接提供的资料，允许提供过去未记录的新事实；
+quote_verified仅证明引文存在，不证明value的额外解释正确。不要因旧资料没有该事实而拒绝原话。
 观念从以前到后来发生变化可以同时成立；不等于与既有生活安排冲突。
 不要重复猜测引用是否存在，不要对程序已确认的连续原文提出“不连续”或标点不符的意见。
 不能从用户欠债推创业失败，不能从住亲戚家推搬出/租房，不能从坏零件推装回，
 不能从“去的”推死亡/未陪伴；父母经历不能变成本人身份。
 不要把未知/争议信息当事实。明确更正可以保留同一事件的其他已有事实。
 姓名和书中称呼属于用户偏好，用户要求换称呼不是事实冲突；person来源的初始称呼只是种子。
+identity.preferred_name的实际定义是书中称呼，不是法定姓名。书里叫我、书中就叫都是明确偏好。
+identity.birth_place合并出生和成长信息，value只有growth_place时仅表示成长，不能当出生事实。
 新昵称是补充，不能因为与姓名不同就标成冲突。更正必须针对该条事实的证据，不能套用全轮。
 单值字段保留旧内容后增加新信息属于补充，并非冲突；只有互相不能同时成立的事实才列入冲突。
 单值叙述可能由程序保留已有内容；旧内容依据current_entries，新内容依据本轮quote。
+对象补充也可能由程序保留旧键；逐项区分旧内容和本轮增量，不能要求旧内容全在新quote里。
+时间范围扩展、地点细化只有互相不能同时成立才算冲突，不能仅凭字符串不同判冲突。
+在某地长大不证明出生地；上学不证明毕业；父亲搬家不证明主角搬家。
 合并不代表消除了矛盾；如果新旧事实不能同时成立，仍须标记冲突并请用户澄清。
 公开背景只由真实historical_context.sources摘录支持，不能转成用户亲历。
 查无结果不能否定记忆。没有成功检索不能声称查过。
@@ -122,6 +141,7 @@ safe_change_indices和conflict_change_indices用JSON整数下标，例如[0,1]�
 conflict_change_indices列出与旧资料冲突、未明确更正的下标，保留双方待澄清。
 conflict_entry_ids把冲突下标字符串映射到current_entries中旧记录id，尤其候选是new时必须给出。
 冲突候选若忠实记录用户原话也可列入safe_change_indices。不要让旧事实被新冲突覆盖。
+无依据的推断是剔除或rewrite，不是事实冲突。冲突引用只能选valid_conflict_targets给出的同字段记录。
 issues用简短说明问题，不给替代故事。返回
 {"verdict":"pass","safe_change_indices":[],"conflict_change_indices":[],
 "conflict_entry_ids":{},"issues":[]}。
@@ -303,28 +323,7 @@ def linked_date_corrections(output, material):
 
 
 def retain_narrative_context(output, material):
-    retained = []
-    for index, change in enumerate(output["changes"]):
-        if change["field_key"] not in RETAIN_NARRATIVE_FIELDS or change["state"] != "filled":
-            continue
-        current = next((entry for entry in material["current_entries"] if (
-            entry["field_key"] == change["field_key"] and entry["record_key"] == "single"
-            and entry["state"] == "filled" and entry["certainty"] in {"reported", "confirmed"}
-        )), None)
-        if (
-            not current or not isinstance(current["value"], str)
-            or not isinstance(change["value"], str)
-            or re.search(r"更正|记错|改成|修正|修改|不是.{1,30}(?:而是|应该是)", change["quote"])
-        ):
-            continue
-        old, new = current["value"], change["value"]
-        if old and old not in new:
-            merged = old if new in old else old + "\n" + new
-            if len(json.dumps(merged, ensure_ascii=False)) > 12000:
-                raise ValueError("profile_value_too_large")
-            change["value"] = merged
-            retained.append(index)
-    return retained
+    return profile_updates.retain(output, material, RETAIN_NARRATIVE_FIELDS)
 
 
 def program_issues(output, material, *, invalid_changes=None):
@@ -374,6 +373,55 @@ def program_issues(output, material, *, invalid_changes=None):
             issues.append("unsupported_memory_year")
         if change["field_key"] == "identity.gender" and str(change["value"]) not in quote:
             issues.append("unsupported_memory_gender")
+        growth_only = (
+            isinstance(change["value"], dict)
+            and set(change["value"]) == {"growth_place"}
+            and isinstance(change["value"]["growth_place"], str)
+            and change["value"]["growth_place"] in quote
+        ) or (
+            "成长地" in value and "出生" not in value
+            and re.search(r"长大|成长", quote)
+        )
+        if (
+            change["field_key"] == "identity.birth_place"
+            and not re.search(r"出生|生于|生在|出生地", quote)
+            and not growth_only
+            and not (current and profile_updates.correction(quote))
+        ):
+            issues.append("growth_not_birthplace")
+        user_evidence = material["new_answer"] + "\n".join(
+            r["answer"] for r in material["recent_dialogue"]
+        ) + "\n".join(
+            e.get("source", {}).get("quote", "") for e in material["current_entries"]
+        )
+        if "毕业" in value and "毕业" not in user_evidence:
+            issues.append("attendance_not_graduation")
+        if (
+            change["field_key"] in {"care.records[]", "care.events[]"}
+            and re.search(r"养育|抚养|抚育", value)
+            and not re.search(r"养育|抚养|抚育|照顾|带孩子|接孩子", user_evidence)
+        ):
+            issues.append("birth_not_caregiving")
+        if (
+            change["field_key"] == "turning.moves[]"
+            and (
+                re.search(r"父亲|爸爸|母亲|妈妈|爷爷|奶奶", material["new_answer"])
+                and re.search(r"搬|迁|去|住", material["new_answer"])
+                or re.search(r"去的是|不是去世", material["new_answer"])
+                and any(
+                    re.search(
+                        r"(?:父亲|爸爸|母亲|妈妈|爷爷|奶奶).{0,25}(?:搬|迁|去|住)", r["answer"]
+                    )
+                    for r in material["recent_dialogue"][-1:]
+                )
+            )
+            and not re.search(
+                r"(?:^|[，。；!?！？]|后来|而)(?:我|本人|我们)(?:在|于)?"
+                r"(?:(?!不|没|没有)[^。；!?！？]){0,12}(?:搬|迁|去了|住到)",
+                material["new_answer"],
+            )
+        ):
+            issues.append("relative_move_not_subject")
         if (
             change["field_key"]
             in {"identity.birth_time", "identity.birth_place", "identity.gender"}
@@ -407,6 +455,12 @@ def program_issues(output, material, *, invalid_changes=None):
             if age not in known:
                 issues.append("unsupported_personal_age")
         known += json.dumps(material.get("historical_context", {}), ensure_ascii=False)
+        if re.search(r"毕业(?:之)?后|毕业时", reply) and not any(
+            "毕业" in text for text in [material["new_answer"]]
+            + [r["answer"] for r in material["recent_dialogue"]]
+            + [e.get("source", {}).get("quote", "") for e in material["current_entries"]]
+        ):
+            issues.append("unsupported_graduation_presupposition")
         if set(re.findall(r"(?:18|19|20)\d{2}", reply)) - set(
             re.findall(r"(?:18|19|20)\d{2}", known)
         ):
@@ -439,22 +493,47 @@ def _audit(output, material, *, escalate=False, repair=True, repair_context=None
     client = OpenAICompatibleClient.for_task(task)
     if not client.capabilities().configured:
         raise ValueError("review_unconfigured")
+    entries = material["current_entries"]
+    evidence = {
+        key: material[key]
+        for key in (
+            "new_answer", "recent_dialogue", "recent_questions", "source_ids", "state",
+            "historical_context", "interview_policy",
+        )
+        if key in material
+    }
+    evidence["current_entries"] = [
+        {
+            **{k: entry[k] for k in (
+                "id", "field_key", "record_key", "state", "certainty", "use_scope", "value",
+            ) if k in entry},
+            "source": {
+                "quote": entry.get("source", {}).get("quote", ""),
+                "evidence_quotes": list(dict.fromkeys(
+                    item["quote"] for item in entry.get("source", {}).get("evidence", [])
+                    if item.get("quote")
+                )),
+            },
+        }
+        for entry in entries
+    ]
+    conflict_targets = {
+        str(index): [e["id"] for e in entries if e.get("field_key") == change["field_key"]]
+        for index, change in enumerate(output.get("changes", []))
+    }
     raw = (
         client.chat_json(
             AUDIT_PROMPT,
             json.dumps(
                 {
                     "new_answer": material["new_answer"],
-                    "valid_change_indices": list(range(len(output.get("changes", [])))),
-                    "review_repair": repair_context,
-                    "evidence": {
-                        key: material[key]
-                        for key in (
-                            "new_answer", "current_entries", "recent_dialogue",
-                            "recent_questions", "source_ids", "state", "historical_context",
-                        )
-                        if key in material
+                    "current_answer_evidence": {
+                        "source_id": material["source_ids"][0], "text": material["new_answer"],
                     },
+                    "valid_change_indices": list(range(len(output.get("changes", [])))),
+                    "valid_conflict_targets": conflict_targets,
+                    "review_repair": repair_context,
+                    "evidence": evidence,
                     "candidate": {
                         **output,
                         "changes": [
@@ -484,30 +563,56 @@ def _audit(output, material, *, escalate=False, repair=True, repair_context=None
             })
         raise
     indices = set(range(len(output.get("changes", []))))
+    for index, change in enumerate(output.get("changes", [])):
+        # This field is a requested book label, not an identity assertion to infer.
+        if profile_updates.requested_name(change):
+            if index in result.conflict_change_indices:
+                result.conflict_change_indices.remove(index)
+                result.conflict_entry_ids.pop(str(index), None)
+                if index not in result.safe_change_indices:
+                    result.safe_change_indices.append(index)
     safe, conflicts = set(result.safe_change_indices), set(result.conflict_change_indices)
     if not safe <= indices or not conflicts <= safe:
         if repair:
             return _audit(output, material, escalate=escalate, repair=False, repair_context={
                 "previous_review": raw, "error": "invalid_review_indices",
-                "instruction": "只用valid_change_indices，冲突下标也必须列入safe_change_indices。",
+                "instruction": (
+                    "重新核对current_answer_evidence，本轮原话可以提供旧资料中没有的新事实。"
+                    "只用valid_change_indices；无依据推断应剔除或重写，不能列为冲突。"
+                    "忠实记录但与旧资料互斥的冲突下标也须列入safe_change_indices。"
+                ),
             })
         raise ValueError("invalid_review_indices")
-    entry_ids = {e["id"] for e in material["current_entries"]}
     for index, entry_id in result.conflict_entry_ids.items():
-        if not index.isdigit() or int(index) not in conflicts or entry_id not in entry_ids:
+        if (
+            not index.isdigit() or int(index) not in conflicts
+            or entry_id not in conflict_targets.get(index, [])
+        ):
             if repair:
                 return _audit(output, material, escalate=escalate, repair=False, repair_context={
                     "previous_review": raw, "error": "invalid_conflict_source",
-                    "instruction": "冲突引用只用有效下标和现有条目ID，不能编造来源。",
+                    "instruction": (
+                        "冲突引用仅选valid_conflict_targets中该下标的同字段记录；"
+                        "无互斥事实则移除冲突。"
+                    ),
                 })
             raise ValueError("invalid_conflict_source")
-    for index in list(result.conflict_change_indices):
+    for index in conflicts:
         change = output["changes"][index]
-        if change["field_key"] == "identity.preferred_name" and re.search(
-            r"(?:叫我|称呼我|书中叫|名字用|称呼用)", change["quote"]
+        if str(index) not in result.conflict_entry_ids and not any(
+            e.get("field_key") == change["field_key"]
+            and e.get("record_key", "single") == change.get("record_key", "single")
+            for e in entries
         ):
-            result.conflict_change_indices.remove(index)
-            result.conflict_entry_ids.pop(str(index), None)
+            if repair:
+                return _audit(output, material, escalate=escalate, repair=False, repair_context={
+                    "previous_review": raw, "error": "invalid_conflict_source",
+                    "instruction": (
+                        "new候选的冲突必须关联同字段旧记录，"
+                        "否则重新判断是否只是新增事实。"
+                    ),
+                })
+            raise ValueError("invalid_conflict_source")
     return result
 
 
@@ -521,6 +626,7 @@ def generate(client, prompt, material):
         "review_model": "",
         "rewrites": 0,
         "history": {"status": "not_requested"},
+        "advice_job_id": (material.get("strategy_advice") or {}).get("job_id"),
     }
     safe_output = {
         "changes": [],
@@ -549,6 +655,21 @@ def generate(client, prompt, material):
         safe_output["decision"]["question_goal"] = "澄清去的所指，不推断死亡"
 
     def validate_extraction(raw):
+        raw, normalizations = profile_updates.normalize_candidates(
+            raw, material["new_answer"], RETAIN_NARRATIVE_FIELDS,
+        )
+        if normalizations:
+            trace["candidate_normalizations"] = (
+                trace.get("candidate_normalizations", 0) + normalizations
+            )
+        if isinstance(raw, dict) and isinstance(raw.get("decision"), dict):
+            request = raw["decision"].get("history_request")
+            if request is not None:
+                try:
+                    historical_context.HistoryRequest.model_validate(request)
+                except ValidationError:
+                    raw = {**raw, "decision": {**raw["decision"], "history_request": None}}
+                    trace["history"] = {"status": "invalid_request", "sources": []}
         if isinstance(raw, dict) and (
             raw.get("next_question") is None
             or isinstance(raw.get("next_question"), str) and not raw["next_question"].strip()
@@ -573,7 +694,9 @@ def generate(client, prompt, material):
                 **safe_output["decision"], "question_goal": "澄清去的所指，不推断死亡",
             })
             trace["departure_clarification"] = True
-        return extracted.model_dump(mode="json")
+        return Extraction.model_validate(profile_updates.coalesce(
+            extracted.model_dump(mode="json"), material["new_answer"], RETAIN_NARRATIVE_FIELDS,
+        )).model_dump(mode="json")
 
     def extract(input_material):
         raw = client.chat_json(prompt + GUIDANCE, json.dumps(input_material, ensure_ascii=False))
@@ -604,18 +727,25 @@ def generate(client, prompt, material):
         output = extract(material)
         decision = Decision.model_validate(output.get("decision"))
         if decision.history_request:
-            context = (
-                historical_context.lookup(decision.history_request, material["new_answer"])
-                if settings.interview_history_enabled
-                else {"status": "disabled", "sources": []}
-            )
+            try:
+                context = (
+                    historical_context.lookup(decision.history_request, material["new_answer"])
+                    if settings.interview_history_enabled
+                    else {"status": "disabled", "sources": []}
+                )
+            except (httpx.HTTPError, ValueError):
+                context = {"status": "failed", "sources": []}
             material = {**material, "historical_context": context}
             trace["history"] = context
-            if time.monotonic() - started < settings.interview_turn_budget_seconds - 15:
-                output = extract(material)
-            else:
-                raise ValueError("turn_budget_exhausted")
-        semantic_rewrite = False
+            if context.get("status") == "found" and (
+                time.monotonic() - started < settings.interview_turn_budget_seconds - 20
+            ):
+                prior_output = output
+                try:
+                    output = extract(material)
+                except (httpx.HTTPError, ApiError, ValidationError, ValueError):
+                    output = prior_output
+                    trace["history_reply_failed"] = True
         for attempt in range(2):
             linked = linked_date_corrections(output, material)
             if linked:
@@ -661,34 +791,9 @@ def generate(client, prompt, material):
             trace["program_issues"] = issues
             if time.monotonic() - started >= settings.interview_turn_budget_seconds - 5:
                 raise ValueError("turn_budget_exhausted")
-            disputed = sum(e["certainty"] == "disputed" for e in material["current_entries"])
-            escalate = settings.interview_review_enabled and (
-                disputed >= 2 or (attempt == 1 and semantic_rewrite)
-            )
-            trace["review_model"] = settings.model_for(
-                "interview_review" if escalate else "interview"
-            )
-            try:
-                review = _audit(output, material, escalate=escalate)
-            except (httpx.RequestError, ApiError) as exc:
-                if (
-                    not escalate
-                    or time.monotonic() - started >= settings.interview_turn_budget_seconds - 10
-                ):
-                    raise
-                # Use a different reviewer once; never retry the uncertain Sol invocation.
-                trace["escalation_failure"] = {"error_code": type(exc).__name__}
-                trace["review_model"] = settings.model_for("interview")
-                review = _audit(output, material, escalate=False)
+            trace["review_model"] = settings.model_for("interview")
+            review = _audit(output, material)
             if issues or review.verdict == "rewrite":
-                semantic_rewrite = review.verdict == "rewrite" or bool(
-                    set(issues) & {
-                        "relative_identity_not_subject", "unsupported_personal_presupposition",
-                        "unsupported_personal_age", "unsupported_reply_year",
-                        "unsupported_memory_year",
-                        "unsupported_memory_gender", "pretended_search",
-                    }
-                )
                 if (
                     attempt == 0
                     and not trace["rewrites"]
@@ -795,16 +900,24 @@ def generate(client, prompt, material):
     return output, trace
 
 
-def next_state(previous, decision, source, *, boundary_text=""):
+def next_state(previous, decision, source, *, boundary_text="", answer_text=""):
+    if previous.get("last_source") == source and not boundary_text:
+        return previous
     blocked = list(previous.get("blocked_quotes", []))
     quote = boundary_text or decision.get("boundary_quote", "")
     if quote and quote not in blocked:
         blocked.append(quote[:500])
     return {
+        **previous,
         "version": 1,
         "action": decision["action"],
         "topic": decision.get("topic", ""),
         "question_goal": decision.get("question_goal", ""),
         "blocked_quotes": blocked[-20:],
         "last_source": source,
+        "turn_count": previous.get("turn_count", 0) + 1,
+        "memory_gap_turns": previous.get("memory_gap_turns", 0) + 1
+        if re.search(r"记不清|记不得|想不起来|不记得|说不上来", answer_text) else 0,
+        "topic_turns": previous.get("topic_turns", 0) + 1
+        if previous.get("topic") == decision.get("topic") else 1,
     }

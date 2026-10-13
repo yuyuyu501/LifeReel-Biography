@@ -7,7 +7,7 @@ from sqlalchemy import select
 
 from lifereel_api.core.config import get_settings
 from lifereel_api.core.errors import ApiError, ErrorCode
-from lifereel_api.modules.interview import companion
+from lifereel_api.modules.interview import advice, companion
 from lifereel_api.modules.interview import profile_service as profiles
 from lifereel_api.modules.interview.profile_models import LifeProfileRevision
 from lifereel_api.modules.interview.profile_schemas import EntryChange, ProfilePatch
@@ -206,7 +206,7 @@ def process(db, tenant, profile_id, text, source, request_id, workflow=None):
         decision = metadata.get("interview_decision", {})
         if session and decision:
             session.interview_state = companion.next_state(
-                session.interview_state, decision, source
+                session.interview_state, decision, source, answer_text=text
             )
             db.commit()
         return {
@@ -265,15 +265,8 @@ def process(db, tenant, profile_id, text, source, request_id, workflow=None):
             workspace["entries"],
             key=lambda e: (not e["field_key"].endswith("[]"), relevance(e)), reverse=True,
         )
-        for entry in candidates[:100]:
+        for entry in candidates[:60]:
             value = entry["value"]
-            if (
-                isinstance(value, str)
-                and entry["field_key"] not in companion.RETAIN_NARRATIVE_FIELDS
-            ):
-                value = value[:1500]
-            elif isinstance(value, dict):
-                value = {k: v[:1500] if isinstance(v, str) else v for k, v in value.items()}
             context_entries.append(
                 {
                     **{k: entry[k] for k in (
@@ -314,10 +307,19 @@ def process(db, tenant, profile_id, text, source, request_id, workflow=None):
             },
             "recent_questions": asked,
             **dialogue,
+            "interview_policy": advice.policy(dialogue["state"], text),
+            "strategy_advice": advice.ready(db, tenant, session, text),
             "source_ids": [f"current:{source.get('id', request_id)}:v{source.get('version', 1)}"]
             + [e["source_id"] for e in context_entries]
             + [r["id"] for r in dialogue["recent_dialogue"]],
         }
+        if material["strategy_advice"]:
+            last = dialogue["state"].get("last_source", {})
+            material["source_ids"].append(f"current:{last.get('id')}:v{last.get('version')}")
+            if not set(material["strategy_advice"]["used_source_ids"]) <= set(
+                material["source_ids"]
+            ):
+                material["strategy_advice"] = None
         if len(json.dumps(material, ensure_ascii=False)) > 90000:
             raise ApiError(413, ErrorCode.MEMORY_INPUT_TOO_LARGE)
         if settings.interview_enhancements_enabled:
@@ -445,17 +447,10 @@ def process(db, tenant, profile_id, text, source, request_id, workflow=None):
                 if (
                     change.field_key in {"identity.birth_time", "identity.gender"}
                     and current["source"].get("type") != "person"
-                    and change.value != current["value"]
+                    and re.sub(r"[\s年]", "", str(change.value))
+                    != re.sub(r"[\s年]", "", str(current["value"]))
                 ):
                     conflict = True
-                if isinstance(change.value, dict) and isinstance(current["value"], dict):
-                    for key in ("time_raw", "place"):
-                        if (
-                            change.value.get(key)
-                            and current["value"].get(key)
-                            and change.value[key] != current["value"][key]
-                        ):
-                            conflict = True
             if current and conflict and not correction:
                 change.value = {
                     "alternatives": [
@@ -499,7 +494,9 @@ def process(db, tenant, profile_id, text, source, request_id, workflow=None):
     )
     decision = extracted.decision.model_dump(mode="json") if extracted.decision else {}
     if session and decision:
-        session.interview_state = companion.next_state(session.interview_state, decision, source)
+        session.interview_state = companion.next_state(
+            session.interview_state, decision, source, answer_text=text
+        )
         db.commit()
     return {
         "profile": result,

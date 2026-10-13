@@ -360,6 +360,7 @@ def test_profile_book_worker_generates_validated_thousand_character_chapter(clie
     monkeypatch.setattr(settings, "llm_provider", "openai-compatible")
     monkeypatch.setattr(settings, "openai_compatible_base_url", "http://qa-model.invalid/v1")
     monkeypatch.setattr(settings, "openai_compatible_api_key", "isolated-qa-model")
+    monkeypatch.setattr(settings, "openai_compatible_model", "isolated-qa-text")
 
     def synthetic(self, system, material):
         import json
@@ -399,6 +400,7 @@ def test_profile_extraction_rejects_an_invented_year(client, monkeypatch):
     monkeypatch.setattr(settings, "llm_provider", "openai-compatible")
     monkeypatch.setattr(settings, "openai_compatible_base_url", "http://qa-model.invalid/v1")
     monkeypatch.setattr(settings, "openai_compatible_api_key", "isolated-qa-model")
+    monkeypatch.setattr(settings, "openai_compatible_model", "isolated-qa-text")
     monkeypatch.setattr(
         OpenAICompatibleClient,
         "chat_json",
