@@ -190,6 +190,8 @@ class OpenAICompatibleClient:
     def _chat(
         self, messages: list[dict[str, Any]], json_output: bool = False,
         *, parse_json: bool = False, task: LLMTask | None = None,
+        output_schema: dict | None = None, temperature: float = 0.4,
+        max_output_tokens: int | None = None,
     ) -> Any:
         task = task or self._task()
         from lifereel_api.architecture.topology import is_remote
@@ -198,12 +200,14 @@ class OpenAICompatibleClient:
             return model_call("llm.chat", {
                 "model": self.model, "task": task, "messages": messages,
                 "json_output": json_output, "parse_json": parse_json,
+                "output_schema": output_schema, "temperature": temperature,
+                "max_output_tokens": max_output_tokens,
             })["output"]
         timeout = httpx.Timeout(**get_settings().llm_timeouts_for(task))
         stream = get_settings().llm_stream_for(task)
         payload: dict[str, Any] = {
             "model": self.model,
-            "temperature": 0.4,
+            "temperature": temperature,
             "messages": messages,
         }
         settings = get_settings()
@@ -211,11 +215,17 @@ class OpenAICompatibleClient:
             payload["thinking"] = {"type": settings.interview_llm_thinking}
         if json_output:
             payload["response_format"] = {"type": "json_object"}
+        if output_schema is not None:
+            payload["response_format"] = {"type": "json_schema", "json_schema": {
+                "name": "interview_d4", "strict": True, "schema": output_schema,
+            }}
+        if max_output_tokens is not None:
+            payload["max_tokens"] = max_output_tokens
         if stream:
             payload.update(stream=True, stream_options={"include_usage": True})
         reservation = tokens.begin(self.base_url, self.model, current_context())
         if reservation or (tokens.enabled() and current_context()):
-            payload["max_tokens"] = tokens.MAX_OUTPUT
+            payload["max_tokens"] = min(max_output_tokens or tokens.MAX_OUTPUT, tokens.MAX_OUTPUT)
         started = time.monotonic()
         data = {}
         response = None
@@ -368,6 +378,13 @@ class OpenAICompatibleClient:
             if not exc.response_format_unsupported:
                 raise
         return self._chat(messages, parse_json=True)
+
+    def chat_structured(self, system: str, user: str, schema: dict) -> dict[str, Any]:
+        return self._chat(
+            [{"role": "system", "content": system}, {"role": "user", "content": user}],
+            json_output=True, parse_json=True, output_schema=schema,
+            temperature=0, max_output_tokens=4096,
+        )
 
     def analyze_images(self, system: str, prompt: str, images: list[tuple[str, bytes]]) -> str:
         import base64

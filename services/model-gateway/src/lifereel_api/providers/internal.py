@@ -24,6 +24,9 @@ class ChatPayload(Payload):
     messages: list[dict] = Field(min_length=1, max_length=1000)
     json_output: bool
     parse_json: bool
+    output_schema: dict | None = None
+    temperature: float = Field(default=0.4, ge=0, le=2)
+    max_output_tokens: int | None = Field(default=None, ge=1, le=4096)
 
 
 class AudioPayload(Payload):
@@ -97,6 +100,9 @@ def chat(db, tenant, data):
             json_output=data["json_output"],
             parse_json=data["parse_json"],
             task=task,
+            output_schema=data.get("output_schema"),
+            temperature=data.get("temperature", 0.4),
+            max_output_tokens=data.get("max_output_tokens"),
         )
     }
 

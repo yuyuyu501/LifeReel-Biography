@@ -7,7 +7,7 @@ from sqlalchemy import select
 
 from lifereel_api.core.config import get_settings
 from lifereel_api.core.errors import ApiError, ErrorCode
-from lifereel_api.modules.interview import advice, companion
+from lifereel_api.modules.interview import advice, companion, quality
 from lifereel_api.modules.interview import profile_service as profiles
 from lifereel_api.modules.interview.profile_models import LifeProfileRevision
 from lifereel_api.modules.interview.profile_schemas import EntryChange, ProfilePatch
@@ -47,6 +47,10 @@ field_key以[]结尾才是多条记录，新增用record_key=new；其他字段�
 单值字段补充时保留已有直接有出处的内容；姓名和书中称呼是用户偏好，可以按要求更新。
 一段回答涉及多个资料维度时分别归入对应字段，不要把整段塞进日常生活代替困难、兴趣、影响等字段。
 学习阶段和任职阶段逐段记成records[]；选择原因、人物帮助和具体事件另有对应字段，有原话则同时整理。
+工作中学手艺同时适用学习阶段；工作事件明确形成的习惯也写work.meaning；
+教自己的前辈也写learning.teachers[]，共同日常分工也写relationships.shared_life。
+定期社区活动也写present.daily_life，明确表达的原则也写values.beliefs。
+整段经历只能内部保存时，preferences.exclusions记录整段限制，不能缩成仅不写原因。
 逐项检查新回答涉及哪些字段；事实已在别列出现，不代表对应列已经完整，也不要只整理最后一句。
 fields.question说明该列用途，不是要求照着问卷提问。仅整理本轮原话直接支持的维度，不猜缺项。
 家人对成长的作用写入family.members[]；家乡印象写入family.origin，而非只放童年日常。
@@ -62,6 +66,7 @@ fields.question说明该列用途，不是要求照着问卷提问。仅整理�
 用户禁止写进作品则use_scope=internal；化名用pseudonym，pseudonyms提供原称呼到化名的映射。
 materials.assets[]只能由实际上传附件建立，口述有纸质照片不等于已上传，不能新增素材条目。
 未上传材料只作为legacy.open_threads的待提供说明；materials.captions仅补充现有上传素材。
+待提供说明须保留“未上传”状态，不能只留照片故事而丢掉附件状态。
 只有用户明确提供时才能建立，不得擅自扩大原有使用范围。
 填入有来源的陈述为reported，自述不确定用uncertain，矛盾未解决为disputed。
 next_question先承接新回答，再围绕相关缺项问一个主要问题，不机械按出生顺序问。
@@ -297,6 +302,8 @@ def process(db, tenant, profile_id, text, source, request_id, workflow=None):
                 for e in workspace["entries"][:400]
             ],
             "new_answer": text,
+            "current_source": {k: source[k] for k in ("type", "id", "version") if k in source},
+            "pending_fact_records": quality.pending_records(revisions, source),
             "readiness": {
                 "status": workspace["readiness"]["status"],
                 "scope": workspace["readiness"]["scope"],
@@ -362,6 +369,8 @@ def process(db, tenant, profile_id, text, source, request_id, workflow=None):
             )
         changes = []
         quotes = {}
+        evidence_by_record = {}
+        applied_indices = {}
         for index, item in enumerate(extracted.changes):
             if item.quote not in text:
                 raise ValueError("unsupported_quote")
@@ -390,7 +399,8 @@ def process(db, tenant, profile_id, text, source, request_id, workflow=None):
                 ),
                 None,
             )
-            if current and isinstance(change.value, dict):
+            if (current and isinstance(change.value, dict)
+                    and not settings.interview_enhancements_enabled):
                 old = re.search(r"不是\s*(\d{4})年?", item.quote)
                 new = re.search(r"(?:应该是|改成|更正为|(?<!不)是)\s*(\d{4})年?", item.quote)
                 if old and new and old[1] in profiles.value_text(current["value"]):
@@ -469,9 +479,33 @@ def process(db, tenant, profile_id, text, source, request_id, workflow=None):
             if current and current["certainty"] == "confirmed" and not correction and not conflict:
                 continue
             changes.append(change)
+            applied_indices[index] = (change.field_key, change.record_key)
             quotes[change.field_key + ":" + change.record_key] = item.quote
+            evidence_by_record[change.field_key + ":" + change.record_key] = (
+                audit.get("record_evidence", {}).get(str(index), [])
+            )
     except (ValidationError, ValueError):
         raise ApiError(502, ErrorCode.PROFILE_OUTPUT_INVALID) from None
+    for fact in audit.get("fact_ledger", []):
+        for target in fact["targets"]:
+            match = target.get("match") or {}
+            index = match.get("change_index")
+            if index is not None:
+                if index in applied_indices:
+                    field, record = applied_indices[index]
+                    target.update(status="submitted", record_key=record)
+                else:
+                    target["status"] = "pending"
+        fact["status"] = "pending" if any(t["status"] == "pending" for t in fact["targets"]) \
+            else fact["status"]
+    if audit.get("quality"):
+        audit["quality"]["pending_facts"] = sum(
+            f["status"] == "pending" for f in audit.get("fact_ledger", [])
+        )
+        if audit["quality"]["pending_facts"]:
+            extracted.next_question = "有些资料的归类还待核对。" + extracted.next_question
+        elif audit["quality"]["status"] == "unverified":
+            extracted.next_question = "这轮资料尚未完成完整核对。" + extracted.next_question
     result = profiles.patch(
         db,
         tenant,
@@ -485,6 +519,7 @@ def process(db, tenant, profile_id, text, source, request_id, workflow=None):
         source={
             **source,
             "quotes": quotes,
+            "evidence_by_record": evidence_by_record,
             "next_question": extracted.next_question,
             "interview_decision": extracted.decision.model_dump(mode="json")
             if extracted.decision

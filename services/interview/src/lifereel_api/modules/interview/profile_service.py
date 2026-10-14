@@ -338,7 +338,8 @@ def patch(db, tenant, profile_id, payload: ProfilePatch, *, actor="manual", sour
             row.source = {
                 k: v
                 for k, v in (source or {"type": "manual", "actor": actor}).items()
-                if k not in {"quotes", "next_question", "interview_decision", "interview_audit"}
+                if k not in {"quotes", "evidence_by_record", "next_question", "interview_decision",
+                             "interview_audit"}
             }
             if legacy_id:
                 row.source = {**row.source, "supersedes_claim_id": legacy_id}
@@ -358,11 +359,37 @@ def patch(db, tenant, profile_id, payload: ProfilePatch, *, actor="manual", sour
                     if before and isinstance(before["value"], dict) and isinstance(row.value, dict)
                     else [],
                 )}
+                for citation in (source or {}).get("evidence_by_record", {}).get(
+                    change.field_key + ":" + change.record_key, []
+                ):
+                    if citation not in row.source["evidence"]:
+                        row.source["evidence"].append(citation)
             row.version_number = (before["version_number"] if before else 0) + 1
             after = entry_data(row)
         changes.append({"before": before, "after": after})
     profile.version_number += 1
     if source and source.get("next_question"):
+        for fact in source.get("interview_audit", {}).get("fact_ledger", []):
+            for target in fact["targets"]:
+                if target["status"] == "submitted":
+                    saved = next((c["after"] for c in changes if c["after"]
+                                  and c["after"]["field_key"] == target["field"]
+                                  and c["after"]["record_key"] == target["record_key"]), None)
+                    allowed = {fact["disposition"]} if fact.get("disposition") in {
+                        "uncertain", "disputed",
+                    } else {"reported", "confirmed"}
+                    effective = saved and saved["certainty"] in allowed
+                    target.update(status="saved" if effective else "pending",
+                                  entry_id=saved["id"] if saved else None)
+                elif target["status"] == "accepted":
+                    target["status"] = "existing"
+            if any(t["status"] == "pending" for t in fact["targets"]):
+                fact["status"] = "pending"
+        audit = source.get("interview_audit", {})
+        if audit.get("quality"):
+            audit["quality"]["pending_facts"] = sum(
+                f["status"] == "pending" for f in audit.get("fact_ledger", [])
+            )
         changes.append(
             {
                 "metadata": {

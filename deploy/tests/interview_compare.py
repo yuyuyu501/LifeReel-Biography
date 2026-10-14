@@ -29,6 +29,7 @@ CODE_PATHS = [
     "services/interview/src/lifereel_api/modules/interview/profile_service.py",
     "services/interview/src/lifereel_api/modules/interview/profile_updates.py",
     "services/interview/src/lifereel_api/modules/interview/advice.py",
+    "services/interview/src/lifereel_api/modules/interview/quality.py",
     "services/tasks/src/lifereel_api/modules/jobs/dispatch.py",
     "services/interview/src/lifereel_api/modules/orchestration/profile_turns.py",
     "services/interview/src/lifereel_api/modules/orchestration/service.py",
@@ -46,7 +47,8 @@ def digest():
     return {p: hashlib.sha256((ROOT / p).read_bytes()).hexdigest() for p in CODE_PATHS}
 
 
-def configure(directory, model, live, read_timeout=25, turn_budget=75):
+def configure(directory, model, live, read_timeout=25, turn_budget=75, *,
+              quality=False, sync=False):
     from dotenv import dotenv_values
 
     credentials = dotenv_values(ROOT / ".env")
@@ -77,6 +79,8 @@ def configure(directory, model, live, read_timeout=25, turn_budget=75):
         "INTERVIEW_ENHANCEMENTS_ENABLED": "true",
         "INTERVIEW_HISTORY_ENABLED": "true",
         "INTERVIEW_REVIEW_ENABLED": "true" if model == "hybrid" else "false",
+        "INTERVIEW_QUALITY_ENABLED": str(quality).lower(),
+        "INTERVIEW_SYNC_ASSISTANCE_ENABLED": str(sync).lower(),
         "INTERVIEW_REVIEW_LLM_MODEL": "gpt-6.1-sol",
         "INTERVIEW_REVIEW_LLM_READ_TIMEOUT_SECONDS": "60",
         "JOB_QUEUE_BACKEND": "database",
@@ -345,20 +349,38 @@ def main():
     parser.add_argument("--limit", type=int, default=30)
     parser.add_argument("--answer")
     parser.add_argument("--persona-name", default=NAME)
+    parser.add_argument("--persona-spec", type=Path, help="Hidden holdout specification; hash only")
     parser.add_argument("--disclosure", choices=["answer_to_ai", "tester_led", "opening"])
     parser.add_argument("--fact", action="append", default=[])
     parser.add_argument("--recover-failed-turn", action="store_true")
     parser.add_argument("--read-timeout", type=float, default=25)
     parser.add_argument("--turn-budget", type=float, default=75)
+    parser.add_argument("--quality", action="store_true")
+    parser.add_argument("--sync-assistance", action="store_true")
     args = parser.parse_args()
     if not args.run or any(c not in "abcdefghijklmnopqrstuvwxyz0123456789-_" for c in args.run):
         parser.error("run must be a simple local identifier")
-    if not 1 <= args.read_timeout <= 90 or not 10 <= args.turn_budget <= 120:
-        parser.error("bounded read timeout (1..90) and turn budget (10..120) required")
+    if not 1 <= args.read_timeout <= 90 or not 10 <= args.turn_budget <= 300:
+        parser.error("bounded read timeout (1..90) and turn budget (10..300) required")
+    if args.sync_assistance and (not args.quality or args.model != "hybrid"):
+        parser.error("sync assistance requires hybrid and quality")
+    holdout_spec = None
+    if args.persona_spec:
+        if args.phase != "adaptive":
+            parser.error("holdout specification requires adaptive phase")
+        path = args.persona_spec.resolve()
+        try:
+            relative = path.relative_to(ROOT)
+        except ValueError:
+            parser.error("holdout specification must be in this workspace")
+        holdout_spec = {"path": relative.as_posix(),
+                        "sha256": hashlib.sha256(path.read_bytes()).hexdigest()}
     directory = ROOT / "tmp/interview-compare-20261013" / args.run / args.phase / args.model
     directory.mkdir(parents=True, exist_ok=True)
-    configure(directory, args.model, args.live, args.read_timeout, args.turn_budget)
-    request_settings = {"read_timeout": args.read_timeout, "turn_budget": args.turn_budget}
+    configure(directory, args.model, args.live, args.read_timeout, args.turn_budget,
+              quality=args.quality, sync=args.sync_assistance)
+    request_settings = {"read_timeout": args.read_timeout, "turn_budget": args.turn_budget,
+                        "quality": args.quality, "sync_assistance": args.sync_assistance}
     from fastapi.testclient import TestClient
 
     from lifereel_api.main import app
@@ -374,6 +396,7 @@ def main():
             if (
                 state["live"] != args.live
                 or state.get("persona_name", NAME) != args.persona_name
+                or state.get("holdout_spec") != holdout_spec
                 or state.get("request_settings", {"read_timeout": 25, "turn_budget": 75})
                 != request_settings
             ):
@@ -400,15 +423,17 @@ def main():
                 "model": MODELS[args.model][1],
                 "backend": MODELS[args.model][0],
                 "phase": args.phase,
-                "persona_version": VERSION,
+                "persona_version": f"sha256:{holdout_spec['sha256']}" if holdout_spec else VERSION,
                 "persona_name": args.persona_name,
+                "holdout_spec": holdout_spec,
                 "live": args.live,
                 "request_settings": request_settings,
                 "session_id": session_data["id"],
                 "profile_id": session_data["profile_id"],
                 "code_hashes": digest(),
                 "turns": 0,
-                "adaptive_goals": ADAPTIVE_GOALS,
+                "adaptive_goals": "See frozen holdout specification" if holdout_spec
+                else ADAPTIVE_GOALS,
             }
             write_json(state_path, state)
             write_json(
@@ -430,7 +455,9 @@ def main():
                     "id": f"A{state['turns'] + 1:02}",
                     "case": "adaptive",
                     "answer": args.answer or ADAPTIVE_OPENING,
-                    "facts": [facts[key] for key in args.fact],
+                    "facts": [{"id": key} for key in args.fact] if holdout_spec else [
+                        facts[key] for key in args.fact
+                    ],
                     "disclosure": args.disclosure
                     or ("answer_to_ai" if state["turns"] else "opening"),
                 },

@@ -66,6 +66,35 @@ def test_settings_global_inheritance_and_partial_task_override():
     assert Settings(_env_file=None).llm_timeouts_for("interview")["read"] == 180
 
 
+def test_d4_structured_request_preserves_gateway_options(llm, monkeypatch):
+    schema = {"type": "object", "properties": {}, "additionalProperties": False, "required": []}
+    monkeypatch.setattr(provider, "record", lambda *a, **k: None)
+
+    def post(*args, **kwargs):
+        body = kwargs["json"]
+        assert body["temperature"] == 0 and body["max_tokens"] == 4096
+        assert body["response_format"]["json_schema"]["schema"] == schema
+        return response(completion())
+
+    monkeypatch.setattr(httpx, "post", post)
+    assert llm.chat_structured("system", "prompt", schema) == {"ok": True}
+
+    from lifereel_api.providers import internal, rpc
+
+    from lifereel_api.architecture import topology
+
+    monkeypatch.setattr(topology, "is_remote", lambda name: True)
+
+    def remote(operation, payload):
+        data = internal.validate(operation, payload)
+        assert data["output_schema"] == schema
+        assert data["temperature"] == 0 and data["max_output_tokens"] == 4096
+        return {"output": {"ok": True}}
+
+    monkeypatch.setattr(rpc, "model_call", remote)
+    assert llm.chat_structured("system", "prompt", schema) == {"ok": True}
+
+
 def test_task_settings_read_from_environment(monkeypatch):
     monkeypatch.setenv("LLM_CONNECT_TIMEOUT_SECONDS", "12")
     monkeypatch.setenv("VIDEO_PLAN_LLM_READ_TIMEOUT_SECONDS", "240")
