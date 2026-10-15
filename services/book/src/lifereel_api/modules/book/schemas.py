@@ -52,6 +52,7 @@ class ChapterRead(BaseModel):
     stale: bool
     job_id: UUID | None
     error_code: str | None
+    missing_details: list[str] = Field(default_factory=list)
     current: RevisionRead | None
     archived: bool = False
     source_entry_ids: list[str] = Field(default_factory=list)

@@ -169,6 +169,36 @@ it("restores queued state after opening and prevents duplicate generation", asyn
   expect(screen.getByText(/刷新不会丢失任务/)).toBeInTheDocument();
 });
 
+it("shows concrete material questions while keeping the saved manuscript", async () => {
+  book.chapters[0].status = "needs_material";
+  book.chapters[0].error_code = "BOOK_MATERIAL_INSUFFICIENT";
+  book.chapters[0].missing_details = [
+    "家人如何分担日常劳动？",
+    "能讲一件体现家风的具体事情吗？",
+  ];
+  setup();
+  expect(await screen.findByRole("alert")).toHaveTextContent("现有资料不足");
+  expect(
+    screen.getByRole("list", { name: "本章需要补充的内容" }),
+  ).toHaveTextContent("家人如何分担日常劳动？");
+  expect(screen.getByText("第一段真实回忆。")).toBeInTheDocument();
+});
+
+it("explains that material was updated after the last failed attempt", async () => {
+  book.chapters[0].status = "failed";
+  book.chapters[0].source_count = 10;
+  book.chapters[0].error_code = "BOOK_MATERIAL_UPDATED";
+  book.chapters[0].missing_details = [];
+  setup();
+  expect(await screen.findByRole("alert")).toHaveTextContent(
+    "本章选材已更新，请重新生成",
+  );
+  expect(
+    screen.queryByRole("list", { name: "本章需要补充的内容" }),
+  ).not.toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "重新生成本章" })).toBeEnabled();
+});
+
 it.each([
   ["BOOK_MODEL_UNAVAILABLE", "写书模型服务暂时不可用"],
   ["BOOK_MODEL_RATE_LIMITED", "写书模型请求过多"],

@@ -131,8 +131,8 @@ def create(db, tenant, payload):
         if not acquired:
             raise ApiError(409, ErrorCode.BOOK_GENERATION_BUSY)
         book = db.scalar(select(Book).where(Book.tenant_id == tenant, Book.subject_id == person.id))
+        profile = None
         if book is None:
-            profile = None
             if payload.source_mode == "profile":
                 from lifereel_api.modules.book import profile_sources
 
@@ -150,6 +150,17 @@ def create(db, tenant, payload):
 
                 initialize(db, tenant, book, profile)
         if book.profile_id:
+            if book.directory_version == 1:
+                from lifereel_api.modules.book import profile_sources
+
+                with execution_lock(db, book.id) as acquired:
+                    if not acquired:
+                        raise ApiError(409, ErrorCode.BOOK_GENERATION_BUSY)
+                    if profile is None:
+                        profile = profile_sources.profile_read(
+                            db, tenant, profile_id=book.profile_id
+                        )
+                    profile_sources.sync_defaults(db, tenant, book, profile)
             db.commit()
             return read(db, tenant, book.id)
         known = set(
@@ -193,8 +204,14 @@ def read(db, tenant, book_id):
         snapshot = source(db, book, row.chapter_id or row.id)
         job = db.get(Job, row.latest_job_id) if row.latest_job_id else None
         state = job.status if job else ("completed" if revision else "empty")
+        error_code = job.error_code if job else None
+        missing_details = []
         if state == "failed" and job.error_code == ErrorCode.BOOK_MATERIAL_INSUFFICIENT.value:
-            state = "needs_material"
+            if job.payload.get("source_digest") != digest(snapshot):
+                error_code = ErrorCode.BOOK_MATERIAL_UPDATED.value
+            else:
+                state = "needs_material"
+                missing_details = (job.result or {}).get("missing_details", [])
         result.append(
             ChapterRead(
                 id=row.id,
@@ -206,10 +223,11 @@ def read(db, tenant, book_id):
                 source_count=len(snapshot["claims"]),
                 stale=bool(revision and revision.source_digest != digest(snapshot)),
                 job_id=row.latest_job_id,
-                error_code=job.error_code if job else None,
+                error_code=error_code,
+                missing_details=missing_details,
                 current=RevisionRead.model_validate(revision) if revision else None,
                 archived=row.archived,
-                source_entry_ids=row.source_entry_ids,
+                source_entry_ids=snapshot.get("selected_entry_ids", row.source_entry_ids),
             )
         )
     return BookRead(
@@ -384,8 +402,10 @@ def execute(db, tenant, job_id):
             job.result = {"revision_id": str(revision.id), "version_number": row.version_number}
             transition(db, tenant, key, True)
             db.commit()
-        except Exception:
+        except Exception as exc:
             db.rollback()
+            if isinstance(exc, ApiError) and exc.code == ErrorCode.BOOK_MATERIAL_INSUFFICIENT:
+                job.result = {"missing_details": exc.context.get("missing_details", [])}
             transition(db, tenant, key, False)
             db.commit()
             raise

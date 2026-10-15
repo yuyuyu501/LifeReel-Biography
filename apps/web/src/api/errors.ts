@@ -11,6 +11,8 @@ export const ERROR_MESSAGES: Record<string, string> = {
   BOOK_CHAPTER_NOT_FOUND: "未找到本书的这个章节。",
   BOOK_MATERIAL_INSUFFICIENT:
     "现有资料不足以写成约1000字的真实章节，请先补充采访中的具体经历。",
+  BOOK_MATERIAL_UPDATED:
+    "本章选材已更新，请重新生成。上次“资料不足”的结果基于旧选材。",
   BOOK_MODEL_NOT_CONFIGURED: "写书模型尚未配置，请联系管理员。",
   BOOK_MODEL_UNAVAILABLE:
     "写书模型服务暂时不可用，本次未成稿，已有稿件保留。请稍后重试。",

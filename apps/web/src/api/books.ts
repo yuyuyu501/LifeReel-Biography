@@ -23,6 +23,7 @@ export type BookChapter = {
   stale: boolean;
   job_id: string | null;
   error_code: string | null;
+  missing_details?: string[];
   current: BookRevision | null;
 };
 export type Book = {

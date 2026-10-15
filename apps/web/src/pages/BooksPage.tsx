@@ -385,10 +385,19 @@ export function BookWritingPage() {
               </p>
             )}
             {chapter.error_code && (
-              <p className="writing-warning" role="alert">
-                {ERROR_MESSAGES[chapter.error_code] ||
-                  "本次写作未完成，已保存的旧稿仍然可读。"}
-              </p>
+              <div className="writing-warning" role="alert">
+                <p>
+                  {ERROR_MESSAGES[chapter.error_code] ||
+                    "本次写作未完成，已保存的旧稿仍然可读。"}
+                </p>
+                {!!chapter.missing_details?.length && (
+                  <ul aria-label="本章需要补充的内容">
+                    {chapter.missing_details.map((question, index) => (
+                      <li key={index}>{question}</li>
+                    ))}
+                  </ul>
+                )}
+              </div>
             )}
             {active(chapter) && (
               <p role="status" className="writing-warning">

@@ -23,33 +23,83 @@ def profile_read(db, tenant, subject_id=None, profile_id=None):
     return profile_service.read(db, tenant, profile.id if profile else profile_id)
 
 
-def initialize(db, tenant, book, profile):
-    book.profile_id = UUID(profile["id"])
-    themes = profile["readiness"]["themes"][:8]
+def usable(entry):
+    return (
+        entry["state"] == "filled"
+        and entry["certainty"] not in {"pending", "disputed"}
+        and entry["use_scope"] in {"works", "pseudonym"}
+    )
+
+
+def theme_entries(profile, section=None):
+    sections = {field["key"]: field["section"] for field in profile["fields"]}
+    return [
+        entry["id"] for entry in profile["entries"]
+        if usable(entry)
+        and (
+            sections.get(entry["field_key"]) == section if section else
+            not entry["field_key"].startswith(("preferences.", "identity.", "scope."))
+        )
+    ]
+
+
+def default_themes(profile):
+    themes = profile["readiness"]["themes"]
     if not themes:
-        themes = [
-            {
-                "title": "我的人生经历",
-                "entry_ids": [
-                    e["id"]
-                    for e in profile["entries"]
-                    if e["state"] == "filled"
-                    and e["certainty"] not in {"pending", "disputed"}
-                    and e["use_scope"] != "internal"
-                    and not e["field_key"].startswith(("preferences.", "identity.", "scope."))
-                ],
-            }
-        ]
-    for index, theme in enumerate(themes, 1):
+        themes = [{"title": "我的人生经历"}]
+    return [
+        {**theme, "entry_ids": theme_entries(profile, theme.get("section"))}
+        for theme in themes
+    ]
+
+
+def selected_entries(book, chapter, profile):
+    selected = list(chapter.source_entry_ids)
+    # Version 1 is the untouched system directory. Saving the directory makes all
+    # selections explicit (version >= 2); never expand an intentional selection.
+    if book.directory_version == 1 and not chapter.archived:
+        section = next(
+            (s["key"] for s in profile["sections"] if s["title"] == chapter.title), None
+        )
+        if section or chapter.title == "我的人生经历":
+            selected.extend(theme_entries(profile, section))
+    return list(dict.fromkeys(selected))
+
+
+def sync_defaults(db, tenant, book, profile):
+    if book.directory_version != 1:
+        return
+    rows = list(db.scalars(select(BookChapter).where(
+        BookChapter.book_id == book.id, BookChapter.tenant_id == tenant,
+    )))
+    from lifereel_api.modules.jobs.models import Job
+
+    if any(
+        row.latest_job_id and (job := db.get(Job, row.latest_job_id))
+        and job.status in {"queued", "running"} for row in rows
+    ):
+        return
+    known = {row.title for row in rows}
+    order = max((row.order_index for row in rows), default=0)
+    for theme in default_themes(profile):
+        if theme["title"] in known:
+            continue
+        order += 1
         db.add(
             BookChapter(
                 tenant_id=tenant,
                 book_id=book.id,
                 title=theme["title"],
-                order_index=index,
+                order_index=order,
                 source_entry_ids=theme["entry_ids"],
             )
         )
+
+
+def initialize(db, tenant, book, profile):
+    book.profile_id = UUID(profile["id"])
+    sync_defaults(db, tenant, book, profile)
+    db.flush()
 
 
 def source(db, book, chapter_id):
@@ -63,16 +113,15 @@ def source(db, book, chapter_id):
     if chapter is None:
         raise ApiError(404, ErrorCode.BOOK_CHAPTER_NOT_FOUND)
     profile = profile_read(db, book.tenant_id, profile_id=book.profile_id)
-    selected = set(chapter.source_entry_ids)
+    selected_ids = selected_entries(book, chapter, profile)
+    selected = set(selected_ids)
     candidates = [e for e in profile["entries"] if e["id"] in selected]
     from lifereel_api.modules.interview.profile_service import anonymized
 
     allowed = [
         anonymized(e)
         for e in candidates
-        if e["state"] == "filled"
-        and e["certainty"] not in {"pending", "disputed"}
-        and e["use_scope"] != "internal"
+        if usable(e)
     ]
     allowed_ids = {e["id"] for e in allowed}
     return {
@@ -88,6 +137,7 @@ def source(db, book, chapter_id):
         ),
         "chapter": chapter.title,
         "target_words": book.target_words,
+        "selected_entry_ids": selected_ids,
         "restricted_entry_ids": sorted(selected - allowed_ids),
         "preferences": [
             anonymized(e)

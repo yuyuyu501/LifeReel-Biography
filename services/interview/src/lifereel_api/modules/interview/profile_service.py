@@ -250,7 +250,7 @@ def evaluate(db, profile):
             }
             for f in missing
         ],
-        "message": "当前范围的素材可以进入写书，也可以继续补充。"
+        "message": "当前范围已有具体经历，可开始整理书稿；每章能否成稿仍取决于经历细节。"
         if state == "ready"
         else "部分经历可以进入写书，其他人生阶段仍可继续补充。"
         if state == "partial_ready"

@@ -37,6 +37,10 @@ MODULES = {
     "lifereel_api.providers.rpc": "services/model-gateway/src/lifereel_api/providers/rpc.py",
     "lifereel_api.modules.book.writing": "services/book/src/lifereel_api/modules/book/writing.py",
     "lifereel_api.modules.book.service": "services/book/src/lifereel_api/modules/book/service.py",
+    "lifereel_api.modules.book.profile_sources": (
+        "services/book/src/lifereel_api/modules/book/profile_sources.py"
+    ),
+    "lifereel_api.modules.book.schemas": "services/book/src/lifereel_api/modules/book/schemas.py",
 }
 
 
