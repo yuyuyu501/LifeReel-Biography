@@ -194,9 +194,12 @@ def source_catalog(material):
         source = entry.get("source", {})
         evidence = [source] + source.get("evidence", [])
         records[entry.get("source_id", f"entry:{entry['id']}")] = [
-            {k: e[k] for k in ("type", "id", "version", "quote", "retained_keys") if k in e}
+            {k: e[k] for k in ("type", "id", "version", "quote", "retained_keys", "start", "end")
+             if k in e}
             for e in evidence if e.get("quote") and e.get("id")
         ]
+    for source in material.get("retrieved_sources", []):
+        records.setdefault(source["source_id"], []).append(source)
     return records
 
 

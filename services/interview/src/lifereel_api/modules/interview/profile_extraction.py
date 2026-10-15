@@ -327,6 +327,11 @@ def process(db, tenant, profile_id, text, source, request_id, workflow=None):
                 material["source_ids"]
             ):
                 material["strategy_advice"] = None
+        if (settings.interview_recording_method == "d4"
+                and settings.interview_d4_enhancement in {"retrieval", "combined"}):
+            from lifereel_api.modules.interview.retrieval import enrich
+
+            material = enrich(db, tenant, profile_id, material, workspace["entries"])
         if len(json.dumps(material, ensure_ascii=False)) > 90000:
             raise ApiError(413, ErrorCode.MEMORY_INPUT_TOO_LARGE)
         if settings.interview_enhancements_enabled:
@@ -413,6 +418,11 @@ def process(db, tenant, profile_id, text, source, request_id, workflow=None):
                 text + "\n".join(r["answer"] for r in dialogue["recent_dialogue"])
                 + "\n".join(profiles.value_text(e["value"]) for e in workspace["entries"]),
             ))
+            if settings.interview_d4_enhancement in {"retrieval", "combined"}:
+                allowed_years |= {
+                    year for evidence in audit.get("record_evidence", {}).get(str(index), [])
+                    for year in re.findall(r"(?:18|19|20)\d{2}", evidence.get("quote", ""))
+                }
             if current:
                 allowed_years |= set(
                     re.findall(r"(?:18|19|20)\d{2}", profiles.value_text(current["value"]))

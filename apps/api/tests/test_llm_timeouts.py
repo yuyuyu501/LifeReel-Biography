@@ -66,18 +66,20 @@ def test_settings_global_inheritance_and_partial_task_override():
     assert Settings(_env_file=None).llm_timeouts_for("interview")["read"] == 180
 
 
-def test_d4_structured_request_preserves_gateway_options(llm, monkeypatch):
+@pytest.mark.parametrize("output_limit", [4096, 8192])
+def test_d4_structured_request_preserves_gateway_options(llm, monkeypatch, output_limit):
     schema = {"type": "object", "properties": {}, "additionalProperties": False, "required": []}
     monkeypatch.setattr(provider, "record", lambda *a, **k: None)
 
     def post(*args, **kwargs):
         body = kwargs["json"]
-        assert body["temperature"] == 0 and body["max_tokens"] == 4096
+        assert body["temperature"] == 0 and body["max_tokens"] == output_limit
         assert body["response_format"]["json_schema"]["schema"] == schema
         return response(completion())
 
     monkeypatch.setattr(httpx, "post", post)
-    assert llm.chat_structured("system", "prompt", schema) == {"ok": True}
+    assert llm.chat_structured("system", "prompt", schema,
+                               max_output_tokens=output_limit) == {"ok": True}
 
     from lifereel_api.providers import internal, rpc
 
@@ -88,11 +90,12 @@ def test_d4_structured_request_preserves_gateway_options(llm, monkeypatch):
     def remote(operation, payload):
         data = internal.validate(operation, payload)
         assert data["output_schema"] == schema
-        assert data["temperature"] == 0 and data["max_output_tokens"] == 4096
+        assert data["temperature"] == 0 and data["max_output_tokens"] == output_limit
         return {"output": {"ok": True}}
 
     monkeypatch.setattr(rpc, "model_call", remote)
-    assert llm.chat_structured("system", "prompt", schema) == {"ok": True}
+    assert llm.chat_structured("system", "prompt", schema,
+                               max_output_tokens=output_limit) == {"ok": True}
 
 
 def test_task_settings_read_from_environment(monkeypatch):

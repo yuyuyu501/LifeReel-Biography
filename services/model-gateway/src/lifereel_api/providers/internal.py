@@ -26,7 +26,7 @@ class ChatPayload(Payload):
     parse_json: bool
     output_schema: dict | None = None
     temperature: float = Field(default=0.4, ge=0, le=2)
-    max_output_tokens: int | None = Field(default=None, ge=1, le=4096)
+    max_output_tokens: int | None = Field(default=None, ge=1, le=8192)
 
 
 class AudioPayload(Payload):

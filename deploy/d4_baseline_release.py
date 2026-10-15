@@ -12,15 +12,19 @@ from pathlib import Path
 from dotenv import set_key
 
 ROOT = Path("/opt/LifeReel-Biography")
-BACKUP = Path("/opt/lifereel-backups/d4-baseline-20261014")
-RECORD = Path("/opt/lifereel-deploy/d4-baseline-20261014")
+RELEASE_NAME = "d4-baseline-20261014"
+BACKUP = Path("/opt/lifereel-backups") / RELEASE_NAME
+RECORD = Path("/opt/lifereel-deploy") / RELEASE_NAME
 COMPOSE = ["docker", "compose", "-f", "compose.production.yaml"]
 MODULES = {
     **{
         f"lifereel_api.modules.interview.{name}": (
             f"services/interview/src/lifereel_api/modules/interview/{name}.py"
         )
-        for name in ("d4", "quality", "companion", "profile_extraction", "profile_service")
+        for name in (
+            "d4", "grounding", "retrieval", "quality", "companion",
+            "profile_extraction", "profile_service",
+        )
     },
     **{
         f"lifereel_api.providers.{name}": (
@@ -110,7 +114,7 @@ def prepare():
     images = []
     for item in containers():
         service = item["Config"]["Labels"]["com.docker.compose.service"]
-        tag = f"lifereel/rollback-{service}:d4-baseline-20261014"
+        tag = f"lifereel/rollback-{service}:{RELEASE_NAME}"
         run("docker", "tag", item["Image"], tag)
         images.append(
             {
@@ -128,7 +132,7 @@ def prepare():
         "docker",
         "tag",
         f"lifereel/backend-runtime:{previous}",
-        "lifereel/d4-dependency-seed:20261014",
+        f"lifereel/d4-dependency-seed:{RELEASE_NAME}",
     )
     print(json.dumps({"backup": str(BACKUP), "previous": previous, "retained_images": len(images)}))
 
@@ -139,7 +143,7 @@ def build(release):
         "git", "diff", previous, release, "--", "apps/api/requirements.lock", "apps/api/uv.lock"
     ), "Dependencies changed"
     dockerfile = RECORD / "Dockerfile.backend"
-    dockerfile.write_text("""FROM lifereel/d4-dependency-seed:20261014
+    dockerfile.write_text(f"""FROM lifereel/d4-dependency-seed:{RELEASE_NAME}
 ARG RELEASE
 LABEL org.opencontainers.image.revision=$RELEASE
 WORKDIR /workspace
@@ -187,20 +191,7 @@ def deploy(release):
         backup_database("database.quiesced.dump")
         for key, value in {
             "LIFEREEL_RELEASE": release,
-            "INTERVIEW_RECORDING_METHOD": "d4",
-            "INTERVIEW_ENHANCEMENTS_ENABLED": "true",
-            "INTERVIEW_REVIEW_ENABLED": "true",
-            "INTERVIEW_QUALITY_ENABLED": "false",
-            "INTERVIEW_SYNC_ASSISTANCE_ENABLED": "false",
-            "INTERVIEW_LLM_BACKEND": "volcengine",
-            "INTERVIEW_LLM_MODEL": "doubao-seed-2-1-lite-260915",
-            "INTERVIEW_REVIEW_LLM_MODEL": "gpt-6.1-sol",
-            "INTERVIEW_LLM_THINKING": "disabled",
-            "INTERVIEW_LLM_STREAM": "false",
-            "INTERVIEW_REVIEW_LLM_STREAM": "false",
-            "INTERVIEW_LLM_READ_TIMEOUT_SECONDS": "90",
-            "INTERVIEW_REVIEW_LLM_READ_TIMEOUT_SECONDS": "240",
-            "INTERVIEW_TURN_BUDGET_SECONDS": "300",
+            "INTERVIEW_D4_ENHANCEMENT": "baseline",
         }.items():
             set_key(str(ROOT / ".env"), key, value)
         os.chmod(ROOT / ".env", 0o600)
@@ -287,13 +278,15 @@ def verify(release):
         config = (
             "import json; from lifereel_api.core.config import get_settings; s=get_settings(); "
             "print(json.dumps([s.interview_recording_method,s.model_for('interview'),"
-            "s.model_for('interview_review'),s.interview_review_enabled]))"
+            "s.model_for('interview_review'),s.interview_review_enabled,"
+            "s.interview_d4_enhancement]))"
         )
         assert json.loads(out(*COMPOSE, "exec", "-T", service, "python", "-c", config)) == [
             "d4",
             "doubao-seed-2-1-lite-260915",
             "gpt-6.1-sol",
             True,
+            "baseline",
         ]
     health = json.loads(out("curl", "-fsS", "https://bianjiaigc.com/health"))
     assert health["status"] == "ok"
@@ -307,6 +300,8 @@ def verify(release):
                 "runtime": runtime,
                 "source_hashes": expected,
                 "health": health,
+                "enhancement": "baseline",
+                "backup": str(BACKUP),
             },
             indent=2,
         )
@@ -319,16 +314,23 @@ def verify(release):
                 "migration": migration,
                 "runtime_hashes_verified": True,
                 "recording_method": "d4",
+                "enhancement": "baseline",
             }
         )
     )
 
 
 def main():
+    global RELEASE_NAME, BACKUP, RECORD
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("stage", choices=["prepare", "build", "deploy", "verify"])
     parser.add_argument("release", nargs="?")
+    parser.add_argument("--release-name", default=RELEASE_NAME)
     args = parser.parse_args()
+    assert re.fullmatch(r"[a-z0-9][a-z0-9-]{0,63}", args.release_name), "Invalid release name"
+    RELEASE_NAME = args.release_name
+    BACKUP = Path("/opt/lifereel-backups") / RELEASE_NAME
+    RECORD = Path("/opt/lifereel-deploy") / RELEASE_NAME
     os.umask(0o077)
     os.chdir(ROOT)
     assert not out("git", "status", "--porcelain"), "Unexpected server changes"

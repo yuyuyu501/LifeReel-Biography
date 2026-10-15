@@ -103,6 +103,31 @@ def test_entity_mapping_and_evidence_spans():
     assert trace["record_evidence"]["1"][0]["start"] == data["new_answer"].index("我父亲")
 
 
+def test_blank_close_reply_persists_facts_and_refreshes(client, enabled, monkeypatch):
+    person = client.post("/v1/persons", json={"display_name": "结束协议合成人物"}).json()
+    session = client.post("/v1/interviews", json={"subject_id": person["id"]}).json()
+
+    def structured(self, prompt, value, schema):
+        sid = json.loads(value)["target_source"]
+        raw = draft([fact(source=sid)], source=sid)
+        raw["next_question"] = ""
+        raw["decision"]["action"] = "close"
+        return raw
+
+    monkeypatch.setattr(OpenAICompatibleClient, "chat_structured", structured)
+    with SessionLocal() as db:
+        result = process(db, enabled.default_tenant_id, UUID(session["profile_id"]),
+                         "我1970年出生。今天先聊到这里。",
+                         {"type": "test", "id": "empty-close", "version": 1}, uuid4())
+    assert result["audit"]["verdict"] == "pass"
+    assert result["audit"]["reply_fallback"]
+    assert result["next_question"] == "好的，我们先聊到这里。之后想继续时，随时回来。"
+    refreshed = client.get(f"/v1/life-profiles/{session['profile_id']}").json()
+    assert refreshed["version_number"] == result["profile"]["version_number"]
+    assert next(e for e in refreshed["entries"]
+                if e["field_key"] == "identity.birth_time")["value"] == "1970年"
+
+
 @pytest.mark.parametrize(
     "extra,reason",
     [

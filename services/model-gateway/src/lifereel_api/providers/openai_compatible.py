@@ -379,11 +379,13 @@ class OpenAICompatibleClient:
                 raise
         return self._chat(messages, parse_json=True)
 
-    def chat_structured(self, system: str, user: str, schema: dict) -> dict[str, Any]:
+    def chat_structured(
+        self, system: str, user: str, schema: dict, *, max_output_tokens: int = 4096,
+    ) -> dict[str, Any]:
         return self._chat(
             [{"role": "system", "content": system}, {"role": "user", "content": user}],
             json_output=True, parse_json=True, output_schema=schema,
-            temperature=0, max_output_tokens=4096,
+            temperature=0, max_output_tokens=max_output_tokens,
         )
 
     def analyze_images(self, system: str, prompt: str, images: list[tuple[str, bytes]]) -> str:

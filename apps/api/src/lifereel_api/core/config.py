@@ -126,6 +126,7 @@ class Settings(BaseSettings):
     interview_llm_thinking: Literal["enabled", "disabled"] = "disabled"
     interview_enhancements_enabled: bool = False
     interview_recording_method: Literal["legacy", "d4"] = "legacy"
+    interview_d4_enhancement: Literal["baseline", "reasoning", "retrieval", "combined"] = "baseline"
     interview_history_enabled: bool = False
     interview_review_enabled: bool = False
     interview_quality_enabled: bool = False

@@ -34,6 +34,36 @@
 
 若服务器无法直连 GitHub，可从已推送的同一提交生成 Git bundle，通过 SSH 上传后由服务器 `git fetch <bundle>`，再快进到相同 SHA。该方式保留原始 Git 历史，不另写或覆盖一份服务器源码。发布前保留上一版镜像用于回滚；依赖未变化时可复用现有镜像依赖层，但业务源码必须来自已验证的提交。
 
+## D4 协议修复发布（2026-10-15）
+
+本次发布包包含对象格式误拦、具体谓词映射、重复拒答与同事件年份关联更正修复，
+以及默认关闭的增强核查与资料检索实验代码。生产继续使用 D4 baseline、Lite 主聊、
+Sol 审核；`INTERVIEW_D4_ENHANCEMENT=baseline`，不扩大增强核查调用范围。
+质量边界见[协议修复报告](reports/2026-10-15-d4-protocol-corrections.md)。
+
+发布脚本 `deploy/d4_baseline_release.py` 的四个阶段均指定
+`--release-name d4-protocol-20261015`；`build/deploy/verify` 还须传入已推送的完整 SHA。
+`prepare` 在旧版干净 checkout 上运行经本地检查的同一脚本副本，先检查活动任务、
+备份数据库和环境、保留镜像；随后快进到新提交，再执行其余阶段。
+依赖锁未变化才允许复用旧镜像依赖层，业务源码仍从新提交构建。
+此次只更新发布 SHA 和 baseline 开关，保留现有模型、密钥及其他生产配置。
+
+- 独立备份目录：`/opt/lifereel-backups/d4-protocol-20261015`。
+- 构建、迁移和验证回执目录：`/opt/lifereel-deploy/d4-protocol-20261015`。
+- 上一版提交：`2b0a5ed01097670b071aeca6f5666c692070897f`，已有标签 `d4-baseline-20261014`。
+- 回退镜像：`lifereel/rollback-<service>:d4-protocol-20261015`；原始镜像及 SHA 另存 `rollback.json`。
+
+成功以 `verification.json` 为准：记录实际发布 SHA、16 个健康服务及镜像 ID、
+启动时间、迁移版本、三个关键服务内十个模块的源码哈希，以及公网健康检查。
+本次没有新增迁移，预期数据库版本仍为 `20261012_0045`。
+部署启动失败时脚本恢复旧环境并启动保留的旧版镜像，不自动覆盖数据库或用户新增资料。
+本次发布不重新请求付费模型，也不将健康检查视为整体访谈质量验收通过。
+
+发布前本地检查：后端全量 pytest 1023 项通过、29 项跳过、0 失败；Web 200 项和
+小程序4项测试、pnpm lint、Web与微信小程序构建、修改范围Python Ruff及生产Compose
+配置检查通过。全仓Ruff有63个既有问题，全仓Prettier也报告未修改文件的格式问题，
+此次未混入无关格式重排。完整测试回执保存在忽略的 `tmp/d4-release-20261015-backend.xml`。
+
 ## 生产 Docker Compose
 
 1. 启动 Docker Desktop 或 Linux Docker Engine。
