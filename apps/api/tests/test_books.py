@@ -2,6 +2,7 @@ import copy
 import json
 from uuid import UUID, uuid4
 
+import httpx
 import pytest
 from sqlalchemy import func, select
 
@@ -17,6 +18,7 @@ from lifereel_api.modules.jobs.dispatch import claim_job, execute_claim
 from lifereel_api.modules.jobs.models import Job
 from lifereel_api.modules.memory.models import MemoryClaim, MemoryConflict
 from lifereel_api.providers.openai_compatible import OpenAICompatibleClient
+from lifereel_api.providers.rpc import provider_error, raise_provider_error
 
 
 @pytest.fixture
@@ -332,3 +334,68 @@ def test_writer_performs_bounded_repair_without_external_calls(monkeypatch):
 
 def test_word_count_omits_spacing_and_punctuation():
     assert writing.word_count("汉字，AB 12！\n") == 6
+
+
+@pytest.mark.parametrize("failure,expected", [
+    (503, "BOOK_MODEL_UNAVAILABLE"),
+    (502, "BOOK_MODEL_UNAVAILABLE"),
+    (429, "BOOK_MODEL_RATE_LIMITED"),
+    (401, "BOOK_MODEL_NOT_CONFIGURED"),
+    (403, "BOOK_MODEL_NOT_CONFIGURED"),
+    (404, "BOOK_MODEL_NOT_CONFIGURED"),
+    (400, "BOOK_MODEL_REQUEST_FAILED"),
+    ("timeout", "BOOK_MODEL_TIMEOUT"),
+    ("connection", "BOOK_MODEL_UNAVAILABLE"),
+    ("stream", "BOOK_MODEL_UNAVAILABLE"),
+])
+def test_model_failure_survives_gateway_and_worker_without_losing_old_draft(
+    client, book, monkeypatch, caplog, failure, expected,
+):
+    from lifereel_api.providers.openai_compatible import ProviderStreamError
+
+    add_fact(book)
+    real_generate = writing.generate
+    monkeypatch.setattr(writing, "generate", generated)
+    queue(client, book)
+    assert run_job(monkeypatch)["status"] == "completed"
+    old = read(client, book)["chapters"][0]["current"]
+    monkeypatch.setattr(writing, "generate", real_generate)
+    settings = get_settings()
+    monkeypatch.setattr(settings, "llm_provider", "openai-compatible")
+    monkeypatch.setattr(settings, "openai_compatible_base_url", "https://synthetic.test/v1")
+    monkeypatch.setattr(settings, "openai_compatible_api_key", "private-test-credential")
+    monkeypatch.setattr(settings, "script_llm_model", "gpt-6.1-sol")
+    calls = []
+
+    def reject(self, system, material):
+        calls.append(self.model)
+        if isinstance(failure, int):
+            request = httpx.Request("POST", "https://synthetic.test/private-test-credential")
+            error = httpx.HTTPStatusError(
+                "private-test-credential", request=request,
+                response=httpx.Response(failure, request=request, text="private-test-credential"),
+            )
+        else:
+            error = {
+                "timeout": httpx.ReadTimeout,
+                "connection": httpx.ConnectError,
+                "stream": ProviderStreamError,
+            }[failure]("private-test-credential")
+        # Exercise the same safe transport envelope used by the production gateway.
+        envelope = provider_error(error)
+        assert "private-test-credential" not in json.dumps(envelope)
+        raise_provider_error(envelope)
+
+    monkeypatch.setattr(OpenAICompatibleClient, "chat_json", reject)
+    assert queue(client, book)[0].status_code == 202
+    assert run_job(monkeypatch)["status"] == "failed"
+    chapter = read(client, book)["chapters"][0]
+    assert chapter["error_code"] == expected
+    assert chapter["current"] == old
+    assert calls == ["gpt-6.1-sol"]
+    assert "private-test-credential" not in caplog.text
+    assert any(getattr(record, "error_code", None) == expected for record in caplog.records)
+    with SessionLocal() as db:
+        assert sorted(db.scalars(select(Charge.status).where(Charge.kind == "book"))) == [
+            "released", "settled",
+        ]

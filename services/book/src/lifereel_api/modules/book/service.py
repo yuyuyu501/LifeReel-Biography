@@ -478,9 +478,10 @@ def retry(db, job):
         ErrorCode.MODEL_INVOCATION_UNCERTAIN.value,
     }:
         raise ApiError(409, ErrorCode.JOB_RETRY_NOT_ALLOWED)
-    if digest(source(db, book, row.chapter_id)) != job.payload["source_digest"]:
+    if digest(source(db, book, row.chapter_id or row.id)) != job.payload["source_digest"]:
         raise ApiError(409, ErrorCode.BOOK_SOURCE_CHANGED)
     job.status, job.error_code, job.error_message = "queued", None, None
+    job.lease_token = job.lease_expires_at = None
     db.commit()
     return job
 

@@ -1,9 +1,11 @@
 """Bounded, source-grounded prose generation; never pad sparse evidence into a life."""
 
 import json
+import logging
 import re
 import unicodedata
 
+import httpx
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from lifereel_api.core.config import get_settings
@@ -11,6 +13,7 @@ from lifereel_api.core.errors import ApiError, ErrorCode
 from lifereel_api.providers.openai_compatible import OpenAICompatibleClient
 
 MIN_WORDS, TARGET_WORDS, MAX_WORDS = 900, 1000, 1100
+logger = logging.getLogger(__name__)
 
 
 def word_count(text):
@@ -102,6 +105,26 @@ def generate(snapshot):
         try:
             result = client.chat_json(PROMPT + repair, material)
             return validate_output(result, snapshot)
+        except httpx.HTTPError as exc:
+            status = exc.response.status_code if isinstance(exc, httpx.HTTPStatusError) else None
+            if status in {401, 403, 404}:
+                code = ErrorCode.BOOK_MODEL_NOT_CONFIGURED
+            elif status == 429:
+                code = ErrorCode.BOOK_MODEL_RATE_LIMITED
+            elif isinstance(exc, httpx.TimeoutException):
+                code = ErrorCode.BOOK_MODEL_TIMEOUT
+            elif status is None or status >= 500:
+                code = ErrorCode.BOOK_MODEL_UNAVAILABLE
+            else:
+                code = ErrorCode.BOOK_MODEL_REQUEST_FAILED
+            # Log only diagnostic categories, never the exception's URL, body or prompts.
+            logger.warning(
+                "book.model_failed model=%s http_status=%s error_code=%s",
+                client.model, status, code.value,
+                extra={"model": client.model, "http_status": status, "error_code": code.value},
+            )
+            # Transport failures must not enter the schema-repair loop or silently retry.
+            raise ApiError(503, code) from None
         except (ValidationError, ValueError) as exc:
             if attempt:
                 raise ApiError(502, ErrorCode.BOOK_OUTPUT_INVALID) from None

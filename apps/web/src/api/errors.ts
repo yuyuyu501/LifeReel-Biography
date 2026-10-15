@@ -12,6 +12,13 @@ export const ERROR_MESSAGES: Record<string, string> = {
   BOOK_MATERIAL_INSUFFICIENT:
     "现有资料不足以写成约1000字的真实章节，请先补充采访中的具体经历。",
   BOOK_MODEL_NOT_CONFIGURED: "写书模型尚未配置，请联系管理员。",
+  BOOK_MODEL_UNAVAILABLE:
+    "写书模型服务暂时不可用，本次未成稿，已有稿件保留。请稍后重试。",
+  BOOK_MODEL_RATE_LIMITED: "写书模型请求过多，请稍后重试，已有稿件保留。",
+  BOOK_MODEL_TIMEOUT:
+    "写书模型响应超时，本次未成稿，已有稿件保留。请稍后重新生成。",
+  BOOK_MODEL_REQUEST_FAILED:
+    "写书模型未能接受本次请求，已有稿件保留。请联系管理员检查模型配置。",
   BOOK_INPUT_TOO_LARGE: "本章资料过多，请先整理或拆分采访内容。",
   BOOK_OUTPUT_INVALID:
     "本次正文未通过字数或来源检查，旧稿已保留。可补充资料后重新生成。",

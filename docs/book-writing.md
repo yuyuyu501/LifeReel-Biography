@@ -17,7 +17,8 @@ Web 左侧导航选择“写书”，在“人生书架”选择人物并创建�
 - API：`services/book/`，独立 Dockerfile；路由 `/v1/books`。
 - 执行器：`workers/book/`，独立 Dockerfile；持久任务 `book.chapter.generate`，写书 lane 并发为 1。
 - 数据：`book.books`、`book.book_chapters`、`book.book_revisions`；迁移 `20260930_0043`。
-- 模型：沿用 `SCRIPT_LLM_MODEL`、流式选项及现有模型网关，无新密钥。先组织提纲再生成有来源引用的正文；结构、引用和字数失败最多再尝试一次。模型未配置时明确报错，不返回模拟书稿。
+- 模型：使用 `SCRIPT_LLM_MODEL=gpt-6.1-sol`、现有流式选项和模型网关，无新密钥。该配置也供视频剧本使用，与 Lite 采访模型分别配置。先组织提纲再生成有来源引用的正文；结构、引用和字数失败最多再尝试一次。模型未配置时明确报错，不返回模拟书稿。
+- 故障提示：上游不可用、限流、超时及请求被拒分别记录为 `BOOK_MODEL_UNAVAILABLE`、`BOOK_MODEL_RATE_LIMITED`、`BOOK_MODEL_TIMEOUT`、`BOOK_MODEL_REQUEST_FAILED`；认证或模型不存在使用 `BOOK_MODEL_NOT_CONFIGURED`。模型网关保留超时类别，任务和页面保留对应错误码；日志只记录模型、HTTP 状态和错误类别。上述故障不自动重发付费请求，失败保留旧稿，预占费用仍按现有计费规则释放。
 - 钱包：沿用现有文字计费规则；按量模式已发生的 AI 用量会计费，包括结果验证失败的调用。按成功章节模式只结算成功章节。重复提交的同一个请求不重复创建任务。
 - 一致性：生成前后校验来源摘要和稿件版本，冲突不会覆盖新稿；任务、稿件发布和钱包 Outbox 同事务提交。
 

@@ -72,6 +72,8 @@ def provider_error(exc):
             "status": exc.response.status_code,
             "unsupported": isinstance(exc, ProviderHTTPError) and exc.response_format_unsupported,
         }
+    if isinstance(exc, httpx.TimeoutException):
+        return {"kind": "timeout"}
     if isinstance(exc, httpx.RequestError):
         return {"kind": "transport"}
     return None
@@ -96,6 +98,8 @@ def raise_provider_error(data):
         raise ProviderResponseError(data["code"])
     if data["kind"] == "stream":
         raise ProviderStreamError("LLM_STREAM_INCOMPLETE")
+    if data["kind"] == "timeout":
+        raise httpx.TimeoutException("MODEL_GATEWAY_TIMEOUT")
     if data["kind"] == "http":
         request = httpx.Request("POST", "http://model-gateway/internal")
         error = ProviderHTTPError(

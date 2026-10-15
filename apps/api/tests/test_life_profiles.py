@@ -387,6 +387,49 @@ def test_profile_book_worker_generates_validated_thousand_character_chapter(clie
     assert chapter["current"]["author"] == "ai" and not chapter["stale"]
 
 
+def test_profile_book_failed_model_job_can_be_retried_without_changing_sources(client, monkeypatch):
+    from lifereel_api.core.config import get_settings
+    from lifereel_api.core.errors import ApiError, ErrorCode
+    from lifereel_api.modules.book import writing
+    from lifereel_api.modules.jobs.dispatch import claim_job, execute_claim
+
+    person, _, _ = _rich_profile(client)
+    book = client.post("/v1/books", json={"subject_id": person["id"]}).json()
+    queued = client.post(f"/v1/books/{book['id']}/generate", json={"idempotency_key": str(uuid4())})
+    assert queued.status_code == 202, queued.text
+    job_id = queued.json()["job_ids"][0]
+    monkeypatch.setattr(get_settings(), "job_queue_backend", "database")
+
+    def unavailable(_):
+        raise ApiError(503, ErrorCode.BOOK_MODEL_UNAVAILABLE)
+
+    monkeypatch.setattr(writing, "generate", unavailable)
+    with SessionLocal() as db:
+        claim = claim_job(db, "book")
+        assert execute_claim(db, UUID(job_id), UUID(claim["token"]))["status"] == "failed"
+    response = client.post(f"/v1/jobs/{job_id}/retry")
+    assert response.status_code == 200, response.text
+    assert response.json()["status"] == "queued"
+
+    def synthetic(snapshot):
+        return {
+            "title": snapshot["chapter"], "body": "合成正文" * 250, "word_count": 1000,
+            "source_claim_ids": [snapshot["claims"][0]["id"]],
+        }
+
+    monkeypatch.setattr(writing, "generate", synthetic)
+    # The retry must be claimable immediately and reuse its original charge key.
+    with SessionLocal() as db:
+        claim = claim_job(db, "book")
+        assert claim is not None
+        assert execute_claim(db, UUID(job_id), UUID(claim["token"]))["status"] == "completed"
+        charges = list(db.scalars(select(Charge).where(Charge.kind == "book")))
+        assert len(charges) == 1
+        assert charges[0].status == "settled" and charges[0].attempt == 2
+    chapter = client.get(f"/v1/books/{book['id']}").json()["chapters"][0]
+    assert chapter["current"]["word_count"] == 1000
+
+
 def test_profile_extraction_rejects_an_invented_year(client, monkeypatch):
     import pytest
 

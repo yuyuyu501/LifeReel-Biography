@@ -169,6 +169,23 @@ it("restores queued state after opening and prevents duplicate generation", asyn
   expect(screen.getByText(/刷新不会丢失任务/)).toBeInTheDocument();
 });
 
+it.each([
+  ["BOOK_MODEL_UNAVAILABLE", "写书模型服务暂时不可用"],
+  ["BOOK_MODEL_RATE_LIMITED", "写书模型请求过多"],
+  ["BOOK_MODEL_TIMEOUT", "写书模型响应超时"],
+  ["BOOK_MODEL_REQUEST_FAILED", "写书模型未能接受本次请求"],
+])(
+  "explains %s and preserves the previous manuscript",
+  async (code, message) => {
+    book.chapters[0].status = "failed";
+    book.chapters[0].error_code = code;
+    setup();
+    expect(await screen.findByRole("alert")).toHaveTextContent(message);
+    expect(screen.getByText("第一段真实回忆。")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "重新生成本章" })).toBeEnabled();
+  },
+);
+
 it("edits manuscript and preserves version history", async () => {
   setup();
   fireEvent.click(await screen.findByRole("button", { name: "编辑正文" }));

@@ -64,6 +64,22 @@ Sol 审核；`INTERVIEW_D4_ENHANCEMENT=baseline`，不扩大增强核查调用�
 配置检查通过。全仓Ruff有63个既有问题，全仓Prettier也报告未修改文件的格式问题，
 此次未混入无关格式重排。完整测试回执保存在忽略的 `tmp/d4-release-20261015-backend.xml`。
 
+## 写书模型及故障提示更新（2026-10-15）
+
+写书及视频剧本共用 `SCRIPT_LLM_MODEL`，本次切换为 `gpt-6.1-sol`。
+采访仍为 Lite 主聊、Sol 审核、D4 baseline。写书故障保留上游不可用、限流、
+超时及请求被拒的类别，页面显示对应原因；资料型书籍的失败任务支持保留选材重试。
+不自动重发已失败的付费生成，也不改变章节选材或降低来源与字数校验。
+
+沿用 `deploy/d4_baseline_release.py` 四阶段发布，统一指定
+`--release-name book-sol-20261015`，`deploy/verify` 额外指定
+`--script-model gpt-6.1-sol`。`prepare` 先在干净旧版本上备份数据库、环境和镜像；
+其余阶段必须在已推送提交上运行。环境只更新发布 SHA、baseline 开关和写书模型。
+备份位于 `/opt/lifereel-backups/book-sol-20261015`，回执位于
+`/opt/lifereel-deploy/book-sol-20261015`；核对 book、worker-book、model-gateway
+等五个服务的实际模型配置及关键模块哈希、16 个服务健康状态和迁移版本。
+本次无新增迁移，上一提交为 `ea99f2ac56a049ed1962d47b98ceac39ff421db5`。
+
 ## 生产 Docker Compose
 
 1. 启动 Docker Desktop 或 Linux Docker Engine。
@@ -254,7 +270,7 @@ OPENAI_COMPATIBLE_BASE_URL=https://provider.example/v1
 OPENAI_COMPATIBLE_API_KEY=replace-me
 INTERVIEW_LLM_MODEL=gpt-5.6-luna
 MEMORY_LLM_MODEL=gpt-5.6-luna
-SCRIPT_LLM_MODEL=gpt-5.6-luna
+SCRIPT_LLM_MODEL=gpt-6.1-sol
 VISION_LLM_MODEL=gpt-5.6-luna
 ASR_MODEL=small
 WHISPER_MODEL_PATH=

@@ -33,6 +33,10 @@ MODULES = {
         for name in ("internal", "openai_compatible")
     },
     "lifereel_api.core.config": "apps/api/src/lifereel_api/core/config.py",
+    "lifereel_api.core.errors": "apps/api/src/lifereel_api/core/errors.py",
+    "lifereel_api.providers.rpc": "services/model-gateway/src/lifereel_api/providers/rpc.py",
+    "lifereel_api.modules.book.writing": "services/book/src/lifereel_api/modules/book/writing.py",
+    "lifereel_api.modules.book.service": "services/book/src/lifereel_api/modules/book/service.py",
 }
 
 
@@ -178,7 +182,7 @@ WORKDIR /workspace/apps/api
     print(json.dumps({"built": release}))
 
 
-def deploy(release):
+def deploy(release, script_model=None):
     no_jobs()
     services = [
         s
@@ -189,10 +193,13 @@ def deploy(release):
     try:
         no_jobs()
         backup_database("database.quiesced.dump")
-        for key, value in {
+        changes = {
             "LIFEREEL_RELEASE": release,
             "INTERVIEW_D4_ENHANCEMENT": "baseline",
-        }.items():
+        }
+        if script_model:
+            changes["SCRIPT_LLM_MODEL"] = script_model
+        for key, value in changes.items():
             set_key(str(ROOT / ".env"), key, value)
         os.chmod(ROOT / ".env", 0o600)
         run(*COMPOSE, "config", "--quiet")
@@ -233,7 +240,7 @@ def deploy(release):
     print(json.dumps({"deployed": release, "backup": str(BACKUP)}))
 
 
-def verify(release):
+def verify(release, script_model=None):
     runtime = []
     for item in containers():
         service = item["Config"]["Labels"]["com.docker.compose.service"]
@@ -271,7 +278,8 @@ def verify(release):
         + "; print(json.dumps({m:hashlib.sha256("
         "Path(inspect.getfile(importlib.import_module(m))).read_bytes()).hexdigest() for m in ms}))"
     )
-    for service in ("interview", "worker-interview", "model-gateway"):
+    script_models = {}
+    for service in ("interview", "worker-interview", "model-gateway", "book", "worker-book"):
         assert json.loads(out(*COMPOSE, "exec", "-T", service, "python", "-c", code)) == expected, (
             service
         )
@@ -288,6 +296,16 @@ def verify(release):
             True,
             "baseline",
         ]
+        script_config = (
+            "import json; from lifereel_api.core.config import get_settings; "
+            "print(json.dumps(get_settings().model_for('script')))"
+        )
+        actual_model = json.loads(
+            out(*COMPOSE, "exec", "-T", service, "python", "-c", script_config)
+        )
+        script_models[service] = actual_model
+        if script_model:
+            assert actual_model == script_model, (service, actual_model)
     health = json.loads(out("curl", "-fsS", "https://bianjiaigc.com/health"))
     assert health["status"] == "ok"
     run("curl", "-fsS", "https://bianjiaigc.com/ready", stdout=subprocess.DEVNULL)
@@ -301,6 +319,7 @@ def verify(release):
                 "source_hashes": expected,
                 "health": health,
                 "enhancement": "baseline",
+                "script_models": script_models,
                 "backup": str(BACKUP),
             },
             indent=2,
@@ -326,6 +345,7 @@ def main():
     parser.add_argument("stage", choices=["prepare", "build", "deploy", "verify"])
     parser.add_argument("release", nargs="?")
     parser.add_argument("--release-name", default=RELEASE_NAME)
+    parser.add_argument("--script-model", choices=["gpt-6.1-sol"])
     args = parser.parse_args()
     assert re.fullmatch(r"[a-z0-9][a-z0-9-]{0,63}", args.release_name), "Invalid release name"
     RELEASE_NAME = args.release_name
@@ -339,7 +359,12 @@ def main():
     else:
         assert args.release and re.fullmatch(r"[0-9a-f]{40}", args.release)
         assert out("git", "rev-parse", "HEAD") == args.release
-        {"build": build, "deploy": deploy, "verify": verify}[args.stage](args.release)
+        if args.stage == "build":
+            build(args.release)
+        elif args.stage == "deploy":
+            deploy(args.release, args.script_model)
+        else:
+            verify(args.release, args.script_model)
 
 
 if __name__ == "__main__":
