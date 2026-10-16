@@ -121,6 +121,14 @@ class Settings(BaseSettings):
     openai_compatible_base_url: str | None = None
     openai_compatible_api_key: str | None = None
     openai_compatible_model: str | None = None
+    llm_model_pool_interview: str | None = None
+    llm_model_pool_interview_review: str | None = None
+    llm_model_pool_script: str | None = None
+    llm_model_pool_max_attempts: int = Field(default=3, ge=1, le=3)
+    llm_model_pool_attempt_seconds: TimeoutSeconds = 180
+    llm_model_pool_total_seconds: TimeoutSeconds = 600
+    llm_model_pool_failure_threshold: int = Field(default=2, ge=1, le=10)
+    llm_model_pool_cooldown_seconds: float = Field(default=60, ge=1, le=600)
     interview_llm_model: str | None = None
     interview_llm_backend: Literal["inherit", "volcengine"] = "inherit"
     interview_llm_thinking: Literal["enabled", "disabled"] = "disabled"
@@ -223,9 +231,43 @@ class Settings(BaseSettings):
         return configured or self.openai_compatible_model or ""
 
     def llm_endpoint_for(self, task: LLMTask) -> tuple[str, str]:
+        if getattr(self, f"llm_model_pool_{task}", None):
+            return self.llm_endpoint_for_provider(self.model_pool_for(task)[0][0])
         if task == "interview" and self.interview_llm_backend == "volcengine":
             return self.volcengine_api_base_url, self.volcengine_api_key or ""
         return self.openai_compatible_base_url or "", self.openai_compatible_api_key or ""
+
+    def llm_endpoint_for_provider(self, provider: str) -> tuple[str, str]:
+        if provider == "cctq":
+            return self.openai_compatible_base_url or "", self.openai_compatible_api_key or ""
+        if provider == "volcengine":
+            return self.volcengine_api_base_url, self.volcengine_api_key or ""
+        raise ValueError("unsupported_llm_pool_provider")
+
+    def model_pool_for(self, task: LLMTask) -> list[tuple[str, str]]:
+        configured = getattr(self, f"llm_model_pool_{task}", None)
+        if not configured:
+            provider = "volcengine" if (
+                task == "interview" and self.interview_llm_backend == "volcengine"
+            ) else "cctq"
+            return [(provider, self.model_for(task))]
+        pool = []
+        for item in configured.split(","):
+            provider, separator, model = item.strip().partition(":")
+            if not separator or provider not in {"cctq", "volcengine"} or not model.strip():
+                raise ValueError("invalid_llm_model_pool")
+            candidate = (provider, model.strip())
+            if candidate not in pool:
+                pool.append(candidate)
+        if not pool or len(pool) > 3:
+            raise ValueError("invalid_llm_model_pool")
+        if task == "interview_review" and any(
+            "lite" in model.lower() for _, model in pool
+        ):
+            raise ValueError("llm_review_pool_requires_qualified_model")
+        if pool[0][1] != self.model_for(task):
+            raise ValueError("llm_model_pool_primary_mismatch")
+        return pool
 
     def llm_timeouts_for(self, task: LLMTask) -> dict[str, float]:
         return {

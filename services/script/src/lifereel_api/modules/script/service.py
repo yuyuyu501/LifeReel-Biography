@@ -259,6 +259,7 @@ def _llm_scenes(
         settings.openai_compatible_base_url or "",
         settings.openai_compatible_api_key or "",
         model,
+        task="script",
     )
     if not client.capabilities().configured:
         raise ApiError(
@@ -490,7 +491,7 @@ def _llm_scenes(
             status.HTTP_502_BAD_GATEWAY,
             ErrorCode.SCRIPT_LLM_RESPONSE_INVALID,
         ) from exc
-    return (title or "").strip() or None, [scene], model
+    return (title or "").strip() or None, [scene], getattr(client, "last_model_used", model)
 
 
 def list_projects(db: Session, tenant_id: UUID) -> list[ScriptProject]:

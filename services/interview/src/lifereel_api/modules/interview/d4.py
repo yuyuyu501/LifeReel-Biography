@@ -896,6 +896,7 @@ def generate(client, material, *, enhancement=None):
         "version": 2,
         "recording_method": VERSION,
         "review_model": settings.model_for("interview_review"),
+        "reply_model": settings.model_for("interview"),
         "rewrites": 0,
         "history": {"status": "not_requested"},
         "enhancement": mode,
@@ -932,6 +933,10 @@ def generate(client, material, *, enhancement=None):
             raw = client.chat_structured(
                 prompt, json.dumps(data, ensure_ascii=False), strict_schema()
             )
+            trace["reply_model"] = getattr(
+                client, "last_model_used", settings.model_for("interview")
+            )
+            trace["reply_fallback_used"] = getattr(client, "fallback_used", False)
             raw = normalize_control_reply(raw, material, trace, "lite")
             draft = Draft.model_validate(raw)
         except ValueError:
@@ -967,6 +972,10 @@ def generate(client, material, *, enhancement=None):
             strict_schema(grounding.ReviewedDraft) if enhanced else strict_schema(),
             **({"max_output_tokens": 8192} if enhanced else {}),
         )
+        trace["review_model"] = getattr(
+            reviewer, "last_model_used", settings.model_for("interview_review")
+        )
+        trace["review_fallback_used"] = getattr(reviewer, "fallback_used", False)
         reviewed = normalize_control_reply(reviewed, material, trace, "sol")
         final = (
             grounding.validate(reviewed, material, trace, require_coverage=True)

@@ -131,6 +131,55 @@ def test_generation_persists_and_duplicate_request_settles_once(client, book, mo
     assert "attachment" in exported.headers["content-disposition"]
 
 
+def test_model_pool_backup_publishes_one_revision_and_settles_one_charge(client, book, monkeypatch):
+    from lifereel_api.providers import model_pool
+    from lifereel_api.providers import openai_compatible as provider
+
+    source_id = add_fact(book)
+    settings = get_settings()
+    for key, value in {
+        "llm_provider": "openai-compatible", "script_llm_model": "gpt-6.1-sol",
+        "openai_compatible_base_url": "https://cctq.test/v1",
+        "openai_compatible_api_key": "synthetic", "volcengine_api_key": "synthetic-ark",
+        "llm_model_pool_script": (
+            "cctq:gpt-6.1-sol,volcengine:doubao-seed-2-1-pro-260915"
+        ), "script_llm_stream": False, "llm_min_interval_seconds": 0,
+    }.items():
+        monkeypatch.setattr(settings, key, value)
+    model_pool._circuits.clear()
+    calls, receipts = [], []
+    monkeypatch.setattr(provider, "record", lambda *a, **k: receipts.append((a, k)))
+    draft = {
+        "material_sufficient": True, "title": "合成章节", "outline": ["合成事实"],
+        "paragraphs": [{"text": "合成测试文字" * 167,
+                        "source_claim_ids": [str(source_id)]}], "missing_details": [],
+    }
+
+    def post(url, **kwargs):
+        calls.append(kwargs["json"]["model"])
+        data = {} if len(calls) == 1 else {
+            "choices": [{"message": {"content": json.dumps(draft)}}],
+        }
+        return httpx.Response(503 if len(calls) == 1 else 200, json=data,
+                              request=httpx.Request("POST", url))
+
+    monkeypatch.setattr(httpx, "post", post)
+    response, payload = queue(client, book)
+    assert response.status_code == 202
+    assert queue(client, book, **payload)[0].json() == response.json()
+    assert run_job(monkeypatch)["status"] == "completed"
+    with SessionLocal() as db:
+        service.execute(db, book["tenant"], UUID(response.json()["job_ids"][0]))
+        revision = db.scalar(select(BookRevision))
+        assert revision.generation_model == "doubao-seed-2-1-pro-260915"
+        assert db.scalar(select(func.count()).select_from(BookRevision)) == 1
+        charges = list(db.scalars(select(Charge).where(Charge.kind == "book")))
+        assert len(charges) == 1 and charges[0].status == "settled"
+    assert calls == ["gpt-6.1-sol", "doubao-seed-2-1-pro-260915"]
+    assert [r[0][1] for r in receipts] == ["failed", "succeeded"]
+    model_pool._circuits.clear()
+
+
 def test_conflicting_request_and_active_regeneration_rejected(client, book):
     add_fact(book)
     first, payload = queue(client, book)

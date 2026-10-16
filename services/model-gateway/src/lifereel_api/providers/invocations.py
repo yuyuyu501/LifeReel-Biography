@@ -18,6 +18,14 @@ def invoke(db, source, operation, envelope, function):
     if operation == "llm.chat" and envelope.payload.get("task"):
         base_url, api_key = settings.llm_endpoint_for(envelope.payload["task"])
     scope = hashlib.sha256((api_key or "").encode()).hexdigest()
+    pool_scope = []
+    if operation == "llm.chat" and envelope.payload.get("task") and getattr(
+        settings, f"llm_model_pool_{envelope.payload['task']}", None
+    ):
+        for provider, model in settings.model_pool_for(envelope.payload["task"]):
+            endpoint, credential = settings.llm_endpoint_for_provider(provider)
+            pool_scope.append((provider, model, endpoint,
+                               hashlib.sha256(credential.encode()).hexdigest()))
     canonical = json.dumps(
         {
             "source": source,
@@ -27,6 +35,7 @@ def invoke(db, source, operation, envelope, function):
             "payload": envelope.payload,
             "provider": base_url,
             "credential_scope": scope,
+            **({"model_pool": pool_scope} if pool_scope else {}),
         },
         sort_keys=True,
         separators=(",", ":"),
@@ -69,7 +78,9 @@ def invoke(db, source, operation, envelope, function):
                 ErrorCode.BILLING_USAGE_PENDING,
                 ErrorCode.INTERVIEW_LLM_CONFIGURATION_INCOMPLETE,
             }
-            if safe_refusal or (
+            if getattr(exc, "pool_uncertain", False):
+                row.state = "uncertain"
+            elif safe_refusal or (
                 detail
                 and detail.get("kind") == "http"
                 and detail.get("status") in {400, 401, 403, 404, 413, 422, 429}

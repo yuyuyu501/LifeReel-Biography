@@ -16,6 +16,14 @@ RELEASE_NAME = "d4-baseline-20261014"
 BACKUP = Path("/opt/lifereel-backups") / RELEASE_NAME
 RECORD = Path("/opt/lifereel-deploy") / RELEASE_NAME
 COMPOSE = ["docker", "compose", "-f", "compose.production.yaml"]
+PRIMARY = "cctq:gpt-6.1-sol"
+PRO = "volcengine:doubao-seed-2-1-pro-260915"
+LITE = "volcengine:doubao-seed-2-1-lite-260915"
+POOLS = {
+    "interview": ",".join((PRIMARY, PRO, LITE)),
+    "interview_review": ",".join((PRIMARY, PRO)),
+    "script": ",".join((PRIMARY, PRO, LITE)),
+}
 MODULES = {
     **{
         f"lifereel_api.modules.interview.{name}": (
@@ -30,7 +38,7 @@ MODULES = {
         f"lifereel_api.providers.{name}": (
             f"services/model-gateway/src/lifereel_api/providers/{name}.py"
         )
-        for name in ("internal", "openai_compatible")
+        for name in ("internal", "openai_compatible", "model_pool", "invocations")
     },
     "lifereel_api.core.config": "apps/api/src/lifereel_api/core/config.py",
     "lifereel_api.core.errors": "apps/api/src/lifereel_api/core/errors.py",
@@ -41,6 +49,9 @@ MODULES = {
         "services/book/src/lifereel_api/modules/book/profile_sources.py"
     ),
     "lifereel_api.modules.book.schemas": "services/book/src/lifereel_api/modules/book/schemas.py",
+    "lifereel_api.modules.script.service": (
+        "services/script/src/lifereel_api/modules/script/service.py"
+    ),
 }
 
 
@@ -186,7 +197,7 @@ WORKDIR /workspace/apps/api
     print(json.dumps({"built": release}))
 
 
-def deploy(release, script_model=None):
+def deploy(release, script_model=None, model_pools=False):
     no_jobs()
     services = [
         s
@@ -201,6 +212,13 @@ def deploy(release, script_model=None):
             "LIFEREEL_RELEASE": release,
             "INTERVIEW_D4_ENHANCEMENT": "baseline",
         }
+        if model_pools:
+            changes.update({f"LLM_MODEL_POOL_{task.upper()}": value
+                            for task, value in POOLS.items()})
+            changes.update({
+                "INTERVIEW_LLM_MODEL": "gpt-6.1-sol", "INTERVIEW_LLM_BACKEND": "inherit",
+                "INTERVIEW_REVIEW_LLM_MODEL": "gpt-6.1-sol", "SCRIPT_LLM_MODEL": "gpt-6.1-sol",
+            })
         if script_model:
             changes["SCRIPT_LLM_MODEL"] = script_model
         for key, value in changes.items():
@@ -244,7 +262,7 @@ def deploy(release, script_model=None):
     print(json.dumps({"deployed": release, "backup": str(BACKUP)}))
 
 
-def verify(release, script_model=None):
+def verify(release, script_model=None, model_pools=False):
     runtime = []
     for item in containers():
         service = item["Config"]["Labels"]["com.docker.compose.service"]
@@ -291,15 +309,22 @@ def verify(release, script_model=None):
             "import json; from lifereel_api.core.config import get_settings; s=get_settings(); "
             "print(json.dumps([s.interview_recording_method,s.model_for('interview'),"
             "s.model_for('interview_review'),s.interview_review_enabled,"
-            "s.interview_d4_enhancement]))"
+            "s.interview_d4_enhancement,s.model_pool_for('interview'),"
+            "s.model_pool_for('interview_review'),s.model_pool_for('script')]))"
         )
-        assert json.loads(out(*COMPOSE, "exec", "-T", service, "python", "-c", config)) == [
+        actual = json.loads(out(*COMPOSE, "exec", "-T", service, "python", "-c", config))
+        assert actual[:5] == [
             "d4",
-            "doubao-seed-2-1-lite-260915",
+            "gpt-6.1-sol" if model_pools else "doubao-seed-2-1-lite-260915",
             "gpt-6.1-sol",
             True,
             "baseline",
         ]
+        if model_pools:
+            assert actual[5:] == [
+                [item.split(":", 1) for item in POOLS[task].split(",")]
+                for task in ("interview", "interview_review", "script")
+            ]
         script_config = (
             "import json; from lifereel_api.core.config import get_settings; "
             "print(json.dumps(get_settings().model_for('script')))"
@@ -324,6 +349,7 @@ def verify(release, script_model=None):
                 "health": health,
                 "enhancement": "baseline",
                 "script_models": script_models,
+                "model_pools": POOLS if model_pools else None,
                 "backup": str(BACKUP),
             },
             indent=2,
@@ -350,6 +376,7 @@ def main():
     parser.add_argument("release", nargs="?")
     parser.add_argument("--release-name", default=RELEASE_NAME)
     parser.add_argument("--script-model", choices=["gpt-6.1-sol"])
+    parser.add_argument("--model-pools", action="store_true")
     args = parser.parse_args()
     assert re.fullmatch(r"[a-z0-9][a-z0-9-]{0,63}", args.release_name), "Invalid release name"
     RELEASE_NAME = args.release_name
@@ -366,9 +393,9 @@ def main():
         if args.stage == "build":
             build(args.release)
         elif args.stage == "deploy":
-            deploy(args.release, args.script_model)
+            deploy(args.release, args.script_model, args.model_pools)
         else:
-            verify(args.release, args.script_model)
+            verify(args.release, args.script_model, args.model_pools)
 
 
 if __name__ == "__main__":

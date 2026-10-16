@@ -6,12 +6,12 @@ from uuid import UUID, uuid4
 
 import httpx
 import pytest
-from lifereel_api.modules.interview import d4
-from lifereel_api.modules.interview.profile_extraction import process
-from lifereel_api.providers.openai_compatible import OpenAICompatibleClient
 
 from lifereel_api.core.config import get_settings
 from lifereel_api.core.database import SessionLocal
+from lifereel_api.modules.interview import d4
+from lifereel_api.modules.interview.profile_extraction import process
+from lifereel_api.providers.openai_compatible import OpenAICompatibleClient
 
 
 def material(text="我1970年出生，我父亲1940年出生。"):
@@ -101,6 +101,43 @@ def test_entity_mapping_and_evidence_spans():
     assert output["changes"][1]["field_key"] == "family.members[]"
     assert output["changes"][1]["value"]["facts"][0]["entity_id"] == "father"
     assert trace["record_evidence"]["1"][0]["start"] == data["new_answer"].index("我父亲")
+
+
+def test_pro_backup_review_still_rejects_unsupported_fact(enabled, monkeypatch):
+    from lifereel_api.providers import model_pool
+
+    sol, pro = "gpt-6.1-sol", "doubao-seed-2-1-pro-260915"
+    for key, value in {
+        "interview_llm_model": sol, "interview_review_llm_model": sol,
+        "llm_model_pool_interview": f"cctq:{sol},volcengine:{pro}",
+        "llm_model_pool_interview_review": f"cctq:{sol},volcengine:{pro}",
+        "volcengine_api_key": "synthetic-ark", "llm_min_interval_seconds": 0,
+        "interview_llm_stream": False, "interview_review_llm_stream": False,
+    }.items():
+        monkeypatch.setattr(enabled, key, value)
+    model_pool._circuits.clear()
+    calls = []
+    result = draft([fact(), fact(entity="father", value="1950年", candidate_id="F2",
+                                quote="我父亲1950年出生")])
+
+    def post(url, **kwargs):
+        model = kwargs["json"]["model"]
+        calls.append(model)
+        data = {} if model == sol else {
+            "choices": [{"message": {"content": json.dumps(result)}}],
+        }
+        return httpx.Response(503 if model == sol else 200, json=data,
+                              request=httpx.Request("POST", url))
+
+    monkeypatch.setattr(httpx, "post", post)
+    output, trace = d4.generate(OpenAICompatibleClient.for_task("interview"), material())
+    assert calls == [sol, pro, sol, pro]
+    assert trace["verdict"] == "pass"
+    assert trace["reply_model"] == trace["review_model"] == pro
+    assert trace["reply_fallback_used"] and trace["review_fallback_used"]
+    assert [change["value"] for change in output["changes"]] == ["1970年"]
+    assert any(row["reason"] == "invalid_quote" for row in trace["rejected_candidates"])
+    model_pool._circuits.clear()
 
 
 def test_blank_close_reply_persists_facts_and_refreshes(client, enabled, monkeypatch):

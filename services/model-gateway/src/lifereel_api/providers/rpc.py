@@ -51,7 +51,11 @@ def audio_call(operation, content, filename, mime_type, options):
 
 
 def provider_error(exc):
-    from lifereel_api.providers.openai_compatible import ProviderHTTPError, ProviderStreamError
+    from lifereel_api.providers.openai_compatible import (
+        ProviderHTTPError,
+        ProviderPolicyError,
+        ProviderStreamError,
+    )
     from lifereel_api.providers.video import VideoProviderError
 
     if isinstance(exc, VideoProviderError):
@@ -64,6 +68,8 @@ def provider_error(exc):
         }
     if isinstance(exc, json.JSONDecodeError):
         return {"kind": "json", "code": "LLM_RESPONSE_JSON_INVALID"}
+    if isinstance(exc, ProviderPolicyError):
+        return {"kind": "policy"}
     if isinstance(exc, ProviderStreamError):
         return {"kind": "stream"}
     if isinstance(exc, httpx.HTTPStatusError):
@@ -82,6 +88,7 @@ def provider_error(exc):
 def raise_provider_error(data):
     from lifereel_api.providers.openai_compatible import (
         ProviderHTTPError,
+        ProviderPolicyError,
         ProviderResponseError,
         ProviderStreamError,
     )
@@ -96,6 +103,8 @@ def raise_provider_error(data):
         )
     if data["kind"] == "json":
         raise ProviderResponseError(data["code"])
+    if data["kind"] == "policy":
+        raise ProviderPolicyError("LLM_POLICY_REFUSAL")
     if data["kind"] == "stream":
         raise ProviderStreamError("LLM_STREAM_INCOMPLETE")
     if data["kind"] == "timeout":

@@ -379,6 +379,8 @@ def execute(db, tenant, job_id):
                 result = writing.generate(job.payload["snapshot"])
                 job.result = {"draft": result}
                 db.commit()
+            generation_model = result.get("_model_used") or get_settings().model_for("script")
+            revision_result = {key: value for key, value in result.items() if key != "_model_used"}
             db.expire_all()
             if digest(source(db, book, row.chapter_id or row.id)) != job.payload["source_digest"]:
                 raise ApiError(409, ErrorCode.BOOK_SOURCE_CHANGED)
@@ -389,11 +391,11 @@ def execute(db, tenant, job_id):
                 tenant_id=tenant,
                 book_chapter_id=row.id,
                 version_number=row.version_number,
-                **result,
+                **revision_result,
                 source_digest=job.payload["source_digest"],
                 source_snapshot=job.payload["snapshot"],
                 author="ai",
-                generation_model=get_settings().model_for("script"),
+                generation_model=generation_model,
             )
             db.add(revision)
             db.flush()

@@ -716,6 +716,7 @@ def generate(client, prompt, material):
     trace = {
         "version": 1,
         "review_model": "",
+        "reply_model": "",
         "rewrites": 0,
         "history": {"status": "not_requested"},
         "advice_job_id": (material.get("strategy_advice") or {}).get("job_id"),
@@ -792,6 +793,7 @@ def generate(client, prompt, material):
 
     def extract(input_material):
         raw = client.chat_json(prompt + GUIDANCE, json.dumps(input_material, ensure_ascii=False))
+        trace["reply_model"] = getattr(client, "last_model_used", settings.model_for("interview"))
         try:
             return validate_extraction(raw)
         except ValidationError as exc:

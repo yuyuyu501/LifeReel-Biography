@@ -40,6 +40,25 @@ class ProviderStreamError(httpx.RemoteProtocolError):
     """Incomplete streams are uncertain transport, never schema-correction retries."""
 
 
+class ProviderPolicyError(httpx.RemoteProtocolError):
+    """A refusal is terminal, including when delivered inside an HTTP 200 stream."""
+
+
+def _policy_error(data):
+    error = data.get("error")
+    if isinstance(error, str):
+        text = error.lower()
+    elif isinstance(error, dict):
+        text = " ".join(str(error.get(key, "")) for key in ("code", "type", "message")).lower()
+    else:
+        return False
+    return any(term in text for term in (
+        "content_filter", "contentfilter", "content_policy", "policy_violation",
+        "blocked by policy", "responsibleaipolicy", "safety_violation",
+        "sensitivecontent", "sensitive_content", "securityrisk",
+    ))
+
+
 def _read_stream(response: httpx.Response, data: dict, max_seconds: float) -> None:
     content: list[str] = []
     event: list[str] = []
@@ -84,6 +103,8 @@ def _read_stream(response: httpx.Response, data: dict, max_seconds: float) -> No
         if "id" in chunk:
             data["id"] = chunk["id"]
         if "error" in chunk:
+            if _policy_error(chunk):
+                raise ProviderPolicyError("LLM_POLICY_REFUSAL")
             raise ProviderStreamError("LLM_STREAM_PROVIDER_ERROR")
         choices = chunk.get("choices")
         if not isinstance(choices, list):
@@ -91,9 +112,13 @@ def _read_stream(response: httpx.Response, data: dict, max_seconds: float) -> No
         for choice in choices:
             if not isinstance(choice, dict) or choice.get("index") != 0:
                 raise ProviderStreamError("LLM_STREAM_CHOICE_INVALID")
+            if choice.get("finish_reason") == "content_filter":
+                raise ProviderPolicyError("LLM_POLICY_REFUSAL")
             delta = choice.get("delta")
             if not isinstance(delta, dict):
                 raise ProviderStreamError("LLM_STREAM_DELTA_INVALID")
+            if delta.get("refusal"):
+                raise ProviderPolicyError("LLM_POLICY_REFUSAL")
             piece = delta.get("content")
             if piece is not None:
                 if not isinstance(piece, str) or finished:
@@ -157,11 +182,17 @@ class OpenAICompatibleClient:
 
     def __init__(
         self, base_url: str, api_key: str, model: str, *, task: LLMTask | None = None,
+        provider: str | None = None,
     ) -> None:
         self.base_url = base_url.rstrip("/")
         self.api_key = api_key
         self.model = model
         self.task = task
+        self.last_model_used = model
+        self.provider = provider
+        self.last_provider_used = provider
+        self.last_pool_attempts = []
+        self.fallback_used = False
 
     def _task(self) -> LLMTask:
         context = current_context()
@@ -186,7 +217,6 @@ class OpenAICompatibleClient:
     def headers(self) -> dict[str, str]:
         return {"Authorization": f"Bearer {self.api_key}"}
 
-    @limited("llm")
     def _chat(
         self, messages: list[dict[str, Any]], json_output: bool = False,
         *, parse_json: bool = False, task: LLMTask | None = None,
@@ -197,13 +227,43 @@ class OpenAICompatibleClient:
         from lifereel_api.architecture.topology import is_remote
         if is_remote("model-gateway"):
             from lifereel_api.providers.rpc import model_call
-            return model_call("llm.chat", {
+            result = model_call("llm.chat", {
                 "model": self.model, "task": task, "messages": messages,
                 "json_output": json_output, "parse_json": parse_json,
                 "output_schema": output_schema, "temperature": temperature,
                 "max_output_tokens": max_output_tokens,
-            })["output"]
-        timeout = httpx.Timeout(**get_settings().llm_timeouts_for(task))
+            })
+            self.last_model_used = result.get("model", self.model)
+            self.last_provider_used = result.get("provider")
+            self.fallback_used = result.get("fallback_used", False)
+            self.last_pool_attempts = result.get("attempts", [])
+            return result["output"]
+        if getattr(get_settings(), f"llm_model_pool_{task}", None):
+            from lifereel_api.providers.model_pool import chat
+
+            return chat(
+                self, messages, task=task, json_output=json_output, parse_json=parse_json,
+                output_schema=output_schema, temperature=temperature,
+                max_output_tokens=max_output_tokens,
+            )
+        return self._single_chat(
+            messages, task=task, json_output=json_output, parse_json=parse_json,
+            output_schema=output_schema, temperature=temperature,
+            max_output_tokens=max_output_tokens,
+        )
+
+    @limited("llm")
+    def _single_chat(
+        self, messages, json_output=False, *, parse_json=False, task=None,
+        output_schema=None, temperature=0.4, max_output_tokens=None, time_budget=None,
+    ):
+        task = task or self._task()
+        timeouts = get_settings().llm_timeouts_for(task)
+        if time_budget is not None:
+            timeouts = {phase: min(seconds, time_budget) for phase, seconds in timeouts.items()}
+        timeout = httpx.Timeout(**timeouts)
+        max_seconds = min(get_settings().llm_stream_max_seconds,
+                          time_budget or get_settings().llm_stream_max_seconds)
         stream = get_settings().llm_stream_for(task)
         payload: dict[str, Any] = {
             "model": self.model,
@@ -211,7 +271,10 @@ class OpenAICompatibleClient:
             "messages": messages,
         }
         settings = get_settings()
-        if task == "interview" and settings.interview_llm_backend == "volcengine":
+        if self.provider == "volcengine" or (
+            task == "interview" and self.provider is None
+            and settings.interview_llm_backend == "volcengine"
+        ):
             payload["thinking"] = {"type": settings.interview_llm_thinking}
         if json_output:
             payload["response_format"] = {"type": "json_object"}
@@ -242,7 +305,7 @@ class OpenAICompatibleClient:
                     "POST", f"{self.base_url}/chat/completions", **request,
                 ) as response:
                     if response.is_success:
-                        _read_stream(response, data, get_settings().llm_stream_max_seconds)
+                        _read_stream(response, data, max_seconds)
                     else:
                         body = bytearray()
                         # Error pages can also be huge/endless. Keep HTTP status even if
@@ -250,7 +313,7 @@ class OpenAICompatibleClient:
                         for block in response.iter_bytes():
                             if (len(body) + len(block) > 2_000_000
                                     or time.monotonic() - started
-                                    > get_settings().llm_stream_max_seconds):
+                                    > max_seconds):
                                 body.clear()
                                 break
                             body.extend(block)
@@ -275,6 +338,8 @@ class OpenAICompatibleClient:
             receipt_id = self._request_id(data.get("id"))
             request_id = request_id or receipt_id
             diagnostic["request_id"] = request_id
+            if _policy_error(data):
+                raise ProviderPolicyError("LLM_POLICY_REFUSAL")
             if not response.is_success:
                 error = ProviderHTTPError(
                     f"LLM_HTTP_ERROR status={response.status_code} request_id={request_id}",
@@ -286,10 +351,16 @@ class OpenAICompatibleClient:
                 raise error
             if not data:
                 raise ProviderResponseError("LLM_RESPONSE_NOT_JSON_OBJECT")
+            if "error" in data:
+                raise ProviderStreamError("LLM_PROVIDER_ERROR")
             choices = data.get("choices")
             if not isinstance(choices, list) or not choices or not isinstance(choices[0], dict):
                 raise ProviderResponseError("LLM_RESPONSE_CHOICES_INVALID")
             message = choices[0].get("message")
+            if choices[0].get("finish_reason") == "content_filter" or (
+                isinstance(message, dict) and message.get("refusal")
+            ):
+                raise ProviderPolicyError("LLM_POLICY_REFUSAL")
             content = message.get("content") if isinstance(message, dict) else None
             if not isinstance(content, str) or not content.strip():
                 raise ProviderResponseError("LLM_RESPONSE_CONTENT_INVALID")
@@ -357,6 +428,7 @@ class OpenAICompatibleClient:
             receipt_id or request_id,
             reservation=reservation,
         )
+        self.last_model_used = self.model
         return content
 
     def chat(self, system: str, user: str) -> str:
@@ -375,7 +447,9 @@ class OpenAICompatibleClient:
         try:
             return self._chat(messages, json_output=True, parse_json=True)
         except ProviderHTTPError as exc:
-            if not exc.response_format_unsupported:
+            if not exc.response_format_unsupported or getattr(
+                get_settings(), f"llm_model_pool_{self._task()}", None
+            ):
                 raise
         return self._chat(messages, parse_json=True)
 

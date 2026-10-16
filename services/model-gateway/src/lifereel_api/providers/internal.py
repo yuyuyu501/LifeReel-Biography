@@ -93,17 +93,27 @@ def chat(db, tenant, data):
         raise ApiError(503, ErrorCode.INTERVIEW_LLM_CONFIGURATION_INCOMPLETE)
     if task == "interview_review" and not settings.interview_review_enabled:
         raise ApiError(503, ErrorCode.INTERVIEW_LLM_CONFIGURATION_INCOMPLETE)
-    client = OpenAICompatibleClient.for_task(task)
+    try:
+        pool = settings.model_pool_for(task)
+    except ValueError as exc:
+        raise ApiError(503, ErrorCode.INTERVIEW_LLM_CONFIGURATION_INCOMPLETE) from exc
+    base_url, api_key = settings.llm_endpoint_for_provider(pool[0][0])
+    client = OpenAICompatibleClient(base_url, api_key, model, task=task, provider=pool[0][0])
+    if (
+        not getattr(settings, f"llm_model_pool_{task}", None)
+        and not client.capabilities().configured
+    ):
+        raise ApiError(503, ErrorCode.INTERVIEW_LLM_CONFIGURATION_INCOMPLETE)
+    output = client._chat(
+        data["messages"], json_output=data["json_output"], parse_json=data["parse_json"],
+        task=task, output_schema=data.get("output_schema"),
+        temperature=data.get("temperature", 0.4),
+        max_output_tokens=data.get("max_output_tokens"),
+    )
     return {
-        "output": client._chat(
-            data["messages"],
-            json_output=data["json_output"],
-            parse_json=data["parse_json"],
-            task=task,
-            output_schema=data.get("output_schema"),
-            temperature=data.get("temperature", 0.4),
-            max_output_tokens=data.get("max_output_tokens"),
-        )
+        "output": output, "model": client.last_model_used,
+        "provider": client.last_provider_used, "fallback_used": client.fallback_used,
+        "attempts": client.last_pool_attempts,
     }
 
 

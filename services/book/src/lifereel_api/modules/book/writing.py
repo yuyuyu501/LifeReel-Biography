@@ -113,7 +113,11 @@ def generate(snapshot):
     for attempt in range(2):
         try:
             result = client.chat_json(PROMPT + repair, material)
-            return validate_output(result, snapshot)
+            validated = validate_output(result, snapshot)
+            validated["_model_used"] = getattr(
+                client, "last_model_used", settings.model_for("script")
+            )
+            return validated
         except httpx.HTTPError as exc:
             status = exc.response.status_code if isinstance(exc, httpx.HTTPStatusError) else None
             if status in {401, 403, 404}:
