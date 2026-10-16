@@ -225,6 +225,8 @@ def read(db, tenant, book_id):
                 job_id=row.latest_job_id,
                 error_code=error_code,
                 missing_details=missing_details,
+                validation_reason=(job.result or {}).get("validation_reason")
+                if error_code == ErrorCode.BOOK_OUTPUT_INVALID.value else None,
                 current=RevisionRead.model_validate(revision) if revision else None,
                 archived=row.archived,
                 source_entry_ids=snapshot.get("selected_entry_ids", row.source_entry_ids),
@@ -248,7 +250,10 @@ def queue(db, tenant, book_id, payload):
     with execution_lock(db, book.id) as acquired:
         if not acquired:
             raise ApiError(409, ErrorCode.BOOK_GENERATION_BUSY)
-        fingerprint = digest({"book_id": str(book.id), **payload.model_dump(mode="json")})
+        request_data = payload.model_dump(
+            mode="json", exclude={"missing_only"} if not payload.missing_only else set(),
+        )
+        fingerprint = digest({"book_id": str(book.id), **request_data})
         prefix = f"book:{payload.idempotency_key}:"
         previous = list(
             db.scalars(
@@ -286,10 +291,13 @@ def queue(db, tenant, book_id, payload):
         for row in entries:
             if (row.chapter_id or row.id) not in selected:
                 continue
+            current = current_revision(db, row)
+            if payload.missing_only and current:
+                skipped.append(row.chapter_id or row.id)
+                continue
             snapshot = source(db, book, row.chapter_id or row.id)
             if snapshot.get("restricted_entry_ids"):
                 raise ApiError(409, ErrorCode.PROFILE_USE_RESTRICTED)
-            current = current_revision(db, row)
             job = db.get(Job, row.latest_job_id) if row.latest_job_id else None
             if job and job.status in ACTIVE:
                 raise ApiError(409, ErrorCode.BOOK_GENERATION_BUSY)
@@ -408,6 +416,8 @@ def execute(db, tenant, job_id):
             db.rollback()
             if isinstance(exc, ApiError) and exc.code == ErrorCode.BOOK_MATERIAL_INSUFFICIENT:
                 job.result = {"missing_details": exc.context.get("missing_details", [])}
+            if isinstance(exc, ApiError) and exc.code == ErrorCode.BOOK_OUTPUT_INVALID:
+                job.result = {"validation_reason": exc.context.get("validation_reason")}
             transition(db, tenant, key, False)
             db.commit()
             raise

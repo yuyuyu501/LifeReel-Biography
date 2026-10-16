@@ -21,6 +21,7 @@ export interface BookChapter {
   job_id: string | null;
   error_code: string | null;
   missing_details?: string[];
+  validation_reason?: string | null;
   current: BookRevision | null;
   source_entry_ids: string[];
 }

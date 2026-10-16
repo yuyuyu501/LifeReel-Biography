@@ -53,6 +53,31 @@ missing_details给出需要进一步采访的简短问题；不能仅因篇幅�
 """
 
 
+VALIDATION_REPAIRS = {
+    "invalid_structure": "输出必须符合要求的JSON结构和字段类型。",
+    "unsupported_sources": "每段必须引用输入claims中真实存在且支撑该段内容的id。",
+    "empty_prose": "正文和每个段落必须包含有依据的叙述，不能只有空白或标点。",
+    "duplicate_paragraphs": "删除重复段落，各段应推进叙事。",
+    "unsupported_factual_detail": (
+        "逐句核对当前claims，删除没有依据的年份和身份描述；"
+        "source_quote中的历史误述不能覆盖当前事实。"
+    ),
+}
+
+
+def factual_years(text):
+    text = unicodedata.normalize("NFKC", text)
+    year = r"(?:18|19|20|21)[0-9]{2}"
+    years = set(re.findall(rf"(?<![0-9])({year})\s*年", text))
+    # In a date range the first endpoint often omits 年. Only authorize the
+    # endpoints, not every intervening year or unrelated four-digit amounts.
+    for match in re.finditer(
+        rf"(?<![0-9])({year})\s*年?\s*(?:[-—–~～]|至|到)\s*({year})\s*年", text,
+    ):
+        years.update(match.groups())
+    return years
+
+
 def validate_output(result, snapshot):
     draft = Draft.model_validate(result)
     if not draft.material_sufficient:
@@ -82,9 +107,7 @@ def validate_output(result, snapshot):
         item.get("text", item.get("claim_text", "")) for item in snapshot["claims"]
     )
     output_text = draft.title + "\n" + body
-    unsupported = set(re.findall(r"(?:18|19|20|21)\d{2}年", output_text)) - set(
-        re.findall(r"(?:18|19|20|21)\d{2}年", current_facts)
-    )
+    unsupported = factual_years(output_text) - factual_years(current_facts)
     for label in ["中年女性", "中年男性", "年轻女性", "年轻男性", "女性主角", "男性主角"]:
         if label in output_text and label not in current_facts:
             unsupported.add(label)
@@ -142,8 +165,14 @@ def generate(snapshot):
             )
             # Transport failures must not enter the schema-repair loop or silently retry.
             raise ApiError(503, code) from None
-        except (ValidationError, ValueError):
+        except (ValidationError, ValueError) as exc:
+            reason = str(exc) if str(exc) in VALIDATION_REPAIRS else "invalid_structure"
             if attempt:
-                raise ApiError(502, ErrorCode.BOOK_OUTPUT_INVALID) from None
-            repair = "\n上次输出未通过结构、引用或事实检查。重新基于相同事实写作，不要编造。"
+                raise ApiError(
+                    502, ErrorCode.BOOK_OUTPUT_INVALID, {"validation_reason": reason},
+                ) from None
+            repair = (
+                "\n上次输出未通过检查。" + VALIDATION_REPAIRS[reason]
+                + "重新基于相同事实写作，不要编造。"
+            )
     raise ApiError(502, ErrorCode.BOOK_OUTPUT_INVALID)

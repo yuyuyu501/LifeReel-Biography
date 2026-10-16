@@ -121,6 +121,10 @@ def test_generation_persists_and_duplicate_request_settles_once(client, book, mo
     assert data["current"]["word_count"] == 1000
     assert data["version_number"] == 1 and not data["stale"]
     with SessionLocal() as db:
+        job = db.get(Job, UUID(response.json()["job_ids"][0]))
+        assert job.payload["request_digest"] == service.digest({
+            "book_id": book["book"]["id"], "expected_versions": {}, **payload,
+        })
         service.execute(db, book["tenant"], UUID(response.json()["job_ids"][0]))
         charges = list(db.scalars(select(Charge).where(Charge.kind == "book")))
         assert len(charges) == 1 and charges[0].status == "settled"
@@ -198,6 +202,83 @@ def test_all_chapters_queue_only_supported_material(client, book):
     assert response.status_code == 202
     assert len(response.json()["job_ids"]) == 1
     assert book["other_chapter"]["id"] in response.json()["skipped_chapter_ids"]
+
+
+@pytest.mark.parametrize("state", ["current", "stale", "failed", "manual"])
+def test_missing_only_preserves_every_existing_draft(client, book, monkeypatch, state):
+    claim = add_fact(book)
+    monkeypatch.setattr(writing, "generate", generated)
+    queue(client, book)
+    assert run_job(monkeypatch)["status"] == "completed"
+    if state == "stale":
+        with SessionLocal() as db:
+            db.get(MemoryClaim, claim).claim_text += "补充当前资料。"
+            db.commit()
+    elif state == "failed":
+        def fail(snapshot):
+            raise ApiError(502, ErrorCode.BOOK_OUTPUT_INVALID)
+
+        monkeypatch.setattr(writing, "generate", fail)
+        queue(client, book)
+        assert run_job(monkeypatch)["status"] == "failed"
+        monkeypatch.setattr(writing, "generate", generated)
+    elif state == "manual":
+        response = client.patch(
+            "/v1/books/" + book["book"]["id"] + "/chapters/" + book["chapter"]["id"],
+            json={"expected_version": 1, "title": "手动保存的章名", "body": "手写正文。"},
+        )
+        assert response.status_code == 200
+    old = read(client, book)["chapters"][0]
+    add_fact(book, chapter_id=UUID(book["other_chapter"]["id"]))
+    # A failed chapter without a draft is also eligible for filling in.
+    def fail_empty(snapshot):
+        raise ApiError(502, ErrorCode.BOOK_OUTPUT_INVALID)
+
+    monkeypatch.setattr(writing, "generate", fail_empty)
+    queue(client, book, chapter_ids=[book["other_chapter"]["id"]])
+    assert run_job(monkeypatch)["status"] == "failed"
+    monkeypatch.setattr(writing, "generate", generated)
+    payload = {"idempotency_key": str(uuid4()), "missing_only": True}
+    url = "/v1/books/" + book["book"]["id"] + "/generate"
+    response = client.post(url, json=payload)
+    assert response.status_code == 202, response.text
+    assert len(response.json()["job_ids"]) == 1
+    assert book["chapter"]["id"] in response.json()["skipped_chapter_ids"]
+    assert client.post(url, json=payload).json() == response.json()
+    assert run_job(monkeypatch)["status"] == "completed"
+    chapters = read(client, book)["chapters"]
+    assert chapters[0] == old
+    assert chapters[1]["current"] and chapters[1]["version_number"] == 1
+    # Once filled, repeating the command with a new key must schedule no work.
+    assert client.post(url, json={**payload, "idempotency_key": str(uuid4())}).json()[
+        "job_ids"
+    ] == []
+
+
+def test_regenerate_all_includes_saved_chapters_and_preserves_history(client, book, monkeypatch):
+    add_fact(book)
+    add_fact(book, chapter_id=UUID(book["other_chapter"]["id"]))
+    monkeypatch.setattr(writing, "generate", generated)
+    url = "/v1/books/" + book["book"]["id"] + "/generate"
+    for version in (1, 2):
+        payload = {"idempotency_key": str(uuid4()), "overwrite": True}
+        response = client.post(url, json=payload)
+        assert response.status_code == 202
+        assert len(response.json()["job_ids"]) == 2
+        assert client.post(url, json=payload).json() == response.json()
+        assert run_job(monkeypatch)["status"] == "completed"
+        assert run_job(monkeypatch)["status"] == "completed"
+        assert all(c["version_number"] == version for c in read(client, book)["chapters"][:2])
+    with SessionLocal() as db:
+        assert db.scalar(select(func.count()).select_from(BookRevision)) == 4
+        assert list(db.scalars(select(Charge.status).where(Charge.kind == "book"))) == [
+            "settled", "settled", "settled", "settled",
+        ]
+
+
+def test_missing_only_cannot_be_combined_with_overwrite(client, book):
+    response, _ = queue(client, book, missing_only=True)
+    assert response.status_code == 422
 
 
 @pytest.mark.parametrize("review_status", ["private", "disputed", "superseded"])
@@ -362,6 +443,86 @@ def test_generated_output_validation(bad):
         output["outline"] = []
     with pytest.raises(ValueError):
         writing.validate_output(output, {"claims": [{"id": "known"}]})
+
+
+@pytest.mark.parametrize("facts,body", [
+    ('{"time_raw":"1987—2003年"}', "我从1987年起工作，一直做到2003年。"),
+    ('{"time_raw":"2006—2020年间按需要分担"}', "2006年至2020年间，我分担照顾。"),
+    ("父亲（1938—2016年），母亲（1941—2020年）", "父亲1938年出生，母亲1941年出生。"),
+    ("1987年—2003年", "1987年至2003年。"),
+    ("1987-2003年", "1987年到2003年。"),
+    ("1987–2003年", "1987年开始工作。"),
+    ("1987～2003年", "2003年结束工作。"),
+    ("1987至2003年", "1987年开始工作。"),
+    ("1987到2003年", "1987年开始工作。"),
+    ("１９８７－２００３年", "1987年开始工作。"),
+])
+def test_date_range_endpoints_are_supported_facts(facts, body):
+    output = {
+        "material_sufficient": True, "title": "人生片段", "outline": ["经历"],
+        "paragraphs": [{"text": body, "source_claim_ids": ["known"]}],
+    }
+    assert writing.validate_output(output, {
+        "claims": [{"id": "known", "text": facts}],
+    })["body"] == body
+
+
+@pytest.mark.parametrize("facts,quote,body", [
+    ("1987—2003年", "", "我于1995年升职。"),
+    ("1987—2003年", "", "我在1986—2003年工作。"),
+    ("1987—2003年", "", "我在1987—2004年工作。"),
+    ("2000—2003年", "之前误说1987—2003年", "我在1987年开始工作。"),
+    ("2000年开始工作", "之前误说1987年", "我在1987年开始工作。"),
+    ("支出1987—2003元", "", "我在1987年开始工作。"),
+    ("编号11987—2003年", "", "我在1987年开始工作。"),
+])
+def test_date_ranges_do_not_authorize_invented_or_corrected_years(facts, quote, body):
+    output = {
+        "material_sufficient": True, "title": "人生片段", "outline": ["经历"],
+        "paragraphs": [{"text": body, "source_claim_ids": ["known"]}],
+    }
+    with pytest.raises(ValueError, match="unsupported_factual_detail"):
+        writing.validate_output(output, {
+            "claims": [{"id": "known", "text": facts, "source_quote": quote}],
+        })
+
+
+def test_validation_failure_reason_survives_worker_and_preserves_old_draft(
+    client, book, monkeypatch,
+):
+    source_id = add_fact(book)
+    real_generate = writing.generate
+    monkeypatch.setattr(writing, "generate", generated)
+    queue(client, book)
+    run_job(monkeypatch)
+    old = read(client, book)["chapters"][0]["current"]
+    monkeypatch.setattr(writing, "generate", real_generate)
+    settings = get_settings()
+    for key, value in {
+        "llm_provider": "openai-compatible", "script_llm_model": "synthetic",
+        "openai_compatible_base_url": "https://synthetic.test/v1",
+        "openai_compatible_api_key": "synthetic",
+    }.items():
+        monkeypatch.setattr(settings, key, value)
+    prompts = []
+
+    def model(self, system, material):
+        prompts.append(system)
+        return {
+            "material_sufficient": True, "title": "人生片段", "outline": ["经历"],
+            "paragraphs": [{"text": "我在1987年开始工作。",
+                            "source_claim_ids": [str(source_id)]}],
+        }
+
+    monkeypatch.setattr(OpenAICompatibleClient, "chat_json", model)
+    queue(client, book)
+    assert run_job(monkeypatch)["status"] == "failed"
+    chapter = read(client, book)["chapters"][0]
+    assert chapter["error_code"] == "BOOK_OUTPUT_INVALID"
+    assert chapter["validation_reason"] == "unsupported_factual_detail"
+    assert chapter["current"] == old
+    assert len(prompts) == 2
+    assert "删除没有依据的年份" in prompts[1]
 
 
 @pytest.mark.parametrize("count", [5, 841, 859, 1101, 3001, 13001])

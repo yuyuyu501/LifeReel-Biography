@@ -164,10 +164,72 @@ it("restores queued state after opening and prevents duplicate generation", asyn
   expect(
     await screen.findByRole("button", { name: "正在写作……" }),
   ).toBeDisabled();
-  expect(
-    screen.getByRole("button", { name: /生成全书待写章节/ }),
-  ).toBeDisabled();
+  expect(screen.getByRole("button", { name: "重新生成全书" })).toBeDisabled();
+  expect(screen.getByRole("button", { name: "补齐未成稿章节" })).toBeDisabled();
   expect(screen.getByText(/刷新不会丢失任务/)).toBeInTheDocument();
+});
+
+it("fills only missing drafts and leaves saved chapters for the server to skip", async () => {
+  book.chapters[0].stale = true;
+  book.chapters[0].status = "failed";
+  book.chapters[1].source_count = 3;
+  book.chapters[1].status = "failed";
+  setup();
+  fireEvent.click(
+    await screen.findByRole("button", { name: "补齐未成稿章节" }),
+  );
+  await screen.findByText(/已安排 1 章写作/);
+  const call = vi
+    .mocked(fetch)
+    .mock.calls.find(([path]) => String(path).endsWith("/generate"))!;
+  const payload = JSON.parse(call[1]!.body as string);
+  expect(payload.missing_only).toBe(true);
+  expect(payload.overwrite).toBeUndefined();
+  expect(payload.chapter_ids).toBeUndefined();
+  expect(payload.expected_versions).toEqual({ "chapter-1": 1, "chapter-2": 0 });
+  expect(screen.getByText("第一段真实回忆。")).toBeInTheDocument();
+});
+
+it("regenerates the whole book including chapters with saved prose", async () => {
+  setup();
+  fireEvent.click(await screen.findByRole("button", { name: "重新生成全书" }));
+  await screen.findByText(/已安排 1 章写作/);
+  const call = vi
+    .mocked(fetch)
+    .mock.calls.find(([path]) => String(path).endsWith("/generate"))!;
+  const payload = JSON.parse(call[1]!.body as string);
+  expect(payload.overwrite).toBe(true);
+  expect(payload.missing_only).toBeUndefined();
+  expect(payload.chapter_ids).toBeUndefined();
+  expect(payload.idempotency_key).toMatch(/^[0-9a-f-]{36}$/);
+});
+
+it("disables filling when no empty chapter has usable material", async () => {
+  setup();
+  expect(
+    await screen.findByRole("button", { name: "补齐未成稿章节" }),
+  ).toBeDisabled();
+  expect(screen.getByRole("button", { name: "重新生成全书" })).toBeEnabled();
+});
+
+it("does not offer filling for an existing stale or manually edited draft", async () => {
+  book.chapters[0].stale = true;
+  book.chapters[0].current!.author = "user";
+  setup();
+  expect(
+    await screen.findByRole("button", { name: "补齐未成稿章节" }),
+  ).toBeDisabled();
+});
+
+it("shows the specific factual validation failure and keeps the old draft", async () => {
+  book.chapters[0].status = "failed";
+  book.chapters[0].error_code = "BOOK_OUTPUT_INVALID";
+  book.chapters[0].validation_reason = "unsupported_factual_detail";
+  setup();
+  expect(await screen.findByRole("alert")).toHaveTextContent(
+    "当前资料无法确认的年份或身份描述",
+  );
+  expect(screen.getByText("第一段真实回忆。")).toBeInTheDocument();
 });
 
 it("shows concrete material questions while keeping the saved manuscript", async () => {

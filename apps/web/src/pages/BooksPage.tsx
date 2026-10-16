@@ -14,7 +14,8 @@ import {
   BookOpenText,
   Download,
   FileText,
-  Sparkles,
+  ListPlus,
+  RotateCcw,
   UserRound,
 } from "lucide-react";
 import { api, API_BASE_URL } from "../api/client";
@@ -39,6 +40,15 @@ const statusText: Record<string, string> = {
   empty: "未生成",
   failed: "本次生成失败",
   needs_material: "待补充资料",
+};
+const validationMessages: Record<string, string> = {
+  invalid_structure: "模型返回的书稿结构不完整，请重新生成；已有稿件保留。",
+  unsupported_sources:
+    "本次正文的来源引用未通过检查，请重新生成；已有稿件保留。",
+  empty_prose: "模型未返回有效正文，请重新生成；已有稿件保留。",
+  duplicate_paragraphs: "本次正文含重复段落，请重新生成；已有稿件保留。",
+  unsupported_factual_detail:
+    "本次正文含当前资料无法确认的年份或身份描述，已有稿件保留。请核对资料后重新生成。",
 };
 
 export function BooksPage() {
@@ -251,10 +261,14 @@ export function BookWritingPage() {
     data.chapters.find((c) => c.chapter_id === selected) || data.chapters[0];
   const busy = generate.isPending || editing || data.chapters.some(active);
   const completed = data.chapters.filter((c) => c.current).length;
-  function submit(one: boolean) {
+  function submit(mode: "chapter" | "all" | "missing") {
     if (busy || !chapter) return;
     const payload = {
-      ...(one ? { chapter_ids: [chapter.chapter_id], overwrite: true } : {}),
+      ...(mode === "chapter"
+        ? { chapter_ids: [chapter.chapter_id], overwrite: true }
+        : mode === "all"
+          ? { overwrite: true }
+          : { missing_only: true }),
       expected_versions: Object.fromEntries(
         data.chapters.map((c) => [c.chapter_id, c.version_number]),
       ),
@@ -294,12 +308,21 @@ export function BookWritingPage() {
         <div className="writing-buttons">
           <Button
             disabled={busy || !data.chapters.some((c) => c.source_count)}
-            onClick={() => submit(false)}
+            variant="outline"
+            onClick={() => submit("all")}
           >
-            <Sparkles size={16} />
-            生成全书待写章节
+            <RotateCcw size={16} />
+            重新生成全书
           </Button>
-          <span>仅生成未成稿或资料已更新的章节，缺少资料的章节会跳过。</span>
+          <Button
+            disabled={
+              busy || !data.chapters.some((c) => !c.current && c.source_count)
+            }
+            onClick={() => submit("missing")}
+          >
+            <ListPlus size={16} />
+            补齐未成稿章节
+          </Button>
           {completed > 0 && (
             <>
               <a
@@ -370,7 +393,7 @@ export function BookWritingPage() {
               </div>
               <Button
                 disabled={busy || !chapter.source_count}
-                onClick={() => submit(true)}
+                onClick={() => submit("chapter")}
               >
                 {active(chapter)
                   ? "正在写作……"
@@ -387,7 +410,9 @@ export function BookWritingPage() {
             {chapter.error_code && (
               <div className="writing-warning" role="alert">
                 <p>
-                  {ERROR_MESSAGES[chapter.error_code] ||
+                  {(chapter.error_code === "BOOK_OUTPUT_INVALID" &&
+                    validationMessages[chapter.validation_reason || ""]) ||
+                    ERROR_MESSAGES[chapter.error_code] ||
                     "本次写作未完成，已保存的旧稿仍然可读。"}
                 </p>
                 {!!chapter.missing_details?.length && (

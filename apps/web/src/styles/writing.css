@@ -524,6 +524,17 @@
 .writing-page .writing-actions > .writing-buttons > [data-slot="button"]:hover {
   background: var(--green-dark);
 }
+.writing-page .writing-actions > .writing-buttons > [data-variant="outline"] {
+  border-color: #b6d1ca;
+  background: #fff;
+  color: var(--green-dark);
+}
+.writing-page
+  .writing-actions
+  > .writing-buttons
+  > [data-variant="outline"]:hover {
+  background: var(--green-soft);
+}
 .writing-page .writing-actions > .writing-buttons > span {
   flex: 1 1 260px;
   min-width: 180px;

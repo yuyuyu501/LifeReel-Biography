@@ -2,7 +2,7 @@ from datetime import datetime
 from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class BookCreate(BaseModel):
@@ -17,7 +17,14 @@ class BookGenerate(BaseModel):
     idempotency_key: UUID
     chapter_ids: list[UUID] | None = Field(default=None, min_length=1, max_length=40)
     overwrite: bool = False
+    missing_only: bool = False
     expected_versions: dict[str, int] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def compatible_modes(self):
+        if self.missing_only and self.overwrite:
+            raise ValueError("missing_only cannot overwrite existing drafts")
+        return self
 
 
 class ChapterEdit(BaseModel):
@@ -53,6 +60,7 @@ class ChapterRead(BaseModel):
     job_id: UUID | None
     error_code: str | None
     missing_details: list[str] = Field(default_factory=list)
+    validation_reason: str | None = None
     current: RevisionRead | None
     archived: bool = False
     source_entry_ids: list[str] = Field(default_factory=list)

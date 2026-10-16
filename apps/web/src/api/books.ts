@@ -24,6 +24,7 @@ export type BookChapter = {
   job_id: string | null;
   error_code: string | null;
   missing_details?: string[];
+  validation_reason?: string | null;
   current: BookRevision | null;
 };
 export type Book = {
@@ -40,6 +41,7 @@ export type BookGeneration = {
   idempotency_key: string;
   chapter_ids?: string[];
   overwrite?: boolean;
+  missing_only?: boolean;
   expected_versions?: Record<string, number>;
 };
 export const booksApi = {
