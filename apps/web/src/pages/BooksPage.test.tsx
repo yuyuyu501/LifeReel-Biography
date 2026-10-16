@@ -113,7 +113,13 @@ it("shows saved prose and both export formats without a target length", async ()
   setup();
   expect(await screen.findByText("第一段真实回忆。")).toBeInTheDocument();
   expect(screen.getByText("第二段真实回忆。")).toBeInTheDocument();
-  expect(screen.getByText("纪实人生")).toBeInTheDocument();
+  expect(
+    screen.getByRole("heading", { name: "合成人生书", level: 1 }),
+  ).toBeInTheDocument();
+  expect(screen.getByRole("link", { name: "查看钱包" })).toHaveAttribute(
+    "href",
+    "/wallet",
+  );
   expect(screen.queryByText(/每章约1000字/)).not.toBeInTheDocument();
   expect(screen.getByRole("link", { name: "导出 TXT" })).toHaveAttribute(
     "href",

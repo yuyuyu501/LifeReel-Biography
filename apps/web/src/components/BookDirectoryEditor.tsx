@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { PencilLine } from "lucide-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { booksApi, type Book } from "../api/books";
 import { profilesApi } from "../api/profiles";
@@ -53,6 +54,7 @@ export function BookDirectoryEditor({
   if (!draft)
     return (
       <Button
+        size="lg"
         variant="outline"
         disabled={disabled}
         onClick={() => {
@@ -68,6 +70,7 @@ export function BookDirectoryEditor({
           });
         }}
       >
+        <PencilLine size={17} aria-hidden="true" />
         编辑目录与选材
       </Button>
     );

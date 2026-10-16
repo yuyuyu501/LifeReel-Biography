@@ -10,8 +10,10 @@ import { profilesApi } from "../api/profiles";
 import { BookDirectoryEditor } from "../components/BookDirectoryEditor";
 import {
   ArrowRight,
+  ArrowLeft,
   BookOpen,
   BookOpenText,
+  ChevronRight,
   Download,
   FileText,
   ListPlus,
@@ -204,8 +206,7 @@ function WritingPrice() {
   if (!price)
     return (
       <p className="wallet-note">
-        生成会调用文字模型并计费。请先在<Link to="/wallet">钱包</Link>
-        查看现行价格。
+        生成会调用文字模型并计费，请在钱包查看现行价格。
       </p>
     );
   return (
@@ -215,7 +216,6 @@ function WritingPrice() {
         : "每章每次成功生成或重写 " +
           (price.script_chapter_cents / 100).toFixed(2) +
           " 元，失败不扣章节费；相同请求重试不重复收费。"}
-      <Link to="/wallet">查看钱包</Link>
     </p>
   );
 }
@@ -281,12 +281,17 @@ export function BookWritingPage() {
   return (
     <div className="page writing-page writing-book-detail-page">
       <Link to="/books" className="writing-back">
-        ← 人生书架
+        <ArrowLeft size={16} aria-hidden="true" />
+        人生书架
       </Link>
       <header className="page-header">
         <div>
-          <span className="eyebrow">纪实人生</span>
-          <h1>{data.title}</h1>
+          <div className="writing-title-row">
+            <h1>{data.title}</h1>
+            <Link className="writing-wallet-link" to="/wallet">
+              查看钱包
+            </Link>
+          </div>
           <p>
             {completed} / {data.chapters.length} 章已成稿 · 正文共{" "}
             {data.chapters.reduce(
@@ -303,10 +308,11 @@ export function BookWritingPage() {
             这是以前的采访书稿。请先在资料表确认历史素材，再通过“编辑目录与选材”选择当前资料，之后可以继续写作和改编。
           </p>
         )}
-        <BookDirectoryEditor book={data} disabled={busy} />
         <WritingPrice />
         <div className="writing-buttons">
+          <BookDirectoryEditor book={data} disabled={busy} />
           <Button
+            size="lg"
             disabled={busy || !data.chapters.some((c) => c.source_count)}
             variant="outline"
             onClick={() => submit("all")}
@@ -315,6 +321,7 @@ export function BookWritingPage() {
             重新生成全书
           </Button>
           <Button
+            size="lg"
             disabled={
               busy || !data.chapters.some((c) => !c.current && c.source_count)
             }
@@ -324,7 +331,7 @@ export function BookWritingPage() {
             补齐未成稿章节
           </Button>
           {completed > 0 && (
-            <>
+            <div className="writing-export-group">
               <a
                 className="writing-export"
                 href={
@@ -340,9 +347,10 @@ export function BookWritingPage() {
                   API_BASE_URL + "/v1/books/" + bookId + "/export?format=md"
                 }
               >
+                <Download size={16} />
                 导出 Markdown
               </a>
-            </>
+            </div>
           )}
         </div>
         {notice && <p role="status">{notice}</p>}
@@ -350,7 +358,10 @@ export function BookWritingPage() {
       </section>
       <section className="book-reading-layout" aria-label="书稿章节">
         <aside className="book-toc">
-          <h2>章节目录</h2>
+          <div className="writing-toc-heading">
+            <h2>章节目录</h2>
+            <span>{data.chapters.length} 章</span>
+          </div>
           <div className="book-chapter-list">
             {data.chapters.map((c) => (
               <div
@@ -368,14 +379,19 @@ export function BookWritingPage() {
                   }
                 >
                   <span>{c.order_index}</span>
-                  <span>
+                  <span className="book-chapter-summary">
                     <strong>{c.title}</strong>
-                    <small>
-                      {statusText[c.status] || c.status}
-                      {c.stale ? " · 资料已更新" : ""}
-                      {c.current ? " · " + c.current.word_count + "字" : ""}
-                    </small>
+                    <span className="book-chapter-meta">
+                      <span
+                        className={"book-chapter-status status-" + c.status}
+                      >
+                        {statusText[c.status] || c.status}
+                      </span>
+                      {c.stale && <span>资料已更新</span>}
+                      {c.current && <span>{c.current.word_count} 字</span>}
+                    </span>
                   </span>
+                  <ChevronRight size={15} aria-hidden="true" />
                 </button>
               </div>
             ))}
@@ -385,13 +401,14 @@ export function BookWritingPage() {
           <article className="book-manuscript">
             <header className="manuscript-header">
               <div>
-                <span>
-                  第 {chapter.order_index} 章 · {chapter.source_count}{" "}
-                  条可用记忆
+                <span className="manuscript-chapter-meta">
+                  第 {chapter.order_index} 章 ·{" "}
+                  <span>{chapter.source_count} 条可用记忆</span>
                 </span>
                 <h2>{chapter.title}</h2>
               </div>
               <Button
+                size="lg"
                 disabled={busy || !chapter.source_count}
                 onClick={() => submit("chapter")}
               >
@@ -518,10 +535,14 @@ function ChapterBody({
     history.data?.find((r) => r.version_number === version) || chapter.current;
   return (
     <div className="manuscript-pages">
-      <div className="writing-buttons">
+      <div className="manuscript-toolbar">
         {!editing && (
           <Button
-            variant="outline"
+            variant="ghost"
+            className={
+              "h-[49px] rounded-none px-3.5 py-0" +
+              (!showHistory ? " is-current" : "")
+            }
             disabled={busy}
             onClick={() => {
               setTitle(chapter.current?.title || chapter.title);
@@ -530,6 +551,7 @@ function ChapterBody({
               setEditing(true);
               onEditing(true);
               setVersion(0);
+              setShowHistory(false);
             }}
           >
             编辑正文
@@ -537,18 +559,24 @@ function ChapterBody({
         )}
         <Button
           variant="ghost"
+          className={
+            "h-[49px] rounded-none px-3.5 py-0" +
+            (showHistory ? " is-current" : "")
+          }
           disabled={editing}
+          aria-expanded={showHistory}
+          aria-controls={"book-history-" + chapter.id}
           onClick={() => setShowHistory(!showHistory)}
         >
           版本记录
         </Button>
-        <span>
+        <span className="manuscript-version-meta">
           版本 {visible?.version_number || 0} · {visible?.word_count || 0} 字 ·{" "}
           {visible?.author === "user" ? "人工编辑" : "AI 成稿，待核对"}
         </span>
       </div>
       {showHistory && (
-        <div className="writing-history">
+        <div className="writing-history" id={"book-history-" + chapter.id}>
           <QueryState queries={[history]} loadingText="正在读取版本……" />
           {history.data?.map((r) => (
             <button
@@ -624,7 +652,10 @@ function ChapterBody({
         </form>
       ) : (
         <section className="writing-prose">
-          <h3>{visible?.title}</h3>
+          <div className="writing-prose-heading">
+            <BookOpenText size={23} aria-hidden="true" />
+            <h3>{visible?.title}</h3>
+          </div>
           {visible?.body.split(/\n\s*\n/).map((paragraph, index) => (
             <p key={index}>{paragraph}</p>
           ))}
