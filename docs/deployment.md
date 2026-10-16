@@ -1,5 +1,17 @@
 # 部署说明
 
+## 取消写书篇幅限制（2026-10-16）
+
+写书按现有事实自然成稿，取消原先每章 900–1100 字验收、1000 字目标和篇幅修复重试。
+正文段落与人工编辑也取消篇幅上限，实际字数仍记录和显示；来源、隐私、空稿、重复段落和
+事实检查继续执行。旧 `target_words` 仅作兼容元数据，不传给模型。无需数据库迁移。
+
+沿用四阶段发布脚本，指定 `--release-name book-flexible-length-20261016`，
+`deploy/verify` 保持 `--model-pools --script-model gpt-6.1-sol`。
+备份目录 `/opt/lifereel-backups/book-flexible-length-20261016`，运行验证目录
+`/opt/lifereel-deploy/book-flexible-length-20261016`。本轮使用模拟响应与已缓存稿件复验，
+不新增付费生成，不自动重发历史失败任务。
+
 ## 模型池更新（2026-10-16）
 
 写书、视频剧本及采访主聊配置为 CCTQ Sol 首选，火山 Pro、Lite 依次备用；

@@ -109,11 +109,12 @@ beforeEach(() => {
   );
 });
 
-it("shows saved prose, target length and both export formats", async () => {
+it("shows saved prose and both export formats without a target length", async () => {
   setup();
   expect(await screen.findByText("第一段真实回忆。")).toBeInTheDocument();
   expect(screen.getByText("第二段真实回忆。")).toBeInTheDocument();
-  expect(screen.getByText(/每章约1000字/)).toBeInTheDocument();
+  expect(screen.getByText("纪实人生")).toBeInTheDocument();
+  expect(screen.queryByText(/每章约1000字/)).not.toBeInTheDocument();
   expect(screen.getByRole("link", { name: "导出 TXT" })).toHaveAttribute(
     "href",
     "/v1/books/book-1/export?format=txt",
@@ -177,7 +178,9 @@ it("shows concrete material questions while keeping the saved manuscript", async
     "能讲一件体现家风的具体事情吗？",
   ];
   setup();
-  expect(await screen.findByRole("alert")).toHaveTextContent("现有资料不足");
+  expect(await screen.findByRole("alert")).toHaveTextContent(
+    "缺少本章可用的具体经历",
+  );
   expect(
     screen.getByRole("list", { name: "本章需要补充的内容" }),
   ).toHaveTextContent("家人如何分担日常劳动？");
@@ -219,6 +222,7 @@ it.each([
 it("edits manuscript and preserves version history", async () => {
   setup();
   fireEvent.click(await screen.findByRole("button", { name: "编辑正文" }));
+  expect(screen.getByLabelText("正文")).not.toHaveAttribute("maxlength");
   fireEvent.change(screen.getByLabelText("正文"), {
     target: { value: "用户更新的真实正文。" },
   });

@@ -371,7 +371,7 @@ def execute(db, tenant, job_id):
                 billing.script_update_price(),
                 "book",
                 f"写书 · {book.title} · {job.payload['snapshot']['chapter']}",
-                {**billing.prices(), "target_words": 1000},
+                billing.prices(),
             )
             db.commit()
             result = (job.result or {}).get("draft")

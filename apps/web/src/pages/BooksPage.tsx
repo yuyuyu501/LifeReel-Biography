@@ -71,7 +71,7 @@ export function BooksPage() {
             把经历写成一本书
           </span>
           <h1>人生书架</h1>
-          <p>根据当前人生资料表选材，每章约1000字，整理成一本属于自己的书。</p>
+          <p>把人生经历整理成章，留下自己的故事。</p>
         </div>
       </header>
       <form
@@ -201,7 +201,7 @@ function WritingPrice() {
   return (
     <p className="wallet-note">
       {price.script_billing_mode === "tokens"
-        ? "写书按实际 AI 用量计费，沿用官方标准价的1.5倍；字数或来源检查失败时，已发生的模型用量仍会计费。每章最多尝试两次。"
+        ? "写书按实际 AI 用量计费，沿用官方标准价的1.5倍；生成失败时，已发生的模型用量仍会计费。"
         : "每章每次成功生成或重写 " +
           (price.script_chapter_cents / 100).toFixed(2) +
           " 元，失败不扣章节费；相同请求重试不重复收费。"}
@@ -271,7 +271,7 @@ export function BookWritingPage() {
       </Link>
       <header className="page-header">
         <div>
-          <span className="eyebrow">纪实人生 · 每章约1000字</span>
+          <span className="eyebrow">纪实人生</span>
           <h1>{data.title}</h1>
           <p>
             {completed} / {data.chapters.length} 章已成稿 · 正文共{" "}
@@ -560,7 +560,6 @@ function ChapterBody({
             <textarea
               value={body}
               onChange={(e) => setBody(e.target.value)}
-              maxLength={12000}
               required
               rows={24}
             />

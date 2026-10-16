@@ -24,7 +24,7 @@ class ChapterEdit(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
     expected_version: int = Field(ge=0, strict=True)
     title: str = Field(min_length=1, max_length=180)
-    body: str = Field(min_length=1, max_length=12000)
+    body: str = Field(min_length=1)
     confirm_profile_version: int | None = Field(default=None, ge=1, strict=True)
 
 
@@ -63,7 +63,7 @@ class BookRead(BaseModel):
     id: UUID
     subject_id: UUID
     title: str
-    target_words: int
+    target_words: int  # Legacy response metadata; not a writing or validation requirement.
     chapters: list[ChapterRead]
     archived_chapters: list[ChapterRead] = Field(default_factory=list)
     profile_id: UUID | None = None

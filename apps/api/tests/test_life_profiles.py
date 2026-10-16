@@ -346,7 +346,7 @@ def test_profile_lock_refreshes_stale_identity_map(client):
         assert error.value.status_code == 409
 
 
-def test_profile_book_worker_generates_validated_thousand_character_chapter(client, monkeypatch):
+def test_profile_book_worker_generates_validated_chapter_with_actual_count(client, monkeypatch):
     from lifereel_api.core.config import get_settings
     from lifereel_api.modules.book import service as books
     from lifereel_api.modules.book import writing
@@ -383,7 +383,7 @@ def test_profile_book_worker_generates_validated_thousand_character_chapter(clie
     with SessionLocal() as db:
         books.execute(db, settings.default_tenant_id, UUID(queued.json()["job_ids"][0]))
     chapter = client.get(f"/v1/books/{book['id']}").json()["chapters"][0]
-    assert writing.MIN_WORDS <= chapter["current"]["word_count"] <= writing.MAX_WORDS
+    assert chapter["current"]["word_count"] == writing.word_count(chapter["current"]["body"])
     assert chapter["current"]["author"] == "ai" and not chapter["stale"]
 
 

@@ -10,7 +10,7 @@ export const ERROR_MESSAGES: Record<string, string> = {
   BOOK_NOT_FOUND: "未找到这本书。",
   BOOK_CHAPTER_NOT_FOUND: "未找到本书的这个章节。",
   BOOK_MATERIAL_INSUFFICIENT:
-    "现有资料不足以写成约1000字的真实章节，请先补充采访中的具体经历。",
+    "现有资料缺少本章可用的具体经历，请先补充相关资料。",
   BOOK_MATERIAL_UPDATED:
     "本章选材已更新，请重新生成。上次“资料不足”的结果基于旧选材。",
   BOOK_MODEL_NOT_CONFIGURED: "写书模型尚未配置，请联系管理员。",
@@ -23,7 +23,7 @@ export const ERROR_MESSAGES: Record<string, string> = {
     "写书模型未能接受本次请求，已有稿件保留。请联系管理员检查模型配置。",
   BOOK_INPUT_TOO_LARGE: "本章资料过多，请先整理或拆分采访内容。",
   BOOK_OUTPUT_INVALID:
-    "本次正文未通过字数或来源检查，旧稿已保留。可补充资料后重新生成。",
+    "本次正文未通过内容或来源检查，旧稿已保留。请核对资料后重新生成。",
   BOOK_VERSION_CONFLICT: "本章已有更新，请刷新确认最新版本后再操作。",
   BOOK_SOURCE_CHANGED:
     "生成期间采访资料发生变化，旧稿已保留，请根据最新资料重新生成。",

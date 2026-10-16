@@ -697,6 +697,12 @@
   }
 }
 @media (max-width: 760px) {
+  .writing-page .book-reading-layout {
+    grid-template-columns: 1fr;
+  }
+  .writing-page .book-toc {
+    position: static;
+  }
   .writing-library-page .writing-create {
     grid-template-columns: 1fr 1fr;
   }

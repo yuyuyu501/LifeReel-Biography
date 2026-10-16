@@ -333,7 +333,10 @@ def test_cross_tenant_book_and_chapter_access_is_denied(client, book):
     )
 
 
-@pytest.mark.parametrize("bad", ["short", "long", "foreign_source", "duplicate", "empty_outline"])
+@pytest.mark.parametrize("bad", [
+    "empty", "punctuation", "empty_paragraph", "no_paragraphs", "foreign_source",
+    "duplicate", "empty_outline", "unsupported_year",
+])
 def test_generated_output_validation(bad):
     output = {
         "material_sufficient": True,
@@ -342,17 +345,90 @@ def test_generated_output_validation(bad):
         "paragraphs": [{"text": "字" * 1000, "source_claim_ids": ["known"]}],
         "missing_details": [],
     }
-    if bad in {"short", "long"}:
-        output["paragraphs"][0]["text"] = "字" * (899 if bad == "short" else 1101)
+    if bad in {"empty", "punctuation"}:
+        output["paragraphs"][0]["text"] = " \n " if bad == "empty" else "……？！"
+    elif bad == "empty_paragraph":
+        output["paragraphs"].append({"text": "……", "source_claim_ids": ["known"]})
+    elif bad == "no_paragraphs":
+        output["paragraphs"] = []
     elif bad == "foreign_source":
         output["paragraphs"][0]["source_claim_ids"] = ["foreign"]
     elif bad == "duplicate":
         output["paragraphs"][0]["text"] = "字" * 500
         output["paragraphs"].append(copy.deepcopy(output["paragraphs"][0]))
+    elif bad == "unsupported_year":
+        output["paragraphs"][0]["text"] = "1998年入学。"
     else:
         output["outline"] = []
     with pytest.raises(ValueError):
         writing.validate_output(output, {"claims": [{"id": "known"}]})
+
+
+@pytest.mark.parametrize("count", [5, 841, 859, 1101, 3001, 13001])
+def test_generated_prose_has_no_length_target(count):
+    output = {
+        "material_sufficient": True, "title": "合成章节", "outline": ["合成事实"],
+        "paragraphs": [{"text": "字" * count, "source_claim_ids": ["known"]}],
+        "missing_details": [],
+    }
+    result = writing.validate_output(output, {"claims": [{"id": "known"}]})
+    assert result["word_count"] == count
+
+
+def test_generated_prose_can_have_more_than_twenty_paragraphs():
+    output = {
+        "material_sufficient": True, "title": "合成章节", "outline": ["合成事实"],
+        "paragraphs": [{"text": f"合成段落{i}", "source_claim_ids": ["known"]}
+                       for i in range(21)],
+    }
+    result = writing.validate_output(output, {"claims": [{"id": "known"}]})
+    assert len(result["body"].split("\n\n")) == 21
+
+
+@pytest.mark.parametrize(
+    "body", ["我入学后学习书法。", "合成真实经历" * 2200], ids=["short", "long"],
+)
+def test_variable_length_draft_publishes_once_and_remains_editable(
+    client, book, monkeypatch, body,
+):
+    source_id = add_fact(book)
+    settings = get_settings()
+    for key, value in {
+        "llm_provider": "openai-compatible", "script_llm_model": "synthetic",
+        "openai_compatible_base_url": "https://synthetic.test/v1",
+        "openai_compatible_api_key": "synthetic",
+    }.items():
+        monkeypatch.setattr(settings, key, value)
+    calls = []
+
+    def model(self, system, material):
+        calls.append(json.loads(material))
+        assert "target_words" not in calls[-1]
+        return {
+            "material_sufficient": True, "title": "合成章节", "outline": ["合成事实"],
+            "paragraphs": [{"text": body, "source_claim_ids": [str(source_id)]}],
+        }
+
+    monkeypatch.setattr(OpenAICompatibleClient, "chat_json", model)
+    assert queue(client, book)[0].status_code == 202
+    assert run_job(monkeypatch)["status"] == "completed"
+    chapter = read(client, book)["chapters"][0]
+    assert chapter["current"]["body"] == body
+    assert chapter["current"]["word_count"] == writing.word_count(body)
+    assert not chapter["stale"] and chapter["version_number"] == 1
+    assert len(calls) == 1
+    edited = client.patch(
+        "/v1/books/" + book["book"]["id"] + "/chapters/" + book["chapter"]["id"],
+        json={"expected_version": 1, "title": "手改章节", "body": body + "补充。"},
+    )
+    assert edited.status_code == 200, edited.text
+    assert body + "补充。" in client.get(
+        "/v1/books/" + book["book"]["id"] + "/export?format=md"
+    ).text
+    with SessionLocal() as db:
+        assert db.scalar(select(func.count()).select_from(BookRevision)) == 2
+        charges = list(db.scalars(select(Charge).where(Charge.kind == "book")))
+        assert len(charges) == 1 and charges[0].status == "settled"
 
 
 def test_writer_performs_bounded_repair_without_external_calls(monkeypatch):
@@ -370,14 +446,18 @@ def test_writer_performs_bounded_repair_without_external_calls(monkeypatch):
             "title": "测试",
             "outline": ["真实来源"],
             "paragraphs": [
-                {"text": "字" * (1000 if len(captured) == 2 else 5), "source_claim_ids": ["known"]}
+                {"text": "有依据的短正文。",
+                 "source_claim_ids": ["known" if len(captured) == 2 else "foreign"]}
             ],
             "missing_details": [],
         }
 
     monkeypatch.setattr(OpenAICompatibleClient, "chat_json", model)
-    result = writing.generate({"claims": [{"id": "known", "claim_text": "已纠正的事实"}]})
-    assert result["word_count"] == 1000 and len(captured) == 2
+    result = writing.generate({
+        "target_words": 1000, "claims": [{"id": "known", "claim_text": "已纠正的事实"}],
+    })
+    assert result["body"] == "有依据的短正文。" and len(captured) == 2
+    assert all("target_words" not in material for _, material in captured)
     assert "不得虚构" in captured[0][0] and "上次输出" in captured[1][0]
 
 
