@@ -56,20 +56,23 @@ export function HomePage() {
   return (
     <div className="page home-page">
       <header className="page-title-row home-title-row">
-        <div>
+        <div className="home-hero-copy">
           <span className="eyebrow">档案工作台 · 今日概览</span>
           <h1>继续整理这份人生</h1>
           <p className="page-intro">
             从原声采访到家庭影传，每一条记忆都有来源，每一步发布都需要确认。
           </p>
         </div>
-        <Button asChild variant="default" className="button primary">
-          <Link to={nextAction.to}>
-            <NextIcon size={18} />
-            {nextAction.label}
-            <ArrowRight size={17} />
-          </Link>
-        </Button>
+        <div className="home-hero-action">
+          <span>建议下一步</span>
+          <Button asChild variant="default" className="button primary">
+            <Link to={nextAction.to}>
+              <NextIcon size={18} />
+              {nextAction.label}
+              <ArrowRight size={17} />
+            </Link>
+          </Button>
+        </div>
       </header>
 
       {hasQueryIssue(overviewQueries) ? (
