@@ -2,7 +2,7 @@ import json
 import re
 from uuid import UUID, uuid4
 
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 from sqlalchemy import select
 
 from lifereel_api.architecture.internal import call
@@ -27,6 +27,18 @@ from lifereel_api.modules.script.schemas import (
 from lifereel_api.providers.openai_compatible import OpenAICompatibleClient
 
 
+class Dialogue(ScriptDialogue):
+    @field_validator("kind", mode="before")
+    @classmethod
+    def normalize_narration_kind(cls, value):
+        # These provider labels describe the same off-screen narration.
+        if isinstance(value, str) and value.strip().casefold() in {
+            "voiceover", "voice_over", "voice-over", "旁白",
+        }:
+            return "narration"
+        return value
+
+
 class Shot(ScriptShotUpdate):
     source_revision_ids: list[UUID] = Field(min_length=1, max_length=40)
 
@@ -35,7 +47,7 @@ class Scene(BaseModel):
     model_config = ConfigDict(extra="forbid")
     heading: str = Field(min_length=1, max_length=180)
     plot: str = Field(min_length=1, max_length=4000)
-    dialogues: list[ScriptDialogue] = Field(min_length=1, max_length=40)
+    dialogues: list[Dialogue] = Field(min_length=1, max_length=40)
     story_skeleton: StorySkeleton
     visual_prompt: str = Field(min_length=1, max_length=4000)
     duration_seconds: int = Field(ge=4, le=60, strict=True)
