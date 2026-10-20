@@ -52,6 +52,44 @@ def test_validate_keeps_unknown_dialogue_kind_invalid(kind):
         validate(result, snapshot, 45)
 
 
+def test_validate_normalizes_visual_note_list_to_text():
+    snapshot = _snapshot()
+    result = mock_draft(snapshot, 45)
+    for scene in result["scenes"]:
+        scene["visual_constraints"]["notes"] = ["保留巷口", "使用远景"]
+        for shot in scene["shots"]:
+            shot["visual_constraints"]["notes"] = ["避免正脸", "保持环境声"]
+    original = deepcopy(result)
+
+    draft = validate(result, snapshot, 45)
+
+    assert all(
+        scene.visual_constraints.notes == "保留巷口\n使用远景"
+        for scene in draft.scenes
+    )
+    assert all(
+        shot.visual_constraints.notes == "避免正脸\n保持环境声"
+        for scene in draft.scenes
+        for shot in scene.shots
+    )
+    assert result == original
+    assert Draft.model_validate(draft.model_dump(mode="json")) == draft
+
+
+@pytest.mark.parametrize("scope", ["scene", "shot"])
+@pytest.mark.parametrize("notes", [["有效备注", 1], [{}], [["备注"]], {}, 1, ["a" * 500, "b"]])
+def test_validate_keeps_malformed_or_overlong_notes_invalid(scope, notes):
+    snapshot = _snapshot()
+    result = mock_draft(snapshot, 45)
+    target = result["scenes"][0]
+    if scope == "shot":
+        target = target["shots"][0]
+    target["visual_constraints"]["notes"] = notes
+
+    with pytest.raises(ValidationError):
+        validate(result, snapshot, 45)
+
+
 @pytest.mark.parametrize(
     "invalid", ["scene_source", "shot_source", "scene_duration", "shot_duration"]
 )
@@ -72,7 +110,7 @@ def test_normalized_narration_still_checks_sources_and_duration(invalid):
         validate(result, snapshot, 45)
 
 
-def test_voiceover_result_is_saved_canonically_and_replay_does_not_call_model(client, monkeypatch):
+def test_provider_aliases_are_saved_canonically_and_replay_does_not_call_model(client, monkeypatch):
     person = client.post("/v1/persons", json={"display_name": "改编测试人物"}).json()
     profile = client.get("/v1/life-profiles/subjects/" + person["id"]).json()
     updated = client.patch(
@@ -112,9 +150,18 @@ def test_voiceover_result_is_saved_canonically_and_replay_does_not_call_model(cl
         calls.append(system)
         if len(calls) == 1:
             return {"scene_plan": ["工作", "收束"]}
-        draft = mock_draft(json.loads(material)["source"], 45)
+        data = json.loads(material)
+        assert data["output_schema"] == Draft.model_json_schema()
+        draft = mock_draft(data["source"], 45)
         for scene in draft["scenes"]:
             scene["dialogues"][0]["kind"] = "voiceover"
+            scene["visual_constraints"] = {
+                "face_policy": "no_identifiable_faces", "notes": ["避免正脸", "保留工作环境"],
+            }
+            for shot in scene["shots"]:
+                shot["visual_constraints"] = {
+                    "face_policy": "faces_allowed", "notes": ["保持自然光", "使用稳定镜头"],
+                }
         return draft
 
     monkeypatch.setattr(OpenAICompatibleClient, "chat_json", model)
@@ -128,13 +175,26 @@ def test_voiceover_result_is_saved_canonically_and_replay_does_not_call_model(cl
     assert all(d["kind"] == "narration" for s in project["scenes"] for d in s["dialogues"])
     assert all(s["source_claim_ids"] == [revision["id"]] for s in project["scenes"])
     assert sum(s["duration_seconds"] for s in project["scenes"]) == 45
+    assert all(
+        s["visual_constraints"]["notes"] == "避免正脸\n保留工作环境"
+        for s in project["scenes"]
+    )
+    assert all(
+        s["visual_constraints"]["notes"] == "避免正脸\n保留工作环境；保持自然光\n使用稳定镜头"
+        and s["visual_constraints"]["face_policy"] == "no_identifiable_faces"
+        for s in project["shots"]
+    )
     replay = client.post("/v1/scripts/generate", json=payload).json()
     assert replay["id"] == project["id"]
     assert replay["scenes"] == project["scenes"]
+    assert replay["shots"] == project["shots"]
     assert len(calls) == 2
     with SessionLocal() as db:
         assert len(list(db.scalars(select(ScriptProject)))) == 1
         receipt = db.scalar(select(ScriptGenerationReceipt))
         assert receipt.status == "completed"
         assert receipt.checkpoint["draft"]["scenes"][0]["dialogues"][0]["kind"] == "narration"
+        assert receipt.checkpoint["draft"]["scenes"][0]["visual_constraints"]["notes"] == (
+            "避免正脸\n保留工作环境"
+        )
         assert list(db.scalars(select(Charge.status))) == ["settled"]

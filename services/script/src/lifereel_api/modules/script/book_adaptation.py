@@ -39,8 +39,19 @@ class Dialogue(ScriptDialogue):
         return value
 
 
+class Constraints(VisualConstraints):
+    @field_validator("notes", mode="before")
+    @classmethod
+    def normalize_note_list(cls, value):
+        # Some models express the same free-text notes as separate strings.
+        if isinstance(value, list) and all(isinstance(note, str) for note in value):
+            return "\n".join(value)
+        return value
+
+
 class Shot(ScriptShotUpdate):
     source_revision_ids: list[UUID] = Field(min_length=1, max_length=40)
+    visual_constraints: Constraints = Field(default_factory=Constraints)
 
 
 class Scene(BaseModel):
@@ -52,7 +63,7 @@ class Scene(BaseModel):
     visual_prompt: str = Field(min_length=1, max_length=4000)
     duration_seconds: int = Field(ge=4, le=60, strict=True)
     source_revision_ids: list[UUID] = Field(min_length=1, max_length=40)
-    visual_constraints: VisualConstraints = Field(default_factory=VisualConstraints)
+    visual_constraints: Constraints = Field(default_factory=Constraints)
     shots: list[Shot] = Field(min_length=1, max_length=12)
 
 
@@ -228,6 +239,9 @@ def generate(db, tenant, payload):
                         "source_revision_ids,visual_constraints(face_policy/required_elements/forbidden_elements/notes),"
                         "shots。每镜头含shot_type(wide/medium/closeup/detail/archive),visual_prompt,"
                         "duration_seconds,source_revision_ids,visual_constraints。"
+                        "dialogues.kind只能为narration或dialogue，旁白使用narration。"
+                        "字段及类型遵循output_schema；visual_constraints.notes是字符串或null，"
+                        "required_elements和forbidden_elements才是字符串数组。"
                         "引用只能来自输入revision_id，每场引用覆盖其镜头引用。"
                         "总时长严格等于目标，各场镜头时长之和等于场时长，每镜头4至10秒。"
                         "要求不露脸时逐镜头继承no_identifiable_faces。同一人物保持稳定标识与形象。",
@@ -237,6 +251,7 @@ def generate(db, tenant, payload):
                                 "sketch": sketch,
                                 "duration_seconds": payload.duration_seconds,
                                 "instructions": payload.adaptation_instructions,
+                                "output_schema": Draft.model_json_schema(),
                             },
                             ensure_ascii=False,
                         ),

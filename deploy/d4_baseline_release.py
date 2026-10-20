@@ -52,6 +52,9 @@ MODULES = {
     "lifereel_api.modules.script.service": (
         "services/script/src/lifereel_api/modules/script/service.py"
     ),
+    "lifereel_api.modules.script.book_adaptation": (
+        "services/script/src/lifereel_api/modules/script/book_adaptation.py"
+    ),
 }
 
 
@@ -301,7 +304,9 @@ def verify(release, script_model=None, model_pools=False):
         "Path(inspect.getfile(importlib.import_module(m))).read_bytes()).hexdigest() for m in ms}))"
     )
     script_models = {}
-    for service in ("interview", "worker-interview", "model-gateway", "book", "worker-book"):
+    for service in (
+        "interview", "worker-interview", "model-gateway", "book", "worker-book", "script",
+    ):
         assert json.loads(out(*COMPOSE, "exec", "-T", service, "python", "-c", code)) == expected, (
             service
         )
