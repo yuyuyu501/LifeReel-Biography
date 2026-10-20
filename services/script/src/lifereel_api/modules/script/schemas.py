@@ -4,7 +4,7 @@ from datetime import datetime
 from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class ScriptDialogue(BaseModel):
@@ -37,16 +37,24 @@ class ScriptGenerateRequest(BaseModel):
     audience: str = Field(default="family", pattern="^(private|family|friends|public)$")
     chapter_id: UUID | None = None
     idempotency_key: UUID | None = None
+    book_id: UUID | None = None
     book_revision_ids: list[UUID] | None = Field(default=None, min_length=1, max_length=40)
-    duration_seconds: int = Field(default=45, ge=30, le=60, strict=True)
+    # Retained for old request fingerprints; whole-book adaptation ignores this hint.
+    duration_seconds: int | None = Field(default=45, ge=1, strict=True)
     adaptation_instructions: str = Field(default="", max_length=4000)
+
+    @model_validator(mode="after")
+    def exclusive_book_sources(self):
+        if self.book_id and self.book_revision_ids:
+            raise ValueError("book_id and book_revision_ids cannot be combined")
+        return self
 
 
 class ScriptShotUpdate(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
     shot_type: Literal["wide", "medium", "closeup", "detail", "archive"]
     visual_prompt: str = Field(min_length=1, max_length=4000)
-    duration_seconds: int = Field(ge=1, le=300, strict=True)
+    duration_seconds: int = Field(ge=1, strict=True)
     visual_constraints: VisualConstraints = Field(default_factory=VisualConstraints)
 
 
@@ -57,10 +65,10 @@ class ScriptSceneUpdate(BaseModel):
     plot: str | None = Field(default=None, max_length=4000)
     dialogues: list[ScriptDialogue] = Field(min_length=1, max_length=40)
     visual_prompt: str = Field(min_length=1, max_length=4000)
-    duration_seconds: int = Field(ge=4, le=300, strict=True)
+    duration_seconds: int = Field(ge=4, strict=True)
     visual_constraints: VisualConstraints = Field(default_factory=VisualConstraints)
     story_skeleton: StorySkeleton | None = None
-    shots: list[ScriptShotUpdate] = Field(max_length=40)
+    shots: list[ScriptShotUpdate]
 
 
 class ScriptSceneRead(BaseModel):

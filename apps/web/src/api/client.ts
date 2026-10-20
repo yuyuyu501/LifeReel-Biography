@@ -388,6 +388,7 @@ export const api = {
     mode: "single_chapter" | "multi_chapter";
     audience: "private" | "family" | "friends" | "public";
     chapter_id?: string;
+    book_id?: string;
     book_revision_ids?: string[];
     duration_seconds?: number;
     adaptation_instructions?: string;

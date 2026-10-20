@@ -67,3 +67,17 @@ def test_short_shots_are_merged_and_long_shots_are_split():
 
 def test_constraint_prompt_does_not_invent_face_restriction():
     assert constraint_prompt({"face_policy": "unspecified"}) == ""
+
+
+def test_long_script_is_split_only_for_provider_clip_limits():
+    material = scene(durations=(600,))
+    material["narration"] = "这是一段完整且不被删减的长篇旁白。" * 80
+    material["dialogues"] = [
+        {"kind": "narration", "speaker": "人物", "text": material["narration"]},
+    ]
+    result = planning.shot_aligned_plan([material], {"display_name": "人物"})
+
+    assert len(result["segments"]) == 40
+    assert sum(item["duration_seconds"] for item in result["segments"]) == 600
+    assert all(4 <= item["duration_seconds"] <= 15 for item in result["segments"])
+    assert "".join(item["narration"] for item in result["segments"]) == material["narration"]

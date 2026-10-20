@@ -99,69 +99,12 @@
   padding-right: 20px;
   border-right: 1px solid var(--studio-border);
 }
-.studio-book-selection-heading {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  flex-wrap: wrap;
-  gap: 8px 16px;
-  margin-bottom: 12px;
-}
 .studio-book-selection h2 {
   margin: 0;
-  font-size: 13px;
+  font-size: 16px;
   font-weight: 500;
   color: var(--ink-soft);
-}
-.film-studio-page .book-script-generator .studio-book-select-all {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin: 0;
-  min-height: 32px;
-  font-size: 12px;
-}
-.film-studio-page
-  .book-script-generator
-  .studio-book-select-all
-  input[type="checkbox"] {
-  margin: 0;
-}
-.studio-book-list {
-  max-height: 244px;
-  overflow-y: auto;
-  scrollbar-width: thin;
-}
-.film-studio-page .book-script-generator .studio-book-option {
-  display: flex;
-  gap: 12px;
-  align-items: flex-start;
-  margin: 0;
-  padding: 9px 10px;
-  border-radius: 6px;
-  line-height: 1.5;
-}
-.studio-book-option:hover,
-.studio-book-option.is-selected {
-  background: #f3f7f6;
-}
-.film-studio-page .book-script-generator input[type="checkbox"] {
-  width: 16px;
-  height: 16px;
-  flex: 0 0 16px;
-  margin: 3px 0 0;
-  accent-color: var(--green);
-}
-.studio-book-option:has(input:disabled) {
-  color: var(--muted-foreground);
-}
-.studio-book-option-copy {
-  min-width: 0;
   overflow-wrap: anywhere;
-}
-.studio-book-option-copy strong {
-  font-size: 12px;
-  font-weight: 500;
 }
 .film-studio-page .book-script-generator small {
   display: block;
@@ -185,23 +128,6 @@
   flex-direction: column;
   min-width: 0;
 }
-.film-studio-page .book-script-generator .studio-duration {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 14px;
-  margin: 0 0 14px;
-  font-size: 13px;
-}
-.studio-duration select {
-  min-width: 130px;
-  min-height: 36px;
-  padding: 4px 12px;
-  border: 1px solid var(--line-strong);
-  border-radius: 6px;
-  color: var(--studio-ink);
-  background: var(--paper);
-}
 .film-studio-page .book-script-generator .studio-instructions {
   display: grid;
   gap: 8px;
@@ -212,8 +138,7 @@
   display: block;
   position: relative;
 }
-.film-studio-page .studio-instructions > label,
-.film-studio-page .studio-duration > label {
+.film-studio-page .studio-instructions > label {
   margin: 0;
 }
 .studio-instructions textarea {

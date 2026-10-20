@@ -55,6 +55,18 @@ MODULES = {
     "lifereel_api.modules.script.book_adaptation": (
         "services/script/src/lifereel_api/modules/script/book_adaptation.py"
     ),
+    "lifereel_api.modules.script.schemas": (
+        "services/script/src/lifereel_api/modules/script/schemas.py"
+    ),
+    "lifereel_api.modules.book.adaptation": (
+        "services/book/src/lifereel_api/modules/book/adaptation.py"
+    ),
+    "lifereel_api.modules.production.planning": (
+        "services/media/src/lifereel_api/modules/production/planning.py"
+    ),
+    "lifereel_api.modules.production.service": (
+        "services/media/src/lifereel_api/modules/production/service.py"
+    ),
 }
 
 
@@ -200,7 +212,7 @@ WORKDIR /workspace/apps/api
     print(json.dumps({"built": release}))
 
 
-def deploy(release, script_model=None, model_pools=False):
+def deploy(release, script_model=None, model_pools=False, video_per_second=False):
     no_jobs()
     services = [
         s
@@ -224,6 +236,10 @@ def deploy(release, script_model=None, model_pools=False):
             })
         if script_model:
             changes["SCRIPT_LLM_MODEL"] = script_model
+        if video_per_second:
+            changes.update({
+                "BILLING_VIDEO_MODE": "per_second", "BILLING_VIDEO_CENTS_PER_SECOND": "80",
+            })
         for key, value in changes.items():
             set_key(str(ROOT / ".env"), key, value)
         os.chmod(ROOT / ".env", 0o600)
@@ -265,7 +281,7 @@ def deploy(release, script_model=None, model_pools=False):
     print(json.dumps({"deployed": release, "backup": str(BACKUP)}))
 
 
-def verify(release, script_model=None, model_pools=False):
+def verify(release, script_model=None, model_pools=False, video_per_second=False):
     runtime = []
     for item in containers():
         service = item["Config"]["Labels"]["com.docker.compose.service"]
@@ -306,6 +322,7 @@ def verify(release, script_model=None, model_pools=False):
     script_models = {}
     for service in (
         "interview", "worker-interview", "model-gateway", "book", "worker-book", "script",
+        "media", "worker-media", "billing",
     ):
         assert json.loads(out(*COMPOSE, "exec", "-T", service, "python", "-c", code)) == expected, (
             service
@@ -340,6 +357,14 @@ def verify(release, script_model=None, model_pools=False):
         script_models[service] = actual_model
         if script_model:
             assert actual_model == script_model, (service, actual_model)
+        if video_per_second:
+            pricing = (
+                "import json; from lifereel_api.core.config import get_settings; s=get_settings(); "
+                "print(json.dumps([s.billing_video_mode,s.billing_video_cents_per_second]))"
+            )
+            assert json.loads(out(*COMPOSE, "exec", "-T", service, "python", "-c", pricing)) == [
+                "per_second", 80,
+            ], service
     health = json.loads(out("curl", "-fsS", "https://bianjiaigc.com/health"))
     assert health["status"] == "ok"
     run("curl", "-fsS", "https://bianjiaigc.com/ready", stdout=subprocess.DEVNULL)
@@ -355,6 +380,8 @@ def verify(release, script_model=None, model_pools=False):
                 "enhancement": "baseline",
                 "script_models": script_models,
                 "model_pools": POOLS if model_pools else None,
+                "video_pricing": {"mode": "per_second", "cents_per_second": 80}
+                if video_per_second else None,
                 "backup": str(BACKUP),
             },
             indent=2,
@@ -382,6 +409,7 @@ def main():
     parser.add_argument("--release-name", default=RELEASE_NAME)
     parser.add_argument("--script-model", choices=["gpt-6.1-sol"])
     parser.add_argument("--model-pools", action="store_true")
+    parser.add_argument("--video-per-second", action="store_true")
     args = parser.parse_args()
     assert re.fullmatch(r"[a-z0-9][a-z0-9-]{0,63}", args.release_name), "Invalid release name"
     RELEASE_NAME = args.release_name
@@ -398,9 +426,9 @@ def main():
         if args.stage == "build":
             build(args.release)
         elif args.stage == "deploy":
-            deploy(args.release, args.script_model, args.model_pools)
+            deploy(args.release, args.script_model, args.model_pools, args.video_per_second)
         else:
-            verify(args.release, args.script_model, args.model_pools)
+            verify(args.release, args.script_model, args.model_pools, args.video_per_second)
 
 
 if __name__ == "__main__":

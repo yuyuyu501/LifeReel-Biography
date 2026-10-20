@@ -59,7 +59,7 @@ def scripts(db: Db, tenant_id: Tenant, include_history: bool = False) -> list[Sc
 
 @router.post("/generate", response_model=ScriptProjectRead, status_code=status.HTTP_201_CREATED)
 def generate_script(payload: ScriptGenerateRequest, db: Db, tenant_id: Tenant) -> ScriptProjectRead:
-    if not payload.book_revision_ids and db.scalar(
+    if not (payload.book_id or payload.book_revision_ids) and db.scalar(
         select(LifeProfile.id).where(
             LifeProfile.tenant_id == tenant_id,
             LifeProfile.subject_id == payload.subject_id,
@@ -88,6 +88,7 @@ def with_freshness(db, tenant, result):
             tenant,
             result.subject_id,
             [UUID(r["revision_id"]) for r in result.source_snapshot.get("revisions", [])],
+            book_id=result.source_snapshot.get("book_id"),
         )
         stale = digest(current) != digest(result.source_snapshot)
     except ApiError:

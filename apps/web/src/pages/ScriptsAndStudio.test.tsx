@@ -267,7 +267,7 @@ test("keeps the image studio focused on production", async () => {
   ).not.toBeInTheDocument();
 });
 
-test("adapts only eligible saved book versions from the studio panel", async () => {
+test("adapts the whole saved book without chapter selection or a duration target", async () => {
   const original = vi.mocked(fetch).getMockImplementation()!;
   vi.mocked(fetch).mockImplementation(async (input, init) => {
     if (String(input).endsWith("/v1/books"))
@@ -291,7 +291,7 @@ test("adapts only eligible saved book versions from the studio panel", async () 
             {
               id: "chapter-2",
               title: "求学",
-              stale: true,
+              stale: false,
               current: {
                 id: "revision-2",
                 title: "远行求学",
@@ -324,39 +324,18 @@ test("adapts only eligible saved book versions from the studio panel", async () 
   expect(panel).not.toHaveAttribute("open");
   fireEvent.click(summary);
   await waitFor(() => expect(panel).toHaveAttribute("open"));
-  const eligible = await screen.findByRole("checkbox", { name: /泉州旧巷/ });
-  const otherEligible = screen.getByRole("checkbox", { name: /退休生活/ });
-  const selectAll = screen.getByRole("checkbox", { name: "全选" });
-  expect(screen.getByRole("checkbox", { name: /远行求学/ })).toBeDisabled();
-  expect(screen.getByRole("checkbox", { name: /工作/ })).toBeDisabled();
+  expect(await screen.findByText("林奶奶的人生书")).toBeVisible();
+  expect(screen.getByText("已成稿 3 / 4 章")).toBeVisible();
+  expect(
+    screen.queryByRole("checkbox", { name: "全选" }),
+  ).not.toBeInTheDocument();
+  expect(screen.queryByLabelText("目标时长")).not.toBeInTheDocument();
   const generate = screen.getByRole("button", { name: "生成剧本与分镜" });
-  expect(generate).toBeDisabled();
-  expect(selectAll).not.toBeChecked();
-  fireEvent.click(selectAll);
-  expect(eligible).toBeChecked();
-  expect(otherEligible).toBeChecked();
-  expect(screen.getByRole("checkbox", { name: /远行求学/ })).not.toBeChecked();
-  expect(screen.getByRole("checkbox", { name: /工作/ })).not.toBeChecked();
-  expect(screen.getByText("共 2 个可用版本，已选择 2 个")).toBeVisible();
-  fireEvent.click(otherEligible);
-  expect(selectAll).toBePartiallyChecked();
-  fireEvent.click(selectAll);
-  expect(selectAll).toBeChecked();
-  fireEvent.click(selectAll);
-  expect(eligible).not.toBeChecked();
-  expect(otherEligible).not.toBeChecked();
-  expect(generate).toBeDisabled();
-  fireEvent.click(eligible);
-  expect(screen.getByText("共 2 个可用版本，已选择 1 个")).toBeVisible();
+  expect(generate).toBeEnabled();
   fireEvent.click(summary);
   await waitFor(() => expect(panel).not.toHaveAttribute("open"));
   fireEvent.click(summary);
   await waitFor(() => expect(panel).toHaveAttribute("open"));
-  expect(eligible).toBeChecked();
-  expect(selectAll).toBePartiallyChecked();
-  fireEvent.change(screen.getByLabelText("目标时长"), {
-    target: { value: "60" },
-  });
   fireEvent.change(screen.getByLabelText("改编要求（可选）"), {
     target: { value: "保留旧巷的生活细节" },
   });
@@ -372,12 +351,17 @@ test("adapts only eligible saved book versions from the studio panel", async () 
     .mock.calls.find(([url]) => String(url).endsWith("/v1/scripts/generate"))!;
   expect(JSON.parse(String(request[1]?.body))).toMatchObject({
     subject_id: person.id,
-    book_revision_ids: ["revision-1"],
-    duration_seconds: 60,
+    book_id: "book-1",
     adaptation_instructions: "保留旧巷的生活细节",
     mode: "multi_chapter",
     audience: "family",
   });
+  expect(JSON.parse(String(request[1]?.body))).not.toHaveProperty(
+    "duration_seconds",
+  );
+  expect(JSON.parse(String(request[1]?.body))).not.toHaveProperty(
+    "book_revision_ids",
+  );
   expect(
     await screen.findByRole("tab", { name: "剧本与分镜" }),
   ).toHaveAttribute("aria-selected", "true");
@@ -410,6 +394,25 @@ test("switches chapters and submits only the selected chapter", async () => {
       }),
     ),
   );
+});
+
+test("per-second pricing blocks generation below the full quote", async () => {
+  const original = vi.mocked(fetch).getMockImplementation()!;
+  vi.mocked(fetch).mockImplementation(async (input, init) =>
+    String(input).endsWith("/v1/wallet")
+      ? response({
+          available_cents: 399,
+          prices: {
+            video_billing_mode: "per_second",
+            video_cents_per_second: 80,
+          },
+        })
+      : original(input, init),
+  );
+  renderPage(<StudioPage />, "/studio");
+  expect(
+    await screen.findByRole("button", { name: "生成影像" }),
+  ).toBeDisabled();
 });
 
 test("starts immediately without a confirmation dialog or quote notice", async () => {

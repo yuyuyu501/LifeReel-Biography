@@ -1,5 +1,5 @@
 from copy import deepcopy
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 from lifereel_api.modules.billing.models import Charge
@@ -110,6 +110,35 @@ def test_normalized_narration_still_checks_sources_and_duration(invalid):
         validate(result, snapshot, 45)
 
 
+def test_long_book_draft_has_no_total_duration_or_scene_count_limit():
+    snapshot = _snapshot()
+    snapshot["book_id"] = str(uuid4())
+    result = mock_draft(snapshot, 45)
+    scene = result["scenes"][0]
+    scene["duration_seconds"] = 600
+    scene["shots"] = [deepcopy(scene["shots"][0]) for _ in range(30)]
+    for shot in scene["shots"]:
+        shot["duration_seconds"] = 20
+    result["scenes"] = [deepcopy(scene) for _ in range(14)]
+
+    draft = validate(result, snapshot)
+
+    assert len(draft.scenes) == 14
+    assert sum(scene.duration_seconds for scene in draft.scenes) == 8400
+
+
+def test_whole_book_requires_source_coverage():
+    snapshot = _snapshot()
+    result = mock_draft(snapshot, 45)
+    snapshot["book_id"] = str(uuid4())
+    snapshot["revisions"].append({
+        "revision_id": str(uuid4()), "title": "成年", "body": "后来我到工厂工作。",
+    })
+
+    with pytest.raises(ValueError, match="missing_book_source"):
+        validate(result, snapshot)
+
+
 def test_provider_aliases_are_saved_canonically_and_replay_does_not_call_model(client, monkeypatch):
     person = client.post("/v1/persons", json={"display_name": "改编测试人物"}).json()
     profile = client.get("/v1/life-profiles/subjects/" + person["id"]).json()
@@ -137,6 +166,28 @@ def test_provider_aliases_are_saved_canonically_and_replay_does_not_call_model(c
     )
     assert saved.status_code == 200, saved.text
     revision = saved.json()["chapters"][0]["current"]
+    from lifereel_api.modules.book.models import Book, BookChapter, BookRevision
+    from lifereel_api.modules.book.service import digest, source
+
+    # A second saved chapter exercises server-side whole-book selection and ordering.
+    with SessionLocal() as db:
+        first = db.get(BookChapter, UUID(chapter["id"]))
+        second = BookChapter(
+            tenant_id=first.tenant_id, book_id=first.book_id, order_index=2,
+            title="第二章", source_entry_ids=first.source_entry_ids, version_number=1,
+        )
+        db.add(second)
+        db.flush()
+        second_source = source(db, db.get(Book, first.book_id), second.id)
+        second_revision = BookRevision(
+            tenant_id=first.tenant_id, book_chapter_id=second.id, version_number=1,
+            title="第二章", body="我后来仍然认真核对记录。", word_count=13,
+            source_digest=digest(second_source), source_snapshot=second_source,
+            source_claim_ids=first.source_entry_ids, author="manual",
+        )
+        db.add(second_revision)
+        db.commit()
+        second_id = str(second_revision.id)
     settings = get_settings()
     monkeypatch.setattr(settings, "llm_provider", "openai-compatible")
     monkeypatch.setattr(settings, "script_llm_model", "synthetic")
@@ -148,11 +199,15 @@ def test_provider_aliases_are_saved_canonically_and_replay_does_not_call_model(c
         import json
 
         calls.append(system)
+        data = json.loads(material)
+        assert "duration_seconds" not in data
+        assert [r["revision_id"] for r in data["source"]["revisions"]] == [
+            revision["id"], second_id,
+        ]
         if len(calls) == 1:
             return {"scene_plan": ["工作", "收束"]}
-        data = json.loads(material)
         assert data["output_schema"] == Draft.model_json_schema()
-        draft = mock_draft(data["source"], 45)
+        draft = mock_draft(data["source"])
         for scene in draft["scenes"]:
             scene["dialogues"][0]["kind"] = "voiceover"
             scene["visual_constraints"] = {
@@ -166,15 +221,15 @@ def test_provider_aliases_are_saved_canonically_and_replay_does_not_call_model(c
 
     monkeypatch.setattr(OpenAICompatibleClient, "chat_json", model)
     payload = {
-        "subject_id": person["id"], "book_revision_ids": [revision["id"]],
-        "duration_seconds": 45, "idempotency_key": str(uuid4()),
+        "subject_id": person["id"], "book_id": book["id"],
+        "idempotency_key": str(uuid4()),
     }
     result = client.post("/v1/scripts/generate", json=payload)
     assert result.status_code == 201, result.text
     project = result.json()
     assert all(d["kind"] == "narration" for s in project["scenes"] for d in s["dialogues"])
-    assert all(s["source_claim_ids"] == [revision["id"]] for s in project["scenes"])
-    assert sum(s["duration_seconds"] for s in project["scenes"]) == 45
+    assert [s["source_claim_ids"] for s in project["scenes"]] == [[revision["id"]], [second_id]]
+    assert project["source_snapshot"]["book_id"] == book["id"]
     assert all(
         s["visual_constraints"]["notes"] == "避免正脸\n保留工作环境"
         for s in project["scenes"]
@@ -198,3 +253,15 @@ def test_provider_aliases_are_saved_canonically_and_replay_does_not_call_model(c
             "避免正脸\n保留工作环境"
         )
         assert list(db.scalars(select(Charge.status))) == ["settled"]
+
+    stale = client.patch(
+        f"/v1/books/{book['id']}/chapters/{chapter['id']}",
+        json={"expected_version": 1, "title": chapter["title"], "body": "我每天认真核对记录。"},
+    )
+    assert stale.status_code == 200, stale.text
+    assert client.get(f"/v1/scripts/{project['id']}").json()["source_stale"] is True
+    changed = {**payload, "idempotency_key": str(uuid4())}
+    stranger = client.post("/v1/persons", json={"display_name": "其他人物"}).json()
+    assert client.post("/v1/scripts/generate", json={
+        **changed, "subject_id": stranger["id"],
+    }).status_code == 404

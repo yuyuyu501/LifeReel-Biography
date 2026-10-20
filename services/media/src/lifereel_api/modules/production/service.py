@@ -53,6 +53,7 @@ def start_production(db: Session, tenant_id: UUID, payload: ProductionStart) -> 
             tenant_id,
             project.subject_id,
             [UUID(r["revision_id"]) for r in project.source_snapshot.get("revisions", [])],
+            book_id=project.source_snapshot.get("book_id"),
         )
         if digest(current) != digest(project.source_snapshot):
             raise ApiError(409, ErrorCode.BOOK_SOURCE_CHANGED)
@@ -132,7 +133,7 @@ def start_production(db: Session, tenant_id: UUID, payload: ProductionStart) -> 
     ]
     if config and config["mode"] == "segmented":
         try:
-            if shot_segment_count(snapshot) > 24:
+            if not shot_segment_count(snapshot):
                 raise VideoProviderError("VIDEO_DURATION_UNSUPPORTED")
         except (VideoProviderError, ValueError) as exc:
             raise ApiError(422, ErrorCode.VIDEO_DURATION_UNSUPPORTED) from exc

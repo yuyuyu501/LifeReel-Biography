@@ -251,14 +251,13 @@ def main():
             revision = book["chapters"][0]["current"]
             draft = {
                 "subject_id": subject,
-                "book_revision_ids": [revision["id"]],
-                "duration_seconds": 60,
+                "book_id": book["id"],
                 "idempotency_key": str(uuid4()),
                 "adaptation_instructions": "全部镜头不露脸",
                 "audience": "family",
             }
             project = request("POST", "/v1/scripts/generate", json=draft)
-            assert project["source_type"] == "book" and len(project["scenes"]) == 2
+            assert project["source_type"] == "book" and project["scenes"]
             assert request("POST", "/v1/scripts/generate", json=draft)["id"] == project["id"]
             run = request(
                 "POST",

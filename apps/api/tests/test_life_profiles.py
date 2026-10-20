@@ -241,15 +241,22 @@ def test_saved_book_to_script_and_restricted_source(client):
     project = client.post("/v1/scripts/generate", json=payload)
     assert project.status_code == 201, project.text
     result = project.json()
-    assert result["source_type"] == "book" and len(result["scenes"]) == 2
+    assert result["source_type"] == "book" and result["scenes"]
     assert all(
         shot["visual_constraints"]["face_policy"] == "no_identifiable_faces"
         for shot in result["shots"]
     )
-    assert sum(s["duration_seconds"] for s in result["scenes"]) == 60
+    assert sum(s["duration_seconds"] for s in result["scenes"]) > 60
     assert all(s["chapter_id"] is None for s in result["scenes"])
     replay = client.post("/v1/scripts/generate", json=payload)
     assert replay.json()["id"] == result["id"]
+    from lifereel_api.modules.billing.service import lock_wallet
+
+    from lifereel_api.core.config import get_settings
+
+    with SessionLocal() as db:
+        lock_wallet(db, get_settings().default_tenant_id).paid_cents = 100000
+        db.commit()
     run = client.post(
         "/v1/production/runs",
         json={

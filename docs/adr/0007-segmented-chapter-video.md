@@ -46,7 +46,9 @@ Legacy providers retain their existing single-clip behavior.
 
 ## Limits And Follow-Ups
 
-- Each input chapter must be 4-300 seconds; at most 24 segments per run.
+- As of 2026-10-20, whole-book scripts have no fixed total duration or segment
+  count limit. Rendering splits long shots into provider-compatible 4-15 second
+  clips while preserving the script's total duration and narration.
 - Native generators may round durations by frames. Validation allows up to one
   second difference per clip. The player displays the actual duration.
 - Exact narration allocation in prompts does not prove exact speech in output.

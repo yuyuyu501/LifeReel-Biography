@@ -29,7 +29,7 @@ class VideoPlan(BaseModel):
     model_config = ConfigDict(extra="forbid")
     continuity: str = Field(min_length=1, max_length=1200)
     voice: str = Field(min_length=1, max_length=500)
-    segments: list[Segment] = Field(min_length=1, max_length=24)
+    segments: list[Segment] = Field(min_length=1)
 
 
 class BoundarySegment(BaseModel):
@@ -43,7 +43,7 @@ class BoundaryPlan(BaseModel):
     model_config = ConfigDict(extra="forbid")
     continuity: str = Field(min_length=1, max_length=1200)
     voice: str = Field(min_length=1, max_length=500)
-    segments: list[BoundarySegment] = Field(min_length=1, max_length=24)
+    segments: list[BoundarySegment] = Field(min_length=1)
 
 
 def boundary_candidates(narration: str, count: int) -> list[dict]:
@@ -152,7 +152,7 @@ def validation_issues(exc: Exception) -> list[dict]:
 
 
 def segment_durations(duration: int) -> list[int]:
-    if not 4 <= duration <= 300:
+    if duration < 4:
         raise VideoProviderError("VIDEO_DURATION_UNSUPPORTED")
     count = math.ceil(duration / 15)
     base, extra = divmod(duration, count)
@@ -283,7 +283,7 @@ def shot_aligned_plan(scenes: list[dict], subject: dict) -> dict:
         if sum(item["duration_seconds"] for item in chunks) != scene["duration_seconds"]:
             raise PlanValidationError("SHOT_DURATION_TOTAL_MISMATCH", f"scenes.{scene['id']}.shots")
         units.extend((scene, item) for item in chunks)
-    if not units or len(units) > 24:
+    if not units:
         raise VideoProviderError("VIDEO_DURATION_UNSUPPORTED")
     by_scene: dict[str, list[tuple[dict, dict]]] = {}
     for scene, shot in units:
@@ -419,8 +419,6 @@ def plan_video(
         {"scene_id": scene["id"], "durations": segment_durations(scene["duration_seconds"])}
         for scene in scenes
     ]
-    if sum(len(item["durations"]) for item in allocations) > 24:
-        raise VideoProviderError("VIDEO_DURATION_UNSUPPORTED")
     client = OpenAICompatibleClient(
         settings.openai_compatible_base_url or "",
         settings.openai_compatible_api_key or "",

@@ -59,3 +59,11 @@ def test_failed_pool_release_restores_exact_previous_environment(release, monkey
     with pytest.raises(subprocess.CalledProcessError):
         module.deploy("a" * 40, model_pools=True)
     assert (module.ROOT / ".env").read_text() == before
+
+
+def test_video_per_second_release_sets_mode_and_price(release):
+    module, _ = release
+    module.deploy("a" * 40, video_per_second=True)
+    env = dotenv_values(module.ROOT / ".env")
+    assert env["BILLING_VIDEO_MODE"] == "per_second"
+    assert env["BILLING_VIDEO_CENTS_PER_SECOND"] == "80"

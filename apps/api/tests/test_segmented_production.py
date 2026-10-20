@@ -23,7 +23,7 @@ def test_duration_allocation(duration, expected):
     assert segment_durations(duration) == expected
 
 
-@pytest.mark.parametrize("duration", [0, 3, 301])
+@pytest.mark.parametrize("duration", [0, 3])
 def test_duration_bounds(duration):
     with pytest.raises(VideoProviderError):
         segment_durations(duration)

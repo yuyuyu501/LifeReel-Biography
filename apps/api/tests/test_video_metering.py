@@ -2,19 +2,19 @@ from uuid import UUID
 
 import httpx
 import pytest
+from lifereel_api.modules.billing import service as billing
+from lifereel_api.modules.billing import tokens, video
+from lifereel_api.modules.billing.models import Charge, UsageEvent
+from lifereel_api.modules.billing.usage import record, track_usage
+from lifereel_api.modules.jobs import service as jobs
+from lifereel_api.modules.production.models import ProductionRun
+from lifereel_api.modules.script.models import ScriptScene, ScriptShot
+from lifereel_api.providers.openai_compatible import OpenAICompatibleClient
 from sqlalchemy import select
 from test_production_chapters import make_script
 
 from lifereel_api.core.config import get_settings
 from lifereel_api.core.database import SessionLocal
-from lifereel_api.modules.billing import service as billing
-from lifereel_api.modules.billing import tokens, video
-from lifereel_api.modules.billing.models import UsageEvent
-from lifereel_api.modules.billing.usage import record, track_usage
-from lifereel_api.modules.jobs import service as jobs
-from lifereel_api.modules.production.models import ProductionRun
-from lifereel_api.modules.script.models import ScriptShot
-from lifereel_api.providers.openai_compatible import OpenAICompatibleClient
 
 
 @pytest.fixture
@@ -74,6 +74,42 @@ def finish(run_id, success=True):
         billing.video_finish(db, run, success)
         db.commit()
         return run.output_manifest["billing"]
+
+
+@pytest.mark.parametrize("success", [True, False])
+def test_long_video_uses_eighty_cents_per_second_and_frozen_quote(video_case, monkeypatch, success):
+    client, payload, scenes = video_case
+    monkeypatch.setattr(get_settings(), "billing_video_mode", "per_second")
+    monkeypatch.setattr(get_settings(), "billing_video_cents_per_second", 80)
+    with SessionLocal() as db:
+        billing.lock_wallet(db, get_settings().default_tenant_id).paid_cents = 100000
+        db.get(ScriptScene, scenes[0].id).duration_seconds = 600
+        shot = db.scalar(select(ScriptShot).where(ScriptShot.scene_id == scenes[0].id))
+        shot.duration_seconds = 600
+        db.commit()
+    response = client.post("/v1/production/runs", json={**payload, "quoted_amount_cents": 48000})
+    assert response.status_code == 201, response.text
+    run_id = UUID(response.json()["id"])
+    quote = response.json()["output_manifest"]["billing_quote"]
+    assert quote["target_seconds"] == 600
+    assert quote["video_billing_mode"] == "per_second"
+    assert quote["amount_cents"] == 48000
+    assert client.get("/v1/wallet").json()["frozen_cents"] == 48000
+
+    # Existing jobs settle using their accepted quote, even if runtime pricing changes.
+    monkeypatch.setattr(get_settings(), "billing_video_mode", "tokens")
+    for _ in range(2):
+        with SessionLocal() as db:
+            run = db.get(ProductionRun, run_id)
+            billing.video_finish(db, run, success)
+            db.commit()
+    with SessionLocal() as db:
+        charge = db.scalar(select(Charge).where(Charge.business_key == f"video:{run_id}"))
+        assert charge.amount_cents == 48000
+        assert charge.status == ("settled" if success else "released")
+    wallet = client.get("/v1/wallet").json()
+    assert wallet["frozen_cents"] == 0
+    assert wallet["available_cents"] == (54000 if success else 102000)
 
 
 def test_reused_shot_receipts_are_not_charged_or_waited_for(video_case):
@@ -315,10 +351,9 @@ def test_operator_reconciliation_checks_receipt_identity_and_cannot_rebill(video
 
 
 def test_segmented_pipeline_settles_native_receipts_only_after_assembly(client, monkeypatch):
-    from test_segmented_production import setup_pipeline
-
     from lifereel_api.modules.production import segmented
     from lifereel_api.modules.production.providers import ProviderOutput
+    from test_segmented_production import setup_pipeline
 
     payload = setup_pipeline(client, monkeypatch)
     monkeypatch.setattr(get_settings(), "billing_video_mode", "tokens")

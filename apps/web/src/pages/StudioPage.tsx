@@ -229,7 +229,10 @@ export function StudioPage() {
               selected.scene.duration_seconds)) *
           wallet.data.prices.video_cents_per_second
       : undefined;
-  const hasBalance = (wallet.data?.available_cents ?? 0) > 0;
+  const hasBalance =
+    wallet.data?.prices.video_billing_mode === "tokens"
+      ? (wallet.data?.available_cents ?? 0) > 0
+      : quote !== undefined && (wallet.data?.available_cents ?? 0) >= quote;
   const progress = activeRun?.output_manifest;
   const progressText =
     activeRun?.status === "running" && progress?.stage

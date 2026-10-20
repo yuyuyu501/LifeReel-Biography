@@ -48,12 +48,19 @@ function draftFrom(
     shots: (project.shots ?? [])
       .filter((shot) => shot.scene_id === scene.id)
       .sort((a, b) => a.order_index - b.order_index)
-      .map(({ shot_type, visual_prompt, duration_seconds, visual_constraints }) => ({
-        shot_type,
-        visual_prompt,
-        duration_seconds,
-        visual_constraints,
-      })),
+      .map(
+        ({
+          shot_type,
+          visual_prompt,
+          duration_seconds,
+          visual_constraints,
+        }) => ({
+          shot_type,
+          visual_prompt,
+          duration_seconds,
+          visual_constraints,
+        }),
+      ),
   };
 }
 
@@ -267,7 +274,6 @@ export function EditableScript({
                         aria-label={`镜头 ${index + 1} 时长`}
                         type="number"
                         min={1}
-                        max={300}
                         required
                         value={shot.duration_seconds}
                         onChange={(event) =>
@@ -309,7 +315,10 @@ export function EditableScript({
                   <label className="checkbox-field">
                     <input
                       type="checkbox"
-                      checked={shot.visual_constraints?.face_policy === "no_identifiable_faces"}
+                      checked={
+                        shot.visual_constraints?.face_policy ===
+                        "no_identifiable_faces"
+                      }
                       onChange={(event) =>
                         patch({
                           shots: draft.shots.map((item, i) =>
@@ -320,9 +329,14 @@ export function EditableScript({
                                     face_policy: event.target.checked
                                       ? "no_identifiable_faces"
                                       : "unspecified",
-                                    required_elements: item.visual_constraints?.required_elements ?? [],
-                                    forbidden_elements: item.visual_constraints?.forbidden_elements ?? [],
-                                    notes: item.visual_constraints?.notes ?? null,
+                                    required_elements:
+                                      item.visual_constraints
+                                        ?.required_elements ?? [],
+                                    forbidden_elements:
+                                      item.visual_constraints
+                                        ?.forbidden_elements ?? [],
+                                    notes:
+                                      item.visual_constraints?.notes ?? null,
                                   },
                                 }
                               : item,
@@ -340,7 +354,6 @@ export function EditableScript({
               <Input
                 type="number"
                 min={4}
-                max={300}
                 required
                 value={draft.duration_seconds}
                 onChange={(event) =>

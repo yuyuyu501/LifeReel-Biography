@@ -540,9 +540,12 @@ def get_project(
 
 
 def update_fingerprint(payload: ScriptGenerateRequest) -> str:
+    data = payload.model_dump(mode="json", exclude={"idempotency_key"})
+    if not payload.book_id:
+        data.pop("book_id")
     return hashlib.sha256(
         json.dumps(
-            payload.model_dump(mode="json", exclude={"idempotency_key"}), sort_keys=True
+            data, sort_keys=True
         ).encode()
     ).hexdigest()
 
@@ -601,7 +604,7 @@ def generate_draft(
         )
         committed_read(db)
         return get_project(db, tenant_id, UUID(result["project_id"]))
-    if payload.book_revision_ids:
+    if payload.book_id or payload.book_revision_ids:
         from lifereel_api.modules.script.book_adaptation import generate
 
         return generate(db, tenant_id, payload)

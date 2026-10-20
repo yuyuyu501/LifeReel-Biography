@@ -29,7 +29,7 @@ export const ERROR_MESSAGES: Record<string, string> = {
     "生成期间采访资料发生变化，旧稿已保留，请根据最新资料重新生成。",
   BOOK_GENERATION_BUSY: "本书有相关章节正在处理，请完成后再操作。",
   BOOK_REQUEST_CONFLICT: "生成请求与原请求不一致，请刷新后重新提交。",
-  BOOK_EMPTY: "尚无已完成的书稿可以导出。",
+  BOOK_EMPTY: "尚无已保存的书稿，请先完成写书。",
   VOICE_NOT_CONFIGURED: "实时语音暂未开通。",
   VOICE_CALL_BUSY: "当前已有语音采访，请先结束正在进行的通话。",
   VOICE_CALL_NOT_FOUND: "找不到这次语音采访。",
@@ -193,7 +193,7 @@ export const ERROR_MESSAGES: Record<string, string> = {
   VIDEO_PLAN_CONFIGURATION_INCOMPLETE: "请先配置分镜 AI 服务。",
   VIDEO_ASSEMBLY_UNAVAILABLE: "视频拼接工具不可用，请检查服务配置。",
   VIDEO_ASSEMBLY_FAILED: "视频拼接失败，已生成片段会保留，请重试。",
-  VIDEO_DURATION_UNSUPPORTED: "每章需为 4 至 300 秒，一次制作最多 24 段。",
+  VIDEO_DURATION_UNSUPPORTED: "镜头时长无法用于视频制作，请检查剧本与分镜。",
   VIDEO_DURATION_MISMATCH: "视频时长与分镜计划不符，请检查生成结果。",
   VIDEO_SUBMISSION_UNCERTAIN:
     "提交结果不确定，已停止自动重发，请先核对云端任务。",
