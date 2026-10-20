@@ -81,7 +81,26 @@ export function BookScriptGenerator({
       </summary>
       <div className="studio-generator-body">
         <div className="studio-book-selection">
-          <h2>选择书稿版本</h2>
+          <div className="studio-book-selection-heading">
+            <h2>选择书稿版本</h2>
+            <label className="studio-book-select-all">
+              <input
+                type="checkbox"
+                disabled={disabled || generate.isPending || !allowed.size}
+                checked={allowed.size > 0 && chosen.length === allowed.size}
+                ref={(input) => {
+                  if (input)
+                    input.indeterminate =
+                      chosen.length > 0 && chosen.length < allowed.size;
+                }}
+                onChange={(event) => {
+                  edited();
+                  setSelected(event.target.checked ? [...allowed] : []);
+                }}
+              />
+              全选
+            </label>
+          </div>
           <QueryState queries={[books]} loadingText="正在读取书稿……" />
           <div className="studio-book-list" role="group" aria-label="书稿版本">
             {chapters.map(({ book, chapter }) => (

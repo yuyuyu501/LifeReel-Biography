@@ -68,7 +68,7 @@ export function StudioPage() {
   const queryClient = useQueryClient();
   const [searchParams, setSearchParams] = useSearchParams();
   const [sceneId, setSceneId] = useState("");
-  const [generatorOpen, setGeneratorOpen] = useState(true);
+  const [generatorOpen, setGeneratorOpen] = useState(false);
   const [view, setView] = useState<"video" | "script">("video");
   const [scriptEditing, setScriptEditing] = useState(false);
   const [media, setMedia] = useState<{

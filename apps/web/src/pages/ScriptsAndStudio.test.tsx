@@ -300,6 +300,17 @@ test("adapts only eligible saved book versions from the studio panel", async () 
               },
             },
             { id: "chapter-3", title: "工作", stale: false, current: null },
+            {
+              id: "chapter-4",
+              title: "晚年",
+              stale: false,
+              current: {
+                id: "revision-4",
+                title: "退休生活",
+                version_number: 1,
+                created_at: "2026-10-19T00:00:00Z",
+              },
+            },
           ],
         },
       ]);
@@ -308,13 +319,41 @@ test("adapts only eligible saved book versions from the studio panel", async () 
     return original(input, init);
   });
   renderPage(<StudioPage />, "/studio");
+  const summary = await screen.findByText("从书稿生成剧本与分镜");
+  const panel = summary.closest("details")!;
+  expect(panel).not.toHaveAttribute("open");
+  fireEvent.click(summary);
+  await waitFor(() => expect(panel).toHaveAttribute("open"));
   const eligible = await screen.findByRole("checkbox", { name: /泉州旧巷/ });
+  const otherEligible = screen.getByRole("checkbox", { name: /退休生活/ });
+  const selectAll = screen.getByRole("checkbox", { name: "全选" });
   expect(screen.getByRole("checkbox", { name: /远行求学/ })).toBeDisabled();
   expect(screen.getByRole("checkbox", { name: /工作/ })).toBeDisabled();
   const generate = screen.getByRole("button", { name: "生成剧本与分镜" });
   expect(generate).toBeDisabled();
+  expect(selectAll).not.toBeChecked();
+  fireEvent.click(selectAll);
+  expect(eligible).toBeChecked();
+  expect(otherEligible).toBeChecked();
+  expect(screen.getByRole("checkbox", { name: /远行求学/ })).not.toBeChecked();
+  expect(screen.getByRole("checkbox", { name: /工作/ })).not.toBeChecked();
+  expect(screen.getByText("共 2 个可用版本，已选择 2 个")).toBeVisible();
+  fireEvent.click(otherEligible);
+  expect(selectAll).toBePartiallyChecked();
+  fireEvent.click(selectAll);
+  expect(selectAll).toBeChecked();
+  fireEvent.click(selectAll);
+  expect(eligible).not.toBeChecked();
+  expect(otherEligible).not.toBeChecked();
+  expect(generate).toBeDisabled();
   fireEvent.click(eligible);
-  expect(screen.getByText("共 1 个可用版本，已选择 1 个")).toBeVisible();
+  expect(screen.getByText("共 2 个可用版本，已选择 1 个")).toBeVisible();
+  fireEvent.click(summary);
+  await waitFor(() => expect(panel).not.toHaveAttribute("open"));
+  fireEvent.click(summary);
+  await waitFor(() => expect(panel).toHaveAttribute("open"));
+  expect(eligible).toBeChecked();
+  expect(selectAll).toBePartiallyChecked();
   fireEvent.change(screen.getByLabelText("目标时长"), {
     target: { value: "60" },
   });
