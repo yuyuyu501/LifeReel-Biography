@@ -5,7 +5,19 @@ import type {
   ScriptScene,
 } from "@lifereel/contracts";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Ban, BookOpen, Check, Film, Play, Send } from "lucide-react";
+import {
+  ArrowRight,
+  Ban,
+  BookOpen,
+  Check,
+  ChevronRight,
+  Clapperboard,
+  FileText,
+  Film,
+  Play,
+  Send,
+  UserRound,
+} from "lucide-react";
 import { useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { api, generatedAssetUrl, productionSegmentUrl } from "../api/client";
@@ -56,6 +68,7 @@ export function StudioPage() {
   const queryClient = useQueryClient();
   const [searchParams, setSearchParams] = useSearchParams();
   const [sceneId, setSceneId] = useState("");
+  const [generatorOpen, setGeneratorOpen] = useState(true);
   const [view, setView] = useState<"video" | "script">("video");
   const [scriptEditing, setScriptEditing] = useState(false);
   const [media, setMedia] = useState<{
@@ -286,8 +299,11 @@ export function StudioPage() {
     <div className="page film-studio-page">
       <header className="page-title-row studio-title">
         <div>
-          <span className="eyebrow">人生影像</span>
+          <span className="eyebrow">
+            <Film size={14} aria-hidden="true" /> 人生影像
+          </span>
           <h1>影像制作</h1>
+          <p className="page-intro">将书稿中的人生故事，留在影像里。</p>
         </div>
         <Button asChild variant="outline" className="button secondary">
           <Link
@@ -297,7 +313,8 @@ export function StudioPage() {
                 : "/books"
             }
           >
-            <BookOpen size={17} aria-hidden="true" /> 前往写书
+            <BookOpen size={17} aria-hidden="true" /> 前往写书{" "}
+            <ChevronRight size={16} aria-hidden="true" />
           </Link>
         </Button>
       </header>
@@ -315,6 +332,8 @@ export function StudioPage() {
               key={effectiveSubjectId}
               subjectId={effectiveSubjectId}
               disabled={scriptEditing}
+              open={generatorOpen}
+              onOpenChange={setGeneratorOpen}
               onGenerated={(projectId) => {
                 setSearchParams((params) => {
                   params.set("project", projectId);
@@ -328,7 +347,9 @@ export function StudioPage() {
           <div className="studio-workspace">
             <aside className="studio-catalog" aria-label="制作场景">
               <label>
-                制作对象
+                <span className="studio-catalog-label">
+                  <UserRound size={15} aria-hidden="true" /> 制作对象
+                </span>
                 <select
                   disabled={scriptEditing}
                   value={effectiveSubjectId}
@@ -357,7 +378,9 @@ export function StudioPage() {
                 </select>
               </label>
               <div className="studio-catalog-heading">
-                <h2>剧本场景</h2>
+                <h2>
+                  <Clapperboard size={15} aria-hidden="true" /> 剧本场景
+                </h2>
                 <span>{entries.length} 个场景</span>
               </div>
               <nav className="studio-chapters" aria-label="场景列表">
@@ -391,7 +414,7 @@ export function StudioPage() {
                   );
                 })}
               </nav>
-              <details>
+              <details className="studio-history">
                 <summary>历史剧本与影像</summary>
                 {scripts.data
                   ?.filter(
@@ -759,11 +782,75 @@ export function StudioPage() {
                   </div>
                 </>
               ) : (
-                <EmptyState
-                  icon={BookOpen}
-                  title="还没有可制作的场景"
-                  description=""
-                />
+                <div className="studio-onboarding">
+                  <div className="studio-empty-content">
+                    <img
+                      src="/images/studio-empty.webp"
+                      alt=""
+                      className="studio-empty-art"
+                    />
+                    <h2>还没有可制作的场景</h2>
+                    <div className="studio-empty-actions">
+                      {effectiveSubjectId && (
+                        <Button
+                          onClick={() => {
+                            setGeneratorOpen(true);
+                            requestAnimationFrame(() =>
+                              document
+                                .getElementById("book-script-generator")
+                                ?.scrollIntoView({
+                                  behavior: "smooth",
+                                  block: "start",
+                                }),
+                            );
+                          }}
+                        >
+                          <FileText size={17} aria-hidden="true" />{" "}
+                          从书稿生成场景
+                        </Button>
+                      )}
+                      <Button asChild variant="outline">
+                        <Link
+                          to={
+                            effectiveSubjectId
+                              ? `/books?subject=${effectiveSubjectId}`
+                              : "/people"
+                          }
+                        >
+                          <BookOpen size={17} aria-hidden="true" />{" "}
+                          {effectiveSubjectId ? "前往写书" : "添加家人"}
+                        </Link>
+                      </Button>
+                    </div>
+                  </div>
+                  <ol className="studio-workflow" aria-label="影像制作流程">
+                    <li>
+                      <span className="studio-step-number">1</span>
+                      <FileText size={20} aria-hidden="true" />
+                      <span>选择书稿</span>
+                      <ArrowRight
+                        className="studio-step-arrow"
+                        size={18}
+                        aria-hidden="true"
+                      />
+                    </li>
+                    <li>
+                      <span className="studio-step-number">2</span>
+                      <Clapperboard size={20} aria-hidden="true" />
+                      <span>剧本与分镜</span>
+                      <ArrowRight
+                        className="studio-step-arrow"
+                        size={18}
+                        aria-hidden="true"
+                      />
+                    </li>
+                    <li>
+                      <span className="studio-step-number">3</span>
+                      <Film size={20} aria-hidden="true" />
+                      <span>制作影像</span>
+                    </li>
+                  </ol>
+                </div>
               )}
             </section>
           </div>

@@ -267,6 +267,83 @@ test("keeps the image studio focused on production", async () => {
   ).not.toBeInTheDocument();
 });
 
+test("adapts only eligible saved book versions from the studio panel", async () => {
+  const original = vi.mocked(fetch).getMockImplementation()!;
+  vi.mocked(fetch).mockImplementation(async (input, init) => {
+    if (String(input).endsWith("/v1/books"))
+      return response([
+        {
+          id: "book-1",
+          subject_id: person.id,
+          title: "林奶奶的人生书",
+          chapters: [
+            {
+              id: "chapter-1",
+              title: "童年",
+              stale: false,
+              current: {
+                id: "revision-1",
+                title: "泉州旧巷",
+                version_number: 2,
+                created_at: "2026-10-19T00:00:00Z",
+              },
+            },
+            {
+              id: "chapter-2",
+              title: "求学",
+              stale: true,
+              current: {
+                id: "revision-2",
+                title: "远行求学",
+                version_number: 1,
+                created_at: "2026-10-18T00:00:00Z",
+              },
+            },
+            { id: "chapter-3", title: "工作", stale: false, current: null },
+          ],
+        },
+      ]);
+    if (String(input).endsWith("/v1/scripts/generate"))
+      return response(project);
+    return original(input, init);
+  });
+  renderPage(<StudioPage />, "/studio");
+  const eligible = await screen.findByRole("checkbox", { name: /泉州旧巷/ });
+  expect(screen.getByRole("checkbox", { name: /远行求学/ })).toBeDisabled();
+  expect(screen.getByRole("checkbox", { name: /工作/ })).toBeDisabled();
+  const generate = screen.getByRole("button", { name: "生成剧本与分镜" });
+  expect(generate).toBeDisabled();
+  fireEvent.click(eligible);
+  expect(screen.getByText("共 1 个可用版本，已选择 1 个")).toBeVisible();
+  fireEvent.change(screen.getByLabelText("目标时长"), {
+    target: { value: "60" },
+  });
+  fireEvent.change(screen.getByLabelText("改编要求（可选）"), {
+    target: { value: "保留旧巷的生活细节" },
+  });
+  fireEvent.click(generate);
+  await waitFor(() =>
+    expect(fetch).toHaveBeenCalledWith(
+      expect.stringContaining("/v1/scripts/generate"),
+      expect.objectContaining({ method: "POST", body: expect.any(String) }),
+    ),
+  );
+  const request = vi
+    .mocked(fetch)
+    .mock.calls.find(([url]) => String(url).endsWith("/v1/scripts/generate"))!;
+  expect(JSON.parse(String(request[1]?.body))).toMatchObject({
+    subject_id: person.id,
+    book_revision_ids: ["revision-1"],
+    duration_seconds: 60,
+    adaptation_instructions: "保留旧巷的生活细节",
+    mode: "multi_chapter",
+    audience: "family",
+  });
+  expect(
+    await screen.findByRole("tab", { name: "剧本与分镜" }),
+  ).toHaveAttribute("aria-selected", "true");
+});
+
 test("switches chapters and submits only the selected chapter", async () => {
   renderPage(<StudioPage />, "/studio");
   await screen.findByRole("button", { name: "生成影像" });
