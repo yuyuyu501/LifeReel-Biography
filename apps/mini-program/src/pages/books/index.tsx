@@ -1,10 +1,20 @@
 import { useEffect, useState } from "react";
-import { Button, Input, Text, Textarea, View } from "@tarojs/components";
+import {
+  Button,
+  Checkbox,
+  CheckboxGroup,
+  Input,
+  Label,
+  Text,
+  Textarea,
+  View,
+} from "@tarojs/components";
 import Taro, { getCurrentInstance } from "@tarojs/taro";
 import type { Book, BookChapter, LifeProfile } from "@lifereel/contracts";
 import { miniApi } from "../../shared/api";
 import { newRequestId } from "../../shared/uuid";
-import { PreviewNotice } from "../../shared/PreviewNotice";
+import { PageFrame } from "../../shared/PageFrame";
+import { Icon } from "../../shared/Icon";
 
 export default function BooksPage() {
   const subjectId = getCurrentInstance().router?.params.subjectId || "";
@@ -19,6 +29,7 @@ export default function BooksPage() {
   const [confirmSources, setConfirmSources] = useState(false);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [expanded, setExpanded] = useState<string[]>([]);
   const working = !!book?.chapters.some((c) =>
     ["queued", "running"].includes(c.status),
   );
@@ -47,7 +58,7 @@ export default function BooksPage() {
     return () => clearInterval(timer);
   }, [working, book?.id]);
   async function generate(chapter?: BookChapter) {
-    if (!book) return;
+    if (!book || busy || directory || draft) return;
     setBusy(true);
     setError("");
     try {
@@ -111,30 +122,43 @@ export default function BooksPage() {
     }
   }
   return (
-    <View className="page">
-      <PreviewNotice />
-      <Text className="title">人生写书</Text>
-      <Text className="hint">
-        从资料表选材，每章约1000字，书章可以独立调整。
-      </Text>
+    <PageFrame
+      title="人生之书"
+      subtitle="把走过的日子，写成一本书。"
+      active="books"
+      subjectId={subjectId}
+      locked={busy || !!draft || !!directory}
+    >
       {error && <Text className="error">{error}</Text>}
       {book && (
         <>
-          <Text className="section-title">{book.title}</Text>
+          <View className="book-summary">
+            <Text className="eyebrow">我的书稿</Text>
+            <Text className="list-title">{book.title}</Text>
+            <Text className="hint">
+              {book.chapters.length} 章 ·{" "}
+              {book.chapters.filter((c) => c.current).length} 章已成稿
+            </Text>
+          </View>
           <View className="action-row">
             <Button
+              className="primary-button"
+              loading={busy && !draft && !directory}
               disabled={busy || working || !!draft || !!directory}
               onClick={() => generate()}
             >
-              生成待写章节
+              <Icon name="book" tone="white" />
+              补齐未成稿章节
             </Button>
             <Button
-              disabled={busy || working || !!draft}
+              disabled={busy || working || !!draft || !!directory}
               onClick={() => setDirectory(book.chapters.map((c) => ({ ...c })))}
             >
-              编辑目录与选材
+              <Icon name="edit" />
+              目录与选材
             </Button>
             <Button
+              disabled={busy || !!draft || !!directory}
               onClick={() =>
                 Taro.navigateTo({
                   url: `/pages/profile/index?subjectId=${subjectId}`,
@@ -144,6 +168,7 @@ export default function BooksPage() {
               资料表
             </Button>
             <Button
+              disabled={busy || !!draft || !!directory}
               onClick={() =>
                 Taro.navigateTo({
                   url: `/pages/production/index?subjectId=${subjectId}&tab=script`,
@@ -154,9 +179,13 @@ export default function BooksPage() {
             </Button>
           </View>
           {directory && (
-            <View className="card">
+            <View className="section directory-editor">
+              <Text className="section-title">目录与选材</Text>
               {directory.map((ch, index) => (
-                <View key={ch.id || index}>
+                <View className="card" key={ch.id || index}>
+                  <Text className="caption">
+                    第 {index + 1} 章 · {ch.source_entry_ids.length} 条素材
+                  </Text>
                   <Input
                     className="input"
                     value={ch.title}
@@ -204,52 +233,48 @@ export default function BooksPage() {
                       移出目录
                     </Button>
                   </View>
-                  {profile?.entries
-                    .filter(
-                      (e) =>
-                        e.state === "filled" &&
-                        e.use_scope !== "internal" &&
-                        !["pending", "disputed"].includes(e.certainty),
-                    )
-                    .map((e) => (
-                      <Button
-                        key={e.id}
-                        className={
-                          ch.source_entry_ids.includes(e.id)
-                            ? "primary-button"
-                            : "secondary-button"
-                        }
-                        onClick={() =>
-                          setDirectory(
-                            directory.map((c, i) =>
-                              i === index
-                                ? {
-                                    ...c,
-                                    source_entry_ids:
-                                      c.source_entry_ids.includes(e.id)
-                                        ? c.source_entry_ids.filter(
-                                            (id) => id !== e.id,
-                                          )
-                                        : [...c.source_entry_ids, e.id],
-                                  }
-                                : c,
-                            ),
-                          )
-                        }
-                      >
-                        {
-                          profile.fields.find((f) => f.key === e.field_key)
-                            ?.label
-                        }{" "}
-                        ·{" "}
-                        {typeof e.value === "string"
-                          ? e.value.slice(0, 30)
-                          : String(
-                              (e.value as Record<string, unknown>).title ||
-                                "经历",
-                            )}
-                      </Button>
-                    ))}
+                  <CheckboxGroup
+                    onChange={(e) =>
+                      setDirectory(
+                        directory.map((c, i) =>
+                          i === index
+                            ? { ...c, source_entry_ids: e.detail.value }
+                            : c,
+                        ),
+                      )
+                    }
+                  >
+                    {profile?.entries
+                      .filter(
+                        (e) =>
+                          e.state === "filled" &&
+                          e.use_scope !== "internal" &&
+                          !["pending", "disputed"].includes(e.certainty),
+                      )
+                      .map((e) => (
+                        <Label key={e.id} className="material-option">
+                          <Checkbox
+                            value={e.id}
+                            checked={ch.source_entry_ids.includes(e.id)}
+                            color="#176e62"
+                            disabled={busy}
+                          />
+                          <Text>
+                            {
+                              profile.fields.find((f) => f.key === e.field_key)
+                                ?.label
+                            }{" "}
+                            ·{" "}
+                            {typeof e.value === "string"
+                              ? e.value.slice(0, 30)
+                              : String(
+                                  (e.value as Record<string, unknown>).title ||
+                                    "经历",
+                                )}
+                          </Text>
+                        </Label>
+                      ))}
+                  </CheckboxGroup>
                 </View>
               ))}
               <Button
@@ -285,14 +310,21 @@ export default function BooksPage() {
                     恢复：{ch.title}
                   </Button>
                 ))}
-              <Button disabled={busy} onClick={saveDirectory}>
+              <Button
+                className="primary-button"
+                disabled={busy}
+                onClick={saveDirectory}
+              >
                 保存目录
               </Button>
-              <Button onClick={() => setDirectory(null)}>取消</Button>
+              <Button disabled={busy} onClick={() => setDirectory(null)}>
+                取消
+              </Button>
             </View>
           )}
           {draft ? (
-            <View className="card">
+            <View className="section">
+              <Text className="section-title">编辑书稿</Text>
               <Input
                 className="input"
                 value={draft.title}
@@ -304,17 +336,31 @@ export default function BooksPage() {
                 value={draft.body}
                 onInput={(e) => setDraft({ ...draft, body: e.detail.value })}
               />
-              <Button
-                className={
-                  confirmSources ? "primary-button" : "secondary-button"
+              <CheckboxGroup
+                onChange={(e) =>
+                  setConfirmSources(e.detail.value.includes("confirmed"))
                 }
-                onClick={() => setConfirmSources(!confirmSources)}
               >
-                {confirmSources ? "已确认" : "确认"}正文已按当前资料更正
-              </Button>
-              <Button disabled={busy || !draft.body.trim()} onClick={save}>
-                保存书稿版本
-              </Button>
+                <Label className="material-option">
+                  <Checkbox
+                    value="confirmed"
+                    checked={confirmSources}
+                    disabled={busy}
+                    color="#176e62"
+                  />
+                  <Text>正文已按当前资料更正</Text>
+                </Label>
+              </CheckboxGroup>
+              <View className="action-row">
+                <Button
+                  className="primary-button"
+                  loading={busy}
+                  disabled={busy || !draft.body.trim()}
+                  onClick={save}
+                >
+                  保存书稿版本
+                </Button>
+              </View>
               <Button disabled={busy} onClick={() => setDraft(null)}>
                 取消
               </Button>
@@ -322,14 +368,19 @@ export default function BooksPage() {
           ) : (
             book.chapters.map((ch) => (
               <View className="card" key={ch.id}>
-                <Text className="section-title">
-                  {ch.order_index}. {ch.title}
-                </Text>
-                <Text className="hint">
-                  {ch.current
-                    ? `${ch.current.word_count} 字 · 第 ${ch.version_number} 版`
-                    : "尚未成稿"}
-                </Text>
+                <View className="chapter-heading">
+                  <Text className="chapter-number">
+                    {String(ch.order_index).padStart(2, "0")}
+                  </Text>
+                  <View className="chapter-heading-copy">
+                    <Text className="section-title">{ch.title}</Text>
+                    <Text className="caption">
+                      {ch.current
+                        ? `${ch.current.word_count} 字 · 第 ${ch.version_number} 版`
+                        : "尚未成稿"}
+                    </Text>
+                  </View>
+                </View>
                 {ch.stale && (
                   <Text className="error">
                     来源有更正，请更新书稿后再改编。
@@ -340,12 +391,33 @@ export default function BooksPage() {
                     本章未完成：{ch.error_code}，旧稿仍保留。
                   </Text>
                 )}
-                <Text className="list-meta">
-                  {ch.current?.body || "可以补充资料生成，或手动写作。"}
-                </Text>
+                {ch.current && (
+                  <Text
+                    className={`manuscript ${expanded.includes(ch.id) ? "" : "is-collapsed"}`}
+                  >
+                    {ch.current.body}
+                  </Text>
+                )}
+                {ch.current && (
+                  <Button
+                    className="text-button"
+                    onClick={() =>
+                      setExpanded((rows) =>
+                        rows.includes(ch.id)
+                          ? rows.filter((id) => id !== ch.id)
+                          : [...rows, ch.id],
+                      )
+                    }
+                  >
+                    {expanded.includes(ch.id) ? "收起正文" : "阅读全文"}
+                    <Icon name="down" />
+                  </Button>
+                )}
                 <View className="action-row">
                   <Button
-                    disabled={busy || working || !ch.source_count}
+                    disabled={
+                      busy || working || !!directory || !ch.source_count
+                    }
                     onClick={() => generate(ch)}
                   >
                     {working
@@ -356,14 +428,16 @@ export default function BooksPage() {
                   </Button>
                   <Button
                     disabled={busy || working || !!directory}
-                    onClick={() =>
+                    onClick={() => {
+                      setConfirmSources(false);
                       setDraft({
                         chapter: ch,
                         title: ch.current?.title || ch.title,
                         body: ch.current?.body || "",
-                      })
-                    }
+                      });
+                    }}
                   >
+                    <Icon name="edit" />
                     编辑正文
                   </Button>
                 </View>
@@ -372,6 +446,7 @@ export default function BooksPage() {
           )}
         </>
       )}
-    </View>
+      {!book && !error && <Text className="empty">正在读取书稿……</Text>}
+    </PageFrame>
   );
 }

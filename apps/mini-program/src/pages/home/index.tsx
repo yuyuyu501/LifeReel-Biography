@@ -1,149 +1,268 @@
 import { useEffect, useState } from "react";
-import { Button, Input, Text, View } from "@tarojs/components";
-import Taro from "@tarojs/taro";
+import { Button, Image, Input, Text, View } from "@tarojs/components";
+import Taro, { getCurrentInstance } from "@tarojs/taro";
 import type { Person } from "@lifereel/contracts";
 import { miniApi } from "../../shared/api";
-import { PreviewNotice } from "../../shared/PreviewNotice";
-import { miniPlatform } from "../../shared/platform";
+import { PageFrame } from "../../shared/PageFrame";
+import { Icon, type IconName } from "../../shared/Icon";
+
+const entries: {
+  page: string;
+  title: string;
+  detail: string;
+  icon: IconName;
+}[] = [
+  {
+    page: "profile",
+    title: "人生资料",
+    detail: "经历与人物关系",
+    icon: "profile",
+  },
+  {
+    page: "books",
+    title: "人生之书",
+    detail: "目录与已保存书稿",
+    icon: "book",
+  },
+  {
+    page: "production",
+    title: "人生影像",
+    detail: "剧本、分镜与视频",
+    icon: "film",
+  },
+  {
+    page: "memory",
+    title: "记忆档案",
+    detail: "事实与时间线",
+    icon: "archive",
+  },
+];
 
 export default function HomePage() {
-  const [user, setUser] = useState<{ display_name: string } | null>(null);
   const [persons, setPersons] = useState<Person[]>([]);
   const [newPersonName, setNewPersonName] = useState("");
   const [selectedPersonId, setSelectedPersonId] = useState("");
+  const [adding, setAdding] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-
-  useEffect(() => {
+  function load() {
+    setError("");
+    setLoading(true);
     Promise.all([miniApi.me(), miniApi.persons()])
-      .then(([me, people]) => {
-        setUser(me);
+      .then(([, people]) => {
         setPersons(people);
-        setSelectedPersonId(people[0]?.id || "");
+        const requested = getCurrentInstance().router?.params?.subjectId;
+        setSelectedPersonId(
+          (prior) =>
+            people.find((p) => p.id === (prior || requested))?.id ||
+            people[0]?.id ||
+            "",
+        );
       })
-      .catch((reason) =>
-        setError(reason instanceof Error ? reason.message : "内容加载失败"),
-      );
-  }, []);
-
-  const logout = () => {
-    miniApi.clearAuth();
-    Taro.reLaunch({ url: "/pages/login/index" });
-  };
-
-  const createPerson = async () => {
-    const name = newPersonName.trim();
-    if (!name) return;
+      .catch((e) => setError(e instanceof Error ? e.message : "家人加载失败"))
+      .finally(() => setLoading(false));
+  }
+  useEffect(load, []);
+  const selected = persons.find((p) => p.id === selectedPersonId);
+  function open(page: string) {
+    if (!selected || adding) return;
+    void Taro.navigateTo({
+      url: `/pages/${page}/index?subjectId=${encodeURIComponent(selected.id)}`,
+    });
+  }
+  async function createPerson() {
+    if (!newPersonName.trim() || busy) return;
+    setBusy(true);
+    setError("");
     try {
-      const person = await miniApi.createPerson({ display_name: name });
+      const person = await miniApi.createPerson({
+        display_name: newPersonName.trim(),
+      });
       setPersons((items) => [...items, person]);
       setSelectedPersonId(person.id);
       setNewPersonName("");
-    } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "人物创建失败");
+      setAdding(false);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "家人创建失败");
+    } finally {
+      setBusy(false);
     }
-  };
-
-  const open = (url: string) => Taro.navigateTo({ url });
-
+  }
   return (
-    <View className="page home-page">
-      <PreviewNotice />
-      <View className="home-header">
-        <View>
-          <Text className="eyebrow">LIFEREEL BIOGRAPHY</Text>
-          <Text className="title">
-            {user ? `${user.display_name}，你好` : "正在加载"}
-          </Text>
-        </View>
-        <Button className="text-button" onClick={logout}>
-          退出
+    <PageFrame
+      title="我的家人"
+      subtitle="把熟悉的人，认真记下来。"
+      active="home"
+      subjectId={selectedPersonId}
+      locked={adding}
+      className="home-page"
+      action={
+        <Button
+          className="icon-button"
+          aria-label={adding ? "关闭新增家人" : "新增家人"}
+          disabled={busy}
+          onClick={() => setAdding(!adding)}
+        >
+          <Icon name="plus" />
         </Button>
-      </View>
-      {error ? <Text className="error">{error}</Text> : null}
-      <View className="section">
-        <Text className="section-title">人物</Text>
-        <View className="list-card">
-          <Input
-            className="input compact-input"
-            value={newPersonName}
-            placeholder="新增人物姓名"
-            onInput={(event) => setNewPersonName(event.detail.value)}
-          />
-          <Button className="primary-button" onClick={createPerson}>
-            创建人物
+      }
+    >
+      {error && (
+        <View className="error-row">
+          <Text className="error">{error}</Text>
+          <Button className="text-button" onClick={load}>
+            重试
           </Button>
         </View>
-        {persons.length ? (
-          persons.map((person) => (
-            <View
-              className="list-card"
+      )}
+      {adding && (
+        <View className="surface person-form">
+          <Text className="section-title">新增家人</Text>
+          <Text className="label">姓名或称呼</Text>
+          <Input
+            className="input"
+            maxlength={80}
+            value={newPersonName}
+            placeholder="例如：爸爸、林秀兰"
+            onInput={(e) => setNewPersonName(e.detail.value)}
+          />
+          <View className="action-row">
+            <Button
+              className="primary-button"
+              loading={busy}
+              disabled={busy || !newPersonName.trim()}
+              onClick={createPerson}
+            >
+              添加家人
+            </Button>
+            <Button
+              className="secondary-button"
+              disabled={busy}
+              onClick={() => setAdding(false)}
+            >
+              取消
+            </Button>
+          </View>
+        </View>
+      )}
+      {loading ? (
+        <Text className="empty">正在读取家人档案……</Text>
+      ) : persons.length ? (
+        <View className="person-list">
+          {persons.map((person) => (
+            <Button
+              className={`person-row ${person.id === selectedPersonId ? "is-selected" : ""}`}
               key={person.id}
               onClick={() => setSelectedPersonId(person.id)}
             >
-              <Text className="list-title">{person.display_name}</Text>
-              <Text className="list-meta">
-                {person.birth_year
-                  ? `${person.birth_year} 年`
-                  : "尚未填写出生年份"}
+              <Text className="person-avatar">
+                {(person.preferred_name || person.display_name).slice(0, 1)}
               </Text>
-              {selectedPersonId === person.id ? (
-                <View className="action-row">
-                  <Button
-                    className="secondary-button"
-                    onClick={() =>
-                      open(`/pages/interview/index?subjectId=${person.id}`)
-                    }
-                  >
-                    开始采访
-                  </Button>
-                  <Button
-                    className="secondary-button"
-                    onClick={() =>
-                      open(`/pages/memory/index?subjectId=${person.id}`)
-                    }
-                  >
-                    记忆图谱
-                  </Button>
-                  <Button
-                    className="secondary-button"
-                    onClick={() =>
-                      open(`/pages/profile/index?subjectId=${person.id}`)
-                    }
-                  >
-                    人生资料表
-                  </Button>
-                  <Button
-                    className="secondary-button"
-                    onClick={() =>
-                      open(`/pages/books/index?subjectId=${person.id}`)
-                    }
-                  >
-                    写书
-                  </Button>
-                </View>
-              ) : null}
+              <View className="person-copy">
+                <Text className="list-title">
+                  {person.preferred_name || person.display_name}
+                </Text>
+                <Text className="list-meta">
+                  {[
+                    person.relation_to_owner,
+                    person.birth_year
+                      ? `${person.birth_year} 年生`
+                      : "出生年份待补充",
+                    person.birthplace,
+                  ]
+                    .filter(Boolean)
+                    .join(" · ")}
+                </Text>
+              </View>
+              <View
+                className={`selection-mark ${person.id === selectedPersonId ? "is-selected" : ""}`}
+              >
+                {person.id === selectedPersonId && (
+                  <Icon name="check" tone="white" />
+                )}
+              </View>
+            </Button>
+          ))}
+        </View>
+      ) : (
+        <View className="empty-state">
+          <Image
+            className="empty-illustration"
+            src={require("../../assets/interview.png")}
+            mode="aspectFit"
+          />
+          <Text className="section-title">第一份家人档案</Text>
+          <Button className="primary-button" onClick={() => setAdding(true)}>
+            <Icon name="plus" tone="white" />
+            添加家人
+          </Button>
+        </View>
+      )}
+      {selected && (
+        <>
+          <View className="next-interview">
+            <View className="next-interview-copy">
+              <Text className="eyebrow">下一段故事</Text>
+              <Text className="section-title">
+                和{selected.preferred_name || selected.display_name}聊一聊
+              </Text>
+              <Button
+                className="primary-button"
+                onClick={() => open("interview")}
+              >
+                <Icon name="mic" tone="white" />
+                开始或继续采访
+                <Icon name="arrow" tone="white" />
+              </Button>
             </View>
-          ))
-        ) : (
-          <Text className="empty">还没有人物资料</Text>
-        )}
-      </View>
-      <View className="section">
-        <Text className="section-title">生产</Text>
+            <Image
+              className="interview-art"
+              src={require("../../assets/interview.png")}
+              mode="aspectFit"
+            />
+          </View>
+          <View className="section-heading">
+            <Text className="section-title">家人档案</Text>
+            <Text className="caption">
+              {selected.preferred_name || selected.display_name}
+            </Text>
+          </View>
+          <View className="archive-grid">
+            {entries.map((entry) => (
+              <Button
+                className="archive-entry"
+                key={entry.page}
+                onClick={() => open(entry.page)}
+              >
+                <Icon name={entry.icon} />
+                <Text className="list-title">{entry.title}</Text>
+                <Text className="list-meta">{entry.detail}</Text>
+                <View className="entry-arrow">
+                  <Icon name="arrow" tone="muted" />
+                </View>
+              </Button>
+            ))}
+          </View>
+        </>
+      )}
+      <View className="account-row">
+        <View className="privacy-label">
+          <Icon name="lock" tone="muted" />
+          <Text>仅在家庭空间内保存</Text>
+        </View>
         <Button
-          className="secondary-button"
-          onClick={() => open("/pages/production/index")}
+          className="text-button"
+          disabled={adding || busy}
+          onClick={() => {
+            miniApi.clearAuth();
+            void Taro.reLaunch({ url: "/pages/login/index" });
+          }}
         >
-          查看视频任务
+          <Icon name="logout" tone="muted" />
+          退出
         </Button>
       </View>
-      <View className="section">
-        <Text className="section-title">账户充值</Text>
-        <Button className="secondary-button" disabled>
-          {miniPlatform === "wechat" ? "微信支付" : "抖音支付"}（暂未开通）
-        </Button>
-        <Text className="list-meta">小程序内支付暂未开放。</Text>
-      </View>
-    </View>
+    </PageFrame>
   );
 }

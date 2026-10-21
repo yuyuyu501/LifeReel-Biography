@@ -9,7 +9,7 @@ import type {
   TimelineAnchor,
 } from "@lifereel/contracts";
 import { miniApi } from "../../shared/api";
-import { PreviewNotice } from "../../shared/PreviewNotice";
+import { PageFrame } from "../../shared/PageFrame";
 
 export default function MemoryPage() {
   const subjectId = getCurrentInstance().router?.params?.subjectId || "";
@@ -42,10 +42,12 @@ export default function MemoryPage() {
   }, [subjectId]);
 
   return (
-    <View className="page">
-      <PreviewNotice />
-      <Text className="eyebrow">MEMORY GRAPH</Text>
-      <Text className="title">记忆与时间线</Text>
+    <PageFrame
+      title="记忆档案"
+      subtitle="那些人，那些年，那些事。"
+      active="memory"
+      subjectId={subjectId}
+    >
       {error ? <Text className="error">{error}</Text> : null}
       {overview ? (
         <View className="stats-grid">
@@ -67,7 +69,7 @@ export default function MemoryPage() {
         <Text className="section-title">时间线</Text>
         {timeline.length ? (
           timeline.map((item) => (
-            <View className="list-card" key={item.id}>
+            <View className="timeline-item" key={item.id}>
               <Text className="list-title">
                 {item.year || item.time_text || "未标注时间"}
               </Text>
@@ -85,16 +87,25 @@ export default function MemoryPage() {
             <View className="list-card" key={item.id}>
               <Text className="list-title">{item.name}</Text>
               <Text className="list-meta">
-                {item.entity_type} · {item.relationship}
+                {item.relationship ||
+                  (
+                    {
+                      person: "人物",
+                      place: "地点",
+                      organization: "机构",
+                    } as Record<string, string>
+                  )[item.entity_type] ||
+                  item.entity_type}
               </Text>
             </View>
           ))
         ) : (
-          <Text className="empty">暂时没有实体</Text>
+          <Text className="empty">暂时没有人物与关系记录</Text>
         )}
       </View>
       <View className="section">
         <Text className="section-title">事实记忆</Text>
+        {!claims.length && <Text className="empty">暂时没有事实记录</Text>}
         {claims.slice(0, 20).map((item) => (
           <View className="list-card" key={item.id}>
             <Text className="list-meta">{item.claim_text}</Text>
@@ -103,11 +114,17 @@ export default function MemoryPage() {
         ))}
       </View>
       <View className="section">
-        <Text className="section-title">冲突</Text>
+        <Text className="section-title">待核对记录</Text>
         {conflicts.length ? (
           conflicts.map((item) => (
             <View className="list-card" key={item.id}>
-              <Text className="list-title">{item.status}</Text>
+              <Text className="list-title">
+                {item.status === "open"
+                  ? "待核对"
+                  : item.status === "resolved"
+                    ? "已核对"
+                    : "记录核对"}
+              </Text>
               <Text className="list-meta">{item.description}</Text>
             </View>
           ))
@@ -115,6 +132,6 @@ export default function MemoryPage() {
           <Text className="empty">当前没有待处理冲突</Text>
         )}
       </View>
-    </View>
+    </PageFrame>
   );
 }

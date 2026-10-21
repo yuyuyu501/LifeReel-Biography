@@ -17,10 +17,13 @@ const config: UserConfigExport = defineConfig({
     type: "webpack5",
   },
   mini: {
+    // Taro treats zero as the default inline threshold; keep native Image sources as files.
+    imageUrlLoaderOption: { limit: 1 },
     compile: { include: [resolve(__dirname, "../../../packages/contracts")] },
     postcss: {
       pxtransform: {
         enable: true,
+        config: { propList: ["*", "!font-size", "!min-height", "!min-width"] },
       },
       cssModules: {
         enable: false,
@@ -35,6 +38,7 @@ const config: UserConfigExport = defineConfig({
       pxtransform: {
         enable: true,
         config: {
+          propList: ["*", "!font-size", "!min-height", "!min-width"],
           baseFontSize: 20,
           minRootSize: 1,
           maxRootSize: 22.9333333333,

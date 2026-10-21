@@ -518,6 +518,9 @@ export const miniApi: typeof nativeApi = {
       id: id("script"),
       subject_id: payload.subject_id,
       title: payload.title || "本地示例剧本（未调用 AI）",
+      source_type: payload.book_id ? "book" : "memory",
+      source_stale: false,
+      mode: payload.mode || "multi_chapter",
       version_number:
         projects.filter((item) => item.subject_id === payload.subject_id)
           .length + 1,

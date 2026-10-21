@@ -271,6 +271,7 @@ export const miniApi = {
     request<ScriptProject>(`/v1/scripts/${projectId}`),
   generateScript: (payload: {
     subject_id: string;
+    book_id?: string;
     title?: string;
     mode?: "single_chapter" | "multi_chapter";
     audience?: string;

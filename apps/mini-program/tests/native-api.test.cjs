@@ -84,3 +84,58 @@ test("expired token refreshes and replays with the new bearer token", async () =
   assert.equal(calls[2].header.Authorization, "Bearer new-test-token");
   assert.equal(navigations.length, 0);
 });
+
+test("whole-book adaptation sends the book without a fixed duration or chapter selection", async () => {
+  const { api, calls } = setup([{ statusCode: 201, data: { id: "script" } }]);
+  const payload = {
+    subject_id: "person",
+    book_id: "book",
+    mode: "multi_chapter",
+    audience: "family",
+    idempotency_key: "request",
+    adaptation_instructions: "保留家乡细节",
+  };
+  await api.generateScript(payload);
+  assert.equal(calls[0].url, "https://test.invalid/v1/scripts/generate");
+  assert.equal(calls[0].method, "POST");
+  assert.deepEqual(calls[0].data, payload);
+  assert.equal("duration_seconds" in calls[0].data, false);
+  assert.equal("book_revision_ids" in calls[0].data, false);
+});
+
+test("preview profile labels match the canonical server template", () => {
+  const root = path.resolve(__dirname, "../../..");
+  const canonical = fs.readFileSync(
+    path.join(
+      root,
+      "services/interview/src/lifereel_api/modules/interview/profile_template.py",
+    ),
+    "utf8",
+  );
+  const read = (name) =>
+    JSON.parse(
+      canonical.match(
+        new RegExp(`${name} = json.loads\\(r"""([\\s\\S]*?)"""\\)`),
+      )[1],
+    );
+  const source = fs.readFileSync(
+    path.join(root, "packages/contracts/src/life-profile-template.ts"),
+    "utf8",
+  );
+  const templateModule = { exports: {} };
+  vm.runInNewContext(
+    ts.transpileModule(source, {
+      compilerOptions: { module: ts.ModuleKind.CommonJS },
+    }).outputText,
+    { exports: templateModule.exports },
+  );
+  const template = JSON.parse(
+    JSON.stringify(templateModule.exports.lifeProfileTemplate),
+  );
+  assert.equal(template.fields.length, 67);
+  assert.deepEqual(template, {
+    fields: read("FIELDS"),
+    sections: read("SECTIONS"),
+  });
+  assert.equal(source.includes("\uFFFD"), false);
+});

@@ -1,9 +1,10 @@
 import { useState } from "react";
-import { Button, Input, Text, View } from "@tarojs/components";
+import { Button, Image, Input, Text, View } from "@tarojs/components";
 import Taro from "@tarojs/taro";
 import { miniApi } from "../../shared/api";
 import { PreviewNotice } from "../../shared/PreviewNotice";
 import { loginCode, miniPlatform } from "../../shared/platform";
+import { Icon } from "../../shared/Icon";
 
 export default function LoginPage() {
   const [displayName, setDisplayName] = useState("");
@@ -34,20 +35,24 @@ export default function LoginPage() {
   return (
     <View className="page login-page">
       <PreviewNotice />
-      <View className="hero">
-        <Text className="eyebrow">LIFEREEL BIOGRAPHY</Text>
-        <Text className="title">把人生故事，留给家人</Text>
-        <Text className="description">
-          登录后开始记录人物、章节和采访内容。
-        </Text>
+      <View className="login-identity">
+        <Text className="brand-mark">岁</Text>
+        <Text className="title">岁忆影传</Text>
+        <Text className="description">把人生故事，留给家人。</Text>
       </View>
-      <View className="card">
+      <Image
+        src={require("../../assets/interview.png")}
+        className="login-art"
+        mode="aspectFit"
+      />
+      <View className="login-form">
         <Text className="label">首次使用时的称呼（可选）</Text>
         <Input
           className="input"
           value={displayName}
           maxlength={80}
-          placeholder="例如：林女士"
+          placeholder="您的称呼"
+          disabled={loading}
           onInput={(event) => setDisplayName(event.detail.value)}
         />
         {error ? <Text className="error">{error}</Text> : null}
@@ -63,9 +68,10 @@ export default function LoginPage() {
               ? "进入本地预览"
               : `使用${miniPlatform === "wechat" ? "微信" : "抖音"}登录`}
         </Button>
-        <Text className="hint">
-          登录失败时，请确认小程序已配置到服务器白名单。
-        </Text>
+      </View>
+      <View className="login-footer privacy-label">
+        <Icon name="lock" tone="muted" />
+        <Text>家庭故事 · 私密保存</Text>
       </View>
     </View>
   );

@@ -11,9 +11,9 @@ export default defineAppConfig({
   ],
   window: {
     navigationBarTitleText: "岁忆影传",
-    navigationBarBackgroundColor: "#f7f4ee",
+    navigationBarBackgroundColor: "#f5f8f7",
     navigationBarTextStyle: "black",
-    backgroundColor: "#f7f4ee",
+    backgroundColor: "#f5f8f7",
   },
   lazyCodeLoading: "requiredComponents",
 });

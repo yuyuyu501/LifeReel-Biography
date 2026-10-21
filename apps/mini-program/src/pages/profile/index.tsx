@@ -17,7 +17,8 @@ import type {
 } from "@lifereel/contracts";
 import { miniApi } from "../../shared/api";
 import { newRequestId } from "../../shared/uuid";
-import { PreviewNotice } from "../../shared/PreviewNotice";
+import { PageFrame } from "../../shared/PageFrame";
+import { Icon } from "../../shared/Icon";
 
 const states: ProfileState[] = [
   "filled",
@@ -129,23 +130,33 @@ export default function ProfilePage() {
     }
   }
   return (
-    <View className="page">
-      <PreviewNotice />
-      <Text className="title">人生资料表</Text>
+    <PageFrame
+      title="人生资料"
+      subtitle="每一段经历，都有它的位置。"
+      active="profile"
+      subjectId={subjectId}
+      locked={busy || !!draft}
+    >
       {error && <Text className="error">{error}</Text>}
       {profile && (
         <>
-          <View className="card">
+          <View className="book-summary">
             <Text>
               资料第 {profile.version_number} 版 ·{" "}
               {profile.readiness.processed_fields} / 67 项已处理
             </Text>
             <Text className="hint">{profile.readiness.message}</Text>
-            <Text className="hint">
-              已处理数量不代表素材充足，可以分多次补充。
-            </Text>
+            <View className="progress-track">
+              <View
+                className="progress-fill"
+                style={{
+                  width: `${Math.min(100, (profile.readiness.processed_fields / 67) * 100)}%`,
+                }}
+              />
+            </View>
             <View className="action-row">
               <Button
+                disabled={!!draft || busy}
                 onClick={() =>
                   Taro.navigateTo({
                     url: `/pages/interview/index?subjectId=${subjectId}`,
@@ -155,6 +166,7 @@ export default function ProfilePage() {
                 继续采访
               </Button>
               <Button
+                disabled={!!draft || busy}
                 onClick={() =>
                   Taro.navigateTo({
                     url: `/pages/books/index?subjectId=${subjectId}`,
@@ -174,21 +186,23 @@ export default function ProfilePage() {
               </Button>
             </View>
           </View>
-          <View className="action-row">
-            {profile.sections.map((s) => (
-              <Button
-                key={s.key}
-                className={
-                  section === s.key ? "primary-button" : "secondary-button"
-                }
-                onClick={() => setSection(s.key)}
-              >
-                {s.title}
-              </Button>
-            ))}
-          </View>
+          <Picker
+            disabled={!!draft || busy}
+            range={profile.sections.map((s) => s.title)}
+            value={profile.sections.findIndex((s) => s.key === section)}
+            onChange={(e) =>
+              setSection(profile.sections[Number(e.detail.value)].key)
+            }
+          >
+            <View className="select-row">
+              <Text>
+                {profile.sections.find((s) => s.key === section)?.title}
+              </Text>
+              <Icon name="down" />
+            </View>
+          </Picker>
           {draft ? (
-            <View className="card">
+            <View className="field-editor section">
               <Text className="section-title">编辑 · {draft.field.label}</Text>
               {draft.field.key !== "scope.coverage" &&
               typeof draft.change.value === "object" &&
@@ -312,7 +326,12 @@ export default function ProfilePage() {
                 </View>
               )}
               <View className="action-row">
-                <Button disabled={busy} onClick={save}>
+                <Button
+                  className="primary-button"
+                  disabled={busy}
+                  loading={busy}
+                  onClick={save}
+                >
                   保存资料
                 </Button>
                 <Button disabled={busy} onClick={() => setDraft(null)}>
@@ -329,10 +348,16 @@ export default function ProfilePage() {
                 );
                 return (
                   <View className="card" key={field.key}>
-                    <Text className="section-title">{field.label}</Text>
-                    <Text className="hint">{field.priority}</Text>
+                    <View className="field-heading">
+                      <Text className="section-title">{field.label}</Text>
+                      <Text
+                        className={`badge ${records.length ? "" : "waiting"}`}
+                      >
+                        {records.length ? "已记录" : "待补充"}
+                      </Text>
+                    </View>
                     {records.map((entry) => (
-                      <View key={entry.id}>
+                      <View className="field-value" key={entry.id}>
                         <Text className="list-meta">
                           {content(entry.value)}
                         </Text>
@@ -340,22 +365,25 @@ export default function ProfilePage() {
                           {stateNames[states.indexOf(entry.state)]} ·{" "}
                           {entry.use_scope === "internal"
                             ? "内部资料"
-                            : "作品资料"}
+                            : entry.use_scope === "pseudonym"
+                              ? "使用化名"
+                              : "作品资料"}
                         </Text>
                         <Button
                           className="text-button"
                           onClick={() => begin(field, entry)}
                         >
+                          <Icon name="edit" />
                           编辑资料
                         </Button>
                       </View>
                     ))}
-                    {!records.length && <Text className="hint">待补充</Text>}
                     {(!records.length || field.key.endsWith("[]")) && (
                       <Button
                         className="secondary-button"
                         onClick={() => begin(field)}
                       >
+                        <Icon name="plus" />
                         {records.length ? "添加一条" : "填写"}
                       </Button>
                     )}
@@ -365,6 +393,6 @@ export default function ProfilePage() {
           )}
         </>
       )}
-    </View>
+    </PageFrame>
   );
 }

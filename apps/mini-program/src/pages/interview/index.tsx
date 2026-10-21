@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from "react";
-import { Button, Text, Textarea, View } from "@tarojs/components";
+import { Button, Image, Text, Textarea, View } from "@tarojs/components";
 import Taro, { getCurrentInstance } from "@tarojs/taro";
 import type { InterviewWorkspace } from "@lifereel/contracts";
 import { miniApi } from "../../shared/api";
 import { newRequestId } from "../../shared/uuid";
-import { PreviewNotice } from "../../shared/PreviewNotice";
+import { PageFrame } from "../../shared/PageFrame";
+import { Icon } from "../../shared/Icon";
 
 export default function InterviewPage() {
   const subjectId = getCurrentInstance().router?.params.subjectId || "";
@@ -74,9 +75,21 @@ export default function InterviewPage() {
         setBusy(false);
       }
     };
-    if (first) manager.onStop(finished);
-    manager.start({ duration: 600000, format: "mp3" });
-    setRecording(true);
+    if (first) {
+      manager.onStop(finished);
+      manager.onError(() => {
+        setRecording(false);
+        setBusy(false);
+        setError("录音失败，请检查麦克风权限后重试");
+      });
+    }
+    try {
+      manager.start({ duration: 600000, format: "mp3" });
+      setRecording(true);
+    } catch {
+      setRecording(false);
+      setError("录音未能开始，请检查麦克风权限后重试");
+    }
   }
   async function submit() {
     if (!workspace || (!answer.trim() && !assetId)) return;
@@ -101,79 +114,130 @@ export default function InterviewPage() {
     }
   }
   return (
-    <View className="page">
-      <PreviewNotice />
-      <Text className="title">人生采访</Text>
-      <Text className="hint">
-        可以自由讲述，AI
-        会补问并整理同一份人生资料。发现错误，直接说明正确内容。
-      </Text>
+    <PageFrame
+      title="人生采访"
+      subtitle="慢慢说，那些值得留下的事。"
+      active="interview"
+      subjectId={subjectId}
+      locked={busy || recording || !!answer.trim() || !!assetId}
+    >
       {error && <Text className="error">{error}</Text>}
       {workspace ? (
         <>
-          <View className="action-row">
+          <View className="context-row">
+            <Text className="caption">
+              {workspace.session.rounds.filter((r) => r.answer_text).length}{" "}
+              次讲述已保存
+            </Text>
             <Button
+              className="text-button"
+              disabled={recording || busy || !!answer.trim() || !!assetId}
               onClick={() =>
                 Taro.navigateTo({
                   url: `/pages/profile/index?subjectId=${subjectId}`,
                 })
               }
             >
-              查看与编辑资料表
-            </Button>
-            <Button
-              onClick={() =>
-                Taro.navigateTo({
-                  url: `/pages/books/index?subjectId=${subjectId}`,
-                })
-              }
-            >
-              前往写书
+              <Icon name="profile" />
+              人生资料
+              <Icon name="arrow" />
             </Button>
           </View>
           {workspace.profile && (
-            <View className="status-box">
-              <Text>{workspace.profile.readiness.message}</Text>
-              <Text>
-                {workspace.profile.readiness.processed_fields} / 67
-                项已处理，不要求全部填完。
+            <View className="section">
+              <Text className="caption">
+                人生资料 · {workspace.profile.readiness.processed_fields} / 67
+                项已处理
               </Text>
+              <View className="progress-track">
+                <View
+                  className="progress-fill"
+                  style={{
+                    width: `${Math.min(100, (workspace.profile.readiness.processed_fields / 67) * 100)}%`,
+                  }}
+                />
+              </View>
             </View>
           )}
-          {workspace.session.rounds.map((round) => (
-            <View className="card" key={round.id}>
-              {round.question_text && (
-                <Text className="question">{round.question_text}</Text>
+          <View className="conversation">
+            {!workspace.session.rounds.length && (
+              <View className="conversation-empty">
+                <Image
+                  src={require("../../assets/interview.png")}
+                  className="empty-illustration"
+                  mode="aspectFit"
+                />
+                <Text className="hint">还没有保存的讲述</Text>
+              </View>
+            )}
+            {workspace.session.rounds.map((round) => (
+              <View key={round.id}>
+                {round.question_text && (
+                  <View className="message">
+                    <View className="message-author">
+                      <Icon name="mic" />
+                      采访助手
+                    </View>
+                    <Text className="question">{round.question_text}</Text>
+                  </View>
+                )}
+                {round.answer_text && (
+                  <View className="message answer-message">
+                    <View className="message-author">我的讲述</View>
+                    <Text className="question">{round.answer_text}</Text>
+                  </View>
+                )}
+              </View>
+            ))}
+            {workspace.latest_workflow?.next_question &&
+              workspace.latest_workflow.status === "completed" &&
+              !workspace.session.rounds.some(
+                (r) =>
+                  r.question_text ===
+                    workspace.latest_workflow?.next_question && !r.answer_text,
+              ) && (
+                <View className="message">
+                  <View className="message-author">
+                    <Icon name="mic" />
+                    采访助手
+                  </View>
+                  <Text className="question">
+                    {workspace.latest_workflow.next_question}
+                  </Text>
+                </View>
               )}
-              {round.answer_text && (
-                <Text className="list-meta">{round.answer_text}</Text>
-              )}
-            </View>
-          ))}
-          <View className="card">
+          </View>
+          {running && <View className="status-box">正在整理这次讲述……</View>}
+          <View className="composer">
             <Textarea
               className="textarea"
               value={answer}
               maxlength={16000}
               placeholder="继续讲述或更正资料"
               onInput={(e) => setAnswer(e.detail.value)}
+              disabled={busy || recording}
             />
             <View className="action-row">
               <Button
+                className="record-button"
                 disabled={busy || running}
                 onClick={
                   recording ? () => recorder.current?.stop() : startRecording
                 }
               >
-                {recording ? "停止录音" : "录一段普通语音"}
+                <Icon name={recording ? "stop" : "mic"} />
+                {recording ? "结束录音" : "语音讲述"}
               </Button>
               <Button
+                className="primary-button send-button"
+                loading={busy}
                 disabled={
                   busy || running || recording || (!answer.trim() && !assetId)
                 }
                 onClick={submit}
               >
-                {running ? "正在整理资料……" : "发送讲述"}
+                <Icon name="send" tone="white" />
+                发送
               </Button>
             </View>
             {assetId && (
@@ -189,6 +253,6 @@ export default function InterviewPage() {
       ) : (
         <Text className="hint">正在读取采访资料……</Text>
       )}
-    </View>
+    </PageFrame>
   );
 }

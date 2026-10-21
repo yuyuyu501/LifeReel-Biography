@@ -1,3 +1,3 @@
 export default definePageConfig({
-  navigationBarTitleText: "视频任务",
+  navigationBarTitleText: "人生影像",
 });
