@@ -128,6 +128,35 @@ export default function BooksPage() {
       active="books"
       subjectId={subjectId}
       locked={busy || !!draft || !!directory}
+      tutorial={{
+        ready: !!book && !working,
+        steps: [
+          {
+            target: "#guide-book-directory",
+            title: "先看目录与选材",
+            description:
+              "点这里调整章节顺序、标题和使用的资料。保存目录后再生成正文。",
+          },
+          {
+            target: "#guide-book-generate",
+            title: "生成还没写好的章节",
+            description:
+              "点这里补齐未成稿章节，已经保存的正文会保留。每章下方也能单独生成或重新生成。",
+          },
+          {
+            target: ".guide-book-edit",
+            title: "核对并保存正文",
+            description:
+              "点编辑正文可以手动修改。保存后，这一版书稿才会用于后续改编。",
+          },
+          {
+            target: "#guide-book-adapt",
+            title: "书稿满意后，再改编影像",
+            description:
+              "从这里前往影像页，用已保存的整本书稿生成剧本与分镜，先核对内容再制作视频。",
+          },
+        ],
+      }}
     >
       {error && <Text className="error">{error}</Text>}
       {book && (
@@ -142,6 +171,7 @@ export default function BooksPage() {
           </View>
           <View className="action-row">
             <Button
+              id="guide-book-generate"
               className="primary-button"
               loading={busy && !draft && !directory}
               disabled={busy || working || !!draft || !!directory}
@@ -151,6 +181,7 @@ export default function BooksPage() {
               补齐未成稿章节
             </Button>
             <Button
+              id="guide-book-directory"
               disabled={busy || working || !!draft || !!directory}
               onClick={() => setDirectory(book.chapters.map((c) => ({ ...c })))}
             >
@@ -168,6 +199,7 @@ export default function BooksPage() {
               资料表
             </Button>
             <Button
+              id="guide-book-adapt"
               disabled={busy || !!draft || !!directory}
               onClick={() =>
                 Taro.navigateTo({
@@ -427,6 +459,7 @@ export default function BooksPage() {
                         : "生成本章"}
                   </Button>
                   <Button
+                    className="guide-book-edit"
                     disabled={busy || working || !!directory}
                     onClick={() => {
                       setConfirmSources(false);

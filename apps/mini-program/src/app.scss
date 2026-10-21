@@ -1,3 +1,87 @@
+.heading-actions {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-shrink: 0;
+}
+.guided-tour {
+  position: fixed;
+  z-index: 2000;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+}
+.tour-mask {
+  position: absolute;
+  background: rgba(12, 32, 29, 0.68);
+}
+.tour-spotlight {
+  position: absolute;
+  border: 4px solid #efc978;
+  border-radius: 16px;
+  box-shadow: 0 0 0 4px rgba(255, 255, 255, 0.24);
+}
+.tour-panel {
+  position: fixed;
+  box-sizing: border-box;
+  padding: 24px 32px 32px;
+  border-radius: 16px;
+  background: #fff;
+  color: #203c3a;
+  box-shadow: 0 16px 64px rgba(10, 29, 25, 0.22);
+  overflow-y: auto;
+}
+.tour-pointer {
+  position: fixed;
+  width: 24px;
+  height: 24px;
+  margin-left: -12px;
+  background: #fff;
+  transform: rotate(45deg);
+}
+.tour-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+.tour-counter {
+  color: #738581;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.page .tour-skip {
+  min-height: 36px;
+  padding: 8px 0 8px 20px;
+  color: #647b74;
+}
+.tour-title {
+  display: block;
+  margin-top: 8px;
+  font-size: 17px;
+  font-weight: 600;
+  line-height: 1.5;
+}
+.tour-description {
+  display: block;
+  margin-top: 16px;
+  color: #526e66;
+  font-size: 14px;
+  line-height: 1.75;
+}
+.tour-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 16px;
+  margin-top: 28px;
+}
+.page .tour-actions button,
+.page .tour-actions taro-button-core {
+  flex: 1;
+  min-height: 44px;
+  padding: 18px 16px;
+}
 page {
   background: #f5f8f7;
   color: #203c3a;

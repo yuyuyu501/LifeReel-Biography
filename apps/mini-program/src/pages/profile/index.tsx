@@ -136,6 +136,29 @@ export default function ProfilePage() {
       active="profile"
       subjectId={subjectId}
       locked={busy || !!draft}
+      tutorial={{
+        ready: !!profile,
+        steps: [
+          {
+            target: "#guide-profile-category",
+            title: "先选择资料分类",
+            description:
+              "点这里切换基本信息、童年、工作、家庭等分类，逐项核对采访中整理的资料。",
+          },
+          {
+            target: ".guide-profile-edit",
+            title: "补充或更正一条资料",
+            description:
+              "点填写或编辑资料，修改内容及使用范围，完成后点保存资料。不确定的内容也可以暂时跳过。",
+          },
+          {
+            target: "#guide-profile-books",
+            title: "核对好资料，再去写书",
+            description:
+              "点这里进入书稿。资料不需要全部填满，先确认想写的经历准确、具体即可。",
+          },
+        ],
+      }}
     >
       {error && <Text className="error">{error}</Text>}
       {profile && (
@@ -166,6 +189,7 @@ export default function ProfilePage() {
                 继续采访
               </Button>
               <Button
+                id="guide-profile-books"
                 disabled={!!draft || busy}
                 onClick={() =>
                   Taro.navigateTo({
@@ -194,7 +218,7 @@ export default function ProfilePage() {
               setSection(profile.sections[Number(e.detail.value)].key)
             }
           >
-            <View className="select-row">
+            <View className="select-row" id="guide-profile-category">
               <Text>
                 {profile.sections.find((s) => s.key === section)?.title}
               </Text>
@@ -370,7 +394,7 @@ export default function ProfilePage() {
                               : "作品资料"}
                         </Text>
                         <Button
-                          className="text-button"
+                          className="text-button guide-profile-edit"
                           onClick={() => begin(field, entry)}
                         >
                           <Icon name="edit" />
@@ -380,7 +404,7 @@ export default function ProfilePage() {
                     ))}
                     {(!records.length || field.key.endsWith("[]")) && (
                       <Button
-                        className="secondary-button"
+                        className="secondary-button guide-profile-edit"
                         onClick={() => begin(field)}
                       >
                         <Icon name="plus" />

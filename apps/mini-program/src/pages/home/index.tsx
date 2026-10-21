@@ -97,8 +97,60 @@ export default function HomePage() {
       subjectId={selectedPersonId}
       locked={adding}
       className="home-page"
+      tutorial={{
+        ready: !loading && !error,
+        steps: [
+          {
+            target: "#guide-home-add",
+            title: "先添加一位家人",
+            description: "点这个加号，填写姓名或称呼，为要记录的人建立档案。",
+          },
+          ...(selected
+            ? [
+                {
+                  target: "#guide-home-person",
+                  title: "选择这次要记录的人",
+                  description:
+                    "点选家人后，采访、资料、书稿和影像都会归到这位家人的档案里。",
+                },
+                {
+                  target: "#guide-home-interview",
+                  title: "从一次采访开始",
+                  description:
+                    "点这里进入采访。可以打字，也可以录音，先讲一段最想留下的经历。",
+                },
+                {
+                  target: "#guide-home-profile",
+                  title: "核对整理出的人生资料",
+                  description:
+                    "采访后到这里查看记录；发现遗漏或错误，可以直接补充和修改。",
+                },
+                {
+                  target: "#guide-home-books",
+                  title: "把资料写成书稿",
+                  description:
+                    "资料确认后进入写书，调整目录与选材，再生成或手动编辑正文。",
+                },
+                {
+                  target: "#guide-home-production",
+                  title: "最后，把书稿变成影像",
+                  description:
+                    "先用已保存的书稿生成剧本与分镜，核对后再创建视频任务。",
+                },
+              ]
+            : []),
+          {
+            target: "#guide-help-home",
+            title: "随时回来查看引导",
+            description: selected
+              ? "每个主要页面都有这个问号按钮。完成或跳过后，引导不会在该页面反复弹出。"
+              : "先添加家人，再开始采访、核对资料、写书和制作影像。需要时点这个问号，重新查看当前页面的步骤。",
+          },
+        ],
+      }}
       action={
         <Button
+          id="guide-home-add"
           className="icon-button"
           aria-label={adding ? "关闭新增家人" : "新增家人"}
           disabled={busy}
@@ -153,6 +205,9 @@ export default function HomePage() {
           {persons.map((person) => (
             <Button
               className={`person-row ${person.id === selectedPersonId ? "is-selected" : ""}`}
+              id={
+                person.id === selectedPersonId ? "guide-home-person" : undefined
+              }
               key={person.id}
               onClick={() => setSelectedPersonId(person.id)}
             >
@@ -208,6 +263,7 @@ export default function HomePage() {
                 和{selected.preferred_name || selected.display_name}聊一聊
               </Text>
               <Button
+                id="guide-home-interview"
                 className="primary-button"
                 onClick={() => open("interview")}
               >
@@ -231,6 +287,7 @@ export default function HomePage() {
           <View className="archive-grid">
             {entries.map((entry) => (
               <Button
+                id={`guide-home-${entry.page}`}
                 className="archive-entry"
                 key={entry.page}
                 onClick={() => open(entry.page)}

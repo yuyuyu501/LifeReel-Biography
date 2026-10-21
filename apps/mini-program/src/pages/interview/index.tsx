@@ -120,6 +120,35 @@ export default function InterviewPage() {
       active="interview"
       subjectId={subjectId}
       locked={busy || recording || !!answer.trim() || !!assetId}
+      tutorial={{
+        ready: !!workspace && !running,
+        steps: [
+          {
+            target: "#guide-interview-answer",
+            title: "先讲一段真实经历",
+            description:
+              "在这里输入故事，也可以直接指出上一条记录哪里不对。不必一次讲完一生。",
+          },
+          {
+            target: "#guide-interview-record",
+            title: "也可以用语音讲述",
+            description:
+              "点这里开始录音，讲完再点结束。首次录音需要允许麦克风权限。",
+          },
+          {
+            target: "#guide-interview-send",
+            title: "讲完后，点发送",
+            description:
+              "发送文字或已上传的录音后，等待助手整理并追问，再继续下一段讲述。",
+          },
+          {
+            target: "#guide-interview-profile",
+            title: "最后核对人生资料",
+            description:
+              "从这里查看整理结果。遗漏可以补充，错误可以更正，确认后再去写书。",
+          },
+        ],
+      }}
     >
       {error && <Text className="error">{error}</Text>}
       {workspace ? (
@@ -130,6 +159,7 @@ export default function InterviewPage() {
               次讲述已保存
             </Text>
             <Button
+              id="guide-interview-profile"
               className="text-button"
               disabled={recording || busy || !!answer.trim() || !!assetId}
               onClick={() =>
@@ -210,6 +240,7 @@ export default function InterviewPage() {
           {running && <View className="status-box">正在整理这次讲述……</View>}
           <View className="composer">
             <Textarea
+              id="guide-interview-answer"
               className="textarea"
               value={answer}
               maxlength={16000}
@@ -219,6 +250,7 @@ export default function InterviewPage() {
             />
             <View className="action-row">
               <Button
+                id="guide-interview-record"
                 className="record-button"
                 disabled={busy || running}
                 onClick={
@@ -229,6 +261,7 @@ export default function InterviewPage() {
                 {recording ? "结束录音" : "语音讲述"}
               </Button>
               <Button
+                id="guide-interview-send"
                 className="primary-button send-button"
                 loading={busy}
                 disabled={

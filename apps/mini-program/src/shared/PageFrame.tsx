@@ -1,8 +1,19 @@
-import type { PropsWithChildren, ReactNode } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  type PropsWithChildren,
+  type ReactNode,
+} from "react";
 import { Button, Text, View } from "@tarojs/components";
-import Taro from "@tarojs/taro";
+import Taro, { useDidHide, useDidShow } from "@tarojs/taro";
 import { Icon, type IconName } from "./Icon";
 import { PreviewNotice } from "./PreviewNotice";
+import { GuidedTour } from "./GuidedTour";
+import type { TutorialConfig } from "./tutorial";
+import { getStored, store } from "./platform";
+
+let frameSequence = 0;
 
 const tabs: { key: string; label: string; icon: IconName; path: string }[] = [
   { key: "home", label: "家人", icon: "users", path: "home" },
@@ -20,6 +31,7 @@ export function PageFrame({
   action,
   locked = false,
   className = "",
+  tutorial,
 }: PropsWithChildren<{
   title: string;
   subtitle?: string;
@@ -28,7 +40,29 @@ export function PageFrame({
   action?: ReactNode;
   locked?: boolean;
   className?: string;
+  tutorial?: TutorialConfig;
 }>) {
+  const [frameId] = useState(() => `guide-page-${++frameSequence}`);
+  const [guideOpen, setGuideOpen] = useState(false);
+  const [visible, setVisible] = useState(true);
+  const autoOpened = useRef(false);
+  const guideKey = `lifereel:tutorial:v1:${active}`;
+  useDidShow(() => setVisible(true));
+  useDidHide(() => {
+    setVisible(false);
+    setGuideOpen(false);
+  });
+  useEffect(() => {
+    if (!tutorial?.ready || locked || !visible || autoOpened.current) return;
+    autoOpened.current = true;
+    try {
+      if (getStored(guideKey)) return;
+    } catch {
+      // Storage restrictions must not prevent the tutorial or normal navigation.
+    }
+    setGuideOpen(true);
+  }, [tutorial?.ready, locked, visible, guideKey]);
+
   function navigate(tab: (typeof tabs)[number]) {
     if (tab.key === active) return;
     if (locked) {
@@ -44,7 +78,7 @@ export function PageFrame({
     });
   }
   return (
-    <View className={`page ${className}`}>
+    <View className={`page ${className}`} id={frameId}>
       <View className="brand-bar">
         <View className="brand-name">
           <Text className="brand-mark">岁</Text>
@@ -61,8 +95,40 @@ export function PageFrame({
           <Text className="title">{title}</Text>
           {subtitle && <Text className="description">{subtitle}</Text>}
         </View>
-        {action}
+        <View className="heading-actions">
+          {tutorial && (
+            <Button
+              id={`guide-help-${active}`}
+              className="icon-button"
+              aria-label="查看新手引导"
+              disabled={!tutorial.ready || locked}
+              onClick={() => {
+                void Taro.hideKeyboard().catch(() => undefined);
+                setGuideOpen(true);
+              }}
+            >
+              <Icon name="help" />
+            </Button>
+          )}
+          {action}
+        </View>
       </View>
+      {guideOpen && visible && tutorial && (
+        <GuidedTour
+          frame={`#${frameId}`}
+          steps={tutorial.steps}
+          onClose={(result) => {
+            if (result !== "unavailable") {
+              try {
+                store(guideKey, result);
+              } catch {
+                // Closing remains possible when local storage is unavailable.
+              }
+            }
+            setGuideOpen(false);
+          }}
+        />
+      )}
       {children}
       <View className="bottom-navigation">
         {tabs.map((tab) => (

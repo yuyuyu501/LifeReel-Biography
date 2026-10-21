@@ -14,7 +14,7 @@
     "build:weapp": "node scripts/prepare-project.mjs weapp && taro build --type weapp",
     "build:tt": "node scripts/prepare-project.mjs tt && taro build --type tt",
     "lint": "tsc --noEmit",
-    "test": "tsc --noEmit && node --test tests/native-api.test.cjs",
+    "test": "tsc --noEmit && node --test tests/*.test.cjs",
     "format": "prettier --check src config"
   },
   "dependencies": {

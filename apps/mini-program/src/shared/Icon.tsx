@@ -1,6 +1,11 @@
 import { Image } from "@tarojs/components";
 
 const assets = {
+  help: [
+    require("../assets/help-muted.png"),
+    require("../assets/help-green.png"),
+    require("../assets/help-white.png"),
+  ],
   users: [
     require("../assets/users-muted.png"),
     require("../assets/users-green.png"),

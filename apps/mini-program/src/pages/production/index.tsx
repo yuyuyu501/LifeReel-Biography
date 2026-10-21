@@ -148,12 +148,48 @@ export default function ProductionPage() {
       active="production"
       subjectId={subjectId || selected?.subject_id || book?.subject_id}
       locked={loading || !!instructions.trim()}
+      tutorial={{
+        ready,
+        steps: [
+          {
+            target: "#guide-adapt-toggle",
+            title: "先从书稿生成剧本",
+            description:
+              "点这里展开改编选项，选择已保存的书稿，按需要填写改编偏好，再生成整书剧本与分镜。",
+          },
+          {
+            target: "#guide-production-tabs",
+            title: "先核对剧本，再制作影像",
+            description:
+              "剧本与分镜中查看剧情、旁白和画面；影像作品中创建和查看视频任务。",
+          },
+          {
+            target: "#guide-production-scenes",
+            title: "选择要查看或生成的场景",
+            description:
+              "点这里切换场景。先在剧本与分镜里核对该场景，再决定是否生成影像。",
+          },
+          {
+            target: "#guide-video-start",
+            title: "确认后才会开始生成视频",
+            description:
+              "点这里会先显示预计时长与费用，视频按 0.80 元/秒计算。确认开始生成后才会提交任务。",
+          },
+          {
+            target: "#guide-video-refresh",
+            title: "最后查看任务进度",
+            description:
+              "点刷新查看排队、生成中或完成状态。引导里的下一步只演示位置，不会提交生成任务。",
+          },
+        ],
+      }}
     >
       {error && <Text className="error">{error}</Text>}
       <View className="adapter-heading">
         <Icon name="book" />
         <Text className="section-title">从书稿生成剧本与分镜</Text>
         <Button
+          id="guide-adapt-toggle"
           className="icon-button"
           aria-label={adapterOpen ? "收起改编选项" : "展开改编选项"}
           disabled={loading}
@@ -246,7 +282,7 @@ export default function ProductionPage() {
           </Button>
         </View>
       )}
-      <View className="segmented-control">
+      <View className="segmented-control" id="guide-production-tabs">
         <Button
           className={`segment-button ${tab === "video" ? "is-active" : ""}`}
           onClick={() => setTab("video")}
@@ -290,7 +326,7 @@ export default function ProductionPage() {
             </Text>
           )}
           {selected && selected.scenes.length > 0 && (
-            <View className="scene-picker">
+            <View className="scene-picker" id="guide-production-scenes">
               <Picker
                 range={selected.scenes.map(
                   (s, i) => `场景 ${i + 1} · ${s.heading}`,
@@ -374,6 +410,7 @@ export default function ProductionPage() {
                     当前场景 · 预计 {seconds} 秒 · 0.80 元/秒
                   </Text>
                   <Button
+                    id="guide-video-start"
                     className="primary-button"
                     disabled={
                       loading ||
@@ -397,6 +434,7 @@ export default function ProductionPage() {
               <View className="section-heading">
                 <Text className="section-title">视频任务</Text>
                 <Button
+                  id="guide-video-refresh"
                   className="icon-button"
                   aria-label="刷新视频任务"
                   disabled={loading}

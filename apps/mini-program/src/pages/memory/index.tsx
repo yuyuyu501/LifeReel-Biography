@@ -47,6 +47,29 @@ export default function MemoryPage() {
       subtitle="那些人，那些年，那些事。"
       active="memory"
       subjectId={subjectId}
+      tutorial={{
+        ready: !!overview,
+        steps: [
+          {
+            target: "#guide-memory-timeline",
+            title: "按时间回看经历",
+            description:
+              "这里按时间排列已经记录的事件，可以与家人的讲述一起核对。",
+          },
+          {
+            target: "#guide-memory-facts",
+            title: "查看事实和原话出处",
+            description:
+              "每条事实旁会保留来源。发现遗漏或错误，可回到采访继续补充，或到人生资料中更正。",
+          },
+          {
+            target: "#guide-memory-conflicts",
+            title: "留意待核对的记录",
+            description:
+              "存在不同说法时，这里会提示需要核对的内容。确认正确说法后，再继续写书或改编。",
+          },
+        ],
+      }}
     >
       {error ? <Text className="error">{error}</Text> : null}
       {overview ? (
@@ -66,7 +89,9 @@ export default function MemoryPage() {
         </View>
       ) : null}
       <View className="section">
-        <Text className="section-title">时间线</Text>
+        <Text className="section-title" id="guide-memory-timeline">
+          时间线
+        </Text>
         {timeline.length ? (
           timeline.map((item) => (
             <View className="timeline-item" key={item.id}>
@@ -104,7 +129,9 @@ export default function MemoryPage() {
         )}
       </View>
       <View className="section">
-        <Text className="section-title">事实记忆</Text>
+        <Text className="section-title" id="guide-memory-facts">
+          事实记忆
+        </Text>
         {!claims.length && <Text className="empty">暂时没有事实记录</Text>}
         {claims.slice(0, 20).map((item) => (
           <View className="list-card" key={item.id}>
@@ -114,7 +141,9 @@ export default function MemoryPage() {
         ))}
       </View>
       <View className="section">
-        <Text className="section-title">待核对记录</Text>
+        <Text className="section-title" id="guide-memory-conflicts">
+          待核对记录
+        </Text>
         {conflicts.length ? (
           conflicts.map((item) => (
             <View className="list-card" key={item.id}>
