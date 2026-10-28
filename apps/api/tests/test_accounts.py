@@ -124,6 +124,23 @@ def test_registration_no_unverified_email_backdoor(client, sms_setup):
         )
 
 
+def test_distributed_registration_creates_login_and_family_without_remote_providers(
+    client, sms_setup, monkeypatch
+):
+    monkeypatch.setenv("SERVICE_MODE", "distributed")
+    result, _ = register(client, sms_setup)
+    login(client)
+    with SessionLocal() as db:
+        tenant = UUID(result["tenant_id"])
+        assert db.get(Wallet, tenant) is None  # Billing initializes its own wallet.
+        membership = db.scalar(
+            select(TenantMembership).where(TenantMembership.user_id == UUID(result["id"]))
+        )
+        assert membership.tenant_id == tenant
+        assert membership.role == "owner"
+        assert db.scalar(select(func.count(Chapter.id)).where(Chapter.tenant_id == tenant)) == 11
+
+
 def test_sms_failure_and_missing_configuration_create_no_challenge(client, sms_setup, monkeypatch):
     monkeypatch.setattr(get_settings(), "sms_enabled", False)
     response = client.post("/v1/auth/sms", json={"phone": PHONE, "purpose": "register"})
@@ -245,6 +262,55 @@ def test_reset_password_invalidates_existing_session(client, sms_setup):
     client.cookies.clear()
     login(client, password="NewPassword123!")
     assert client.get("/v1/auth/me").json()["id"] == user["id"]
+
+
+def test_unregistered_phone_recovery_requires_verification_and_does_not_create_account(
+    client, sms_setup
+):
+    code = issue(client, sms_setup, purpose="reset_password")
+    wrong = "000000" if code["code"] != "000000" else "999999"
+    invalid = client.post(
+        "/v1/auth/password/reset", json={**code, "code": wrong, "password": PASSWORD}
+    )
+    assert invalid.json()["error"]["code"] == "SMS_CODE_INVALID"
+    response = client.post(
+        "/v1/auth/password/reset", json={**code, "password": PASSWORD}
+    )
+    assert response.status_code == 400
+    assert response.json()["error"]["code"] == "AUTH_PHONE_NOT_REGISTERED"
+    replay = client.post("/v1/auth/password/reset", json={**code, "password": PASSWORD})
+    assert replay.json()["error"]["code"] == "SMS_CODE_INVALID"
+    with SessionLocal() as db:
+        assert db.scalar(select(func.count(UserAccount.id)).where(UserAccount.phone == PHONE)) == 0
+        assert db.get(SmsChallenge, UUID(code["challenge_id"])).consumed_at
+    age_limits()
+    result, _ = register(client, sms_setup)
+    login(client)
+    assert client.get("/v1/auth/me").json()["id"] == result["id"]
+
+
+@pytest.mark.parametrize("deleted", [False, True])
+def test_recovery_cannot_reactivate_disabled_or_deleted_account(client, sms_setup, deleted):
+    result, _ = register(client, sms_setup)
+    with SessionLocal() as db:
+        user = db.get(UserAccount, UUID(result["id"]))
+        user.is_active = False
+        user.deleted_at = utcnow() if deleted else None
+        old_hash, old_version = user.password_hash, user.session_version
+        db.commit()
+    age_limits()
+    code = issue(client, sms_setup, purpose="reset_password")
+    response = client.post(
+        "/v1/auth/password/reset", json={**code, "password": "ChangedPassword123!"}
+    )
+    assert response.status_code == 400
+    assert response.json()["error"]["code"] == "AUTH_PASSWORD_RESET_UNAVAILABLE"
+    with SessionLocal() as db:
+        user = db.get(UserAccount, UUID(result["id"]))
+        assert user.password_hash == old_hash
+        assert user.session_version == old_version
+        assert not user.is_active
+        assert db.get(SmsChallenge, UUID(code["challenge_id"])).consumed_at
 
 
 def test_profile_password_and_logout_invalidate_sessions(client, sms_setup):

@@ -11,7 +11,12 @@ export function LoginPage() {
   const navigate = useNavigate();
   const location = useLocation();
   const queryClient = useQueryClient();
-  const [email, setEmail] = useState("");
+  const [email, setEmail] = useState(() => {
+    const phone: unknown = location.state?.phone;
+    return typeof phone === "string" && /^1[3-9]\d{9}$/.test(phone)
+      ? phone
+      : "";
+  });
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [pending, setPending] = useState(false);
@@ -34,6 +39,7 @@ export function LoginPage() {
     event.preventDefault();
     setPending(true);
     setError("");
+    let accountCreated = false;
     try {
       if (registering || resetting) {
         if (password !== confirmPassword)
@@ -49,13 +55,24 @@ export function LoginPage() {
           return;
         }
         await api.register({ ...verification, password, display_name: name });
+        accountCreated = true;
       }
       const result = await api.login(email, password);
       queryClient.clear();
       queryClient.setQueryData(["auth-me"], result.user);
       navigate("/");
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "登录失败");
+      if (accountCreated) {
+        navigate("/login", {
+          replace: true,
+          state: {
+            phone: email,
+            message: "账号已注册成功，请使用手机号和刚设置的密码登录。",
+          },
+        });
+      } else {
+        setError(cause instanceof Error ? cause.message : "登录失败");
+      }
     } finally {
       setPending(false);
     }
@@ -80,6 +97,11 @@ export function LoginPage() {
               : "登录后继续整理"}
         </h1>
         <p>人物、声音、照片和影传仅保存在所属家庭空间。</p>
+        {resetting && (
+          <p>
+            仅支持已绑定手机号的账号。首次使用请先注册；邮箱账号请联系管理员找回。
+          </p>
+        )}
         {registering && (
           <label>
             称呼
@@ -114,7 +136,11 @@ export function LoginPage() {
             phone={email}
             purpose={registering ? "register" : "reset_password"}
             onChange={setVerification}
-            disabled={pending || !smsReady}
+            disabled={
+              pending ||
+              !smsReady ||
+              (registering && !registration.data?.enabled)
+            }
           />
         )}
         <label>
@@ -153,6 +179,19 @@ export function LoginPage() {
             {error}
           </div>
         )}
+        {(registering || resetting) && registration.isError && (
+          <div className="notice error" role="alert">
+            无法读取账号服务状态，请重试。
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => void registration.refetch()}
+              disabled={registration.isFetching}
+            >
+              重新加载
+            </Button>
+          </div>
+        )}
         {registering && registration.data && !registration.data.enabled && (
           <p className="field-error" role="alert">
             注册暂未开放，请联系管理员。
@@ -184,14 +223,17 @@ export function LoginPage() {
           {registering || resetting ? (
             <Link to="/login">返回登录</Link>
           ) : (
-            <>
-              {registration.data?.enabled && (
-                <Link to="/register">创建账号</Link>
-              )}
-              <Link to="/forgot-password">忘记密码</Link>
-            </>
+            <Link to="/forgot-password">忘记密码</Link>
           )}
         </div>
+        {!registering && (
+          <div className="auth-registration">
+            <span>第一次使用？</span>
+            <Link to="/register" state={{ phone: email }}>
+              注册新账号
+            </Link>
+          </div>
+        )}
       </form>
     </div>
   );

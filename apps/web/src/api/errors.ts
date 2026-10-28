@@ -63,6 +63,9 @@ export const ERROR_MESSAGES: Record<string, string> = {
   AUTH_RATE_LIMITED: "操作过于频繁，请稍后再试。",
   AUTH_ACCOUNT_UNAVAILABLE:
     "该手机号或邮箱暂不可用，请登录、找回密码或联系管理员。",
+  AUTH_PHONE_NOT_REGISTERED: "该手机号尚未注册，请先注册新账号。",
+  AUTH_PASSWORD_RESET_UNAVAILABLE:
+    "该账号已停用或注销，无法重置密码，请联系管理员。",
   AUTH_PASSWORD_INCORRECT: "当前密码不正确，请重新输入。",
   AUTH_ACCOUNT_HAS_OBLIGATIONS:
     "账号仍有充值余额、欠款或未完成任务，请先处理后再注销。",

@@ -9,6 +9,7 @@ import {
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { beforeEach, vi } from "vitest";
 import { api } from "../api/client";
+import { ApiError } from "../api/errors";
 import { LoginPage } from "./LoginPage";
 import { AccountPage } from "./AccountPage";
 import { AccountsAdminPage } from "./AccountsAdminPage";
@@ -108,6 +109,37 @@ test("registers with verified phone and opens the workspace", async () => {
   });
 });
 
+test("preserves successful signup if automatic login fails", async () => {
+  vi.spyOn(api, "register").mockResolvedValue(user);
+  vi.spyOn(api, "login").mockRejectedValue(new Error("network"));
+  renderPage("/register");
+  fireEvent.change(screen.getByLabelText("称呼"), {
+    target: { value: "新家人" },
+  });
+  fireEvent.change(screen.getByLabelText("手机号"), {
+    target: { value: user.phone },
+  });
+  await waitFor(() =>
+    expect(screen.getByRole("button", { name: "获取验证码" })).toBeEnabled(),
+  );
+  fireEvent.click(screen.getByRole("button", { name: "获取验证码" }));
+  await screen.findByText("验证码已发送，请查看手机短信。");
+  fireEvent.change(screen.getByLabelText("短信验证码"), {
+    target: { value: "123456" },
+  });
+  for (const label of ["密码", "确认密码"]) {
+    fireEvent.change(screen.getByLabelText(label, { exact: true }), {
+      target: { value: "Password123!" },
+    });
+  }
+  fireEvent.click(screen.getByRole("button", { name: "注册并进入" }));
+  await screen.findByRole("heading", { name: "登录后继续整理" });
+  expect(await screen.findByRole("status")).toHaveTextContent("账号已注册成功");
+  expect(screen.getByLabelText("手机号或邮箱")).toHaveValue(user.phone);
+  expect(screen.getByLabelText("密码", { exact: true })).toHaveValue("");
+  expect(api.register).toHaveBeenCalledOnce();
+});
+
 test("rejects mismatched passwords without calling registration", async () => {
   const register = vi.spyOn(api, "register");
   renderPage("/register");
@@ -139,6 +171,74 @@ test("shows disabled SMS configuration without an enabled register button", asyn
     "短信验证暂未开通",
   );
   expect(screen.getByRole("button", { name: "注册并进入" })).toBeDisabled();
+});
+
+test("keeps registration discoverable when it is disabled on the server", async () => {
+  vi.spyOn(api, "registration").mockResolvedValue({
+    enabled: false,
+    sms_enabled: true,
+  });
+  renderPage("/login");
+  fireEvent.click(screen.getByRole("link", { name: "注册新账号" }));
+  expect(await screen.findByText("注册暂未开放，请联系管理员。")).toBeVisible();
+  expect(screen.getByRole("button", { name: "注册并进入" })).toBeDisabled();
+  expect(screen.getByRole("button", { name: "获取验证码" })).toBeDisabled();
+});
+
+test("offers recovery when registration settings fail to load", async () => {
+  vi.spyOn(api, "registration")
+    .mockRejectedValueOnce(new Error("network"))
+    .mockResolvedValue({
+      enabled: true,
+      sms_enabled: true,
+    });
+  renderPage("/register");
+  expect(await screen.findByRole("alert")).toHaveTextContent(
+    "无法读取账号服务状态",
+  );
+  expect(screen.getByRole("button", { name: "注册并进入" })).toBeDisabled();
+  fireEvent.click(screen.getByRole("button", { name: "重新加载" }));
+  await waitFor(() =>
+    expect(screen.getByRole("button", { name: "注册并进入" })).toBeEnabled(),
+  );
+});
+
+test("guides an unregistered phone from recovery to signup without reusing verification", async () => {
+  vi.spyOn(api, "resetPassword").mockRejectedValue(
+    new ApiError("AUTH_PHONE_NOT_REGISTERED", 400),
+  );
+  renderPage("/forgot-password");
+  fireEvent.change(screen.getByLabelText("手机号"), {
+    target: { value: user.phone },
+  });
+  await waitFor(() =>
+    expect(screen.getByRole("button", { name: "获取验证码" })).toBeEnabled(),
+  );
+  fireEvent.click(screen.getByRole("button", { name: "获取验证码" }));
+  await screen.findByText("验证码已发送，请查看手机短信。");
+  fireEvent.change(screen.getByLabelText("短信验证码"), {
+    target: { value: "123456" },
+  });
+  for (const label of ["新密码", "确认密码"]) {
+    fireEvent.change(screen.getByLabelText(label, { exact: true }), {
+      target: { value: "Password123!" },
+    });
+  }
+  fireEvent.click(screen.getByRole("button", { name: "重置密码" }));
+  expect(await screen.findByRole("alert")).toHaveTextContent(
+    "该手机号尚未注册",
+  );
+  fireEvent.click(screen.getByRole("link", { name: "注册新账号" }));
+  expect(
+    await screen.findByRole("heading", { name: "创建家庭账户" }),
+  ).toBeVisible();
+  expect(screen.getByLabelText("手机号")).toHaveValue(user.phone);
+  expect(screen.getByLabelText("短信验证码")).toHaveValue("");
+  expect(screen.getByLabelText("密码", { exact: true })).toHaveValue("");
+  fireEvent.click(screen.getByRole("button", { name: "获取验证码" }));
+  await waitFor(() =>
+    expect(api.sendSms).toHaveBeenLastCalledWith(user.phone, "register"),
+  );
 });
 
 test("resets password with a purpose-bound SMS and returns to login", async () => {

@@ -183,9 +183,12 @@ def reset_password(db: Session, payload: PasswordReset) -> None:
     user = db.scalar(
         select(UserAccount).where(UserAccount.phone == payload.phone).with_for_update()
     )
-    if user is None or user.deleted_at or not user.is_active:
+    if user is None:
         db.commit()
-        raise ApiError(400, ErrorCode.AUTH_ACCOUNT_UNAVAILABLE)
+        raise ApiError(400, ErrorCode.AUTH_PHONE_NOT_REGISTERED)
+    if user.deleted_at or not user.is_active:
+        db.commit()
+        raise ApiError(400, ErrorCode.AUTH_PASSWORD_RESET_UNAVAILABLE)
     user.password_hash = hash_password(payload.password)
     user.session_version += 1
     audit(db, user.id, user.id, "password.reset")
