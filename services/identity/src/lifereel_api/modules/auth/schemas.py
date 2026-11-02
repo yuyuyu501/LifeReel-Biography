@@ -133,6 +133,11 @@ class MiniProgramRefreshRequest(BaseModel):
     refresh_token: str = Field(min_length=32, max_length=256)
 
 
+class MiniProgramAccountLinkRequest(LoginRequest):
+    platform: Literal["wechat", "douyin"]
+    code: str = Field(min_length=1, max_length=512)
+
+
 class PlatformIdentityRead(BaseModel):
     id: UUID
     platform: Literal["wechat", "douyin"]

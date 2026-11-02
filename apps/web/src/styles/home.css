@@ -224,60 +224,8 @@
   color: var(--home-coral);
   border-color: var(--home-coral);
 }
-.home-lower-grid {
-  margin-top: 22px;
-  display: grid;
-  grid-template-columns: 1.35fr 0.65fr;
-  gap: 18px;
-}
-.home-lower-grid.is-single {
-  grid-template-columns: 1fr;
-}
-.activity-panel {
-  min-height: 148px;
-  padding: 22px 26px;
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  background: #fff;
-}
-.activity-row {
-  min-height: 61px;
-  display: grid;
-  grid-template-columns: 40px 1fr auto;
-  align-items: center;
-  gap: 12px;
-  border-top: 1px solid var(--line);
-}
-.activity-icon {
-  width: 34px;
-  height: 34px;
-  display: grid;
-  place-items: center;
-  color: var(--green);
-  background: var(--green-soft);
-  border-radius: 4px;
-}
-.activity-row strong,
-.activity-row small {
-  display: block;
-}
-.activity-row strong {
-  font-size: 13px;
-}
-.activity-row small {
-  margin-top: 3px;
-  color: var(--muted-foreground);
-  font-size: 11px;
-}
-.activity-empty {
-  padding: 18px 0;
-  border-top: 1px solid var(--line);
-  color: var(--muted-foreground);
-  font-size: 13px;
-}
 @media (max-width: 900px) {
-  .home-dashboard,
-  .home-lower-grid {
+  .home-dashboard {
     grid-template-columns: 1fr;
   }
   .workflow-track {

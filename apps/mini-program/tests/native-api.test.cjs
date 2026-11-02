@@ -85,6 +85,32 @@ test("expired token refreshes and replays with the new bearer token", async () =
   assert.equal(navigations.length, 0);
 });
 
+test("binding authenticates the existing web account without refreshing old credentials", async () => {
+  const { api, calls, storage, navigations } = setup(
+    [{ statusCode: 401, data: {} }],
+    "pages/login/index",
+  );
+  storage.set("lifereel_mini_refresh_token", "unrelated-family-refresh");
+  await assert.rejects(
+    api.linkAccount(
+      "wechat",
+      "platform-code",
+      "user@example.com",
+      "WrongPassword!",
+    ),
+    /401/,
+  );
+  assert.equal(calls.length, 1);
+  assert.equal(
+    calls[0].url,
+    "https://test.invalid/v1/auth/mini-program/link-account",
+  );
+  assert.equal(calls[0].data.email, "user@example.com");
+  assert.equal(calls[0].data.code, "platform-code");
+  assert.equal(calls[0].data.password, "WrongPassword!");
+  assert.equal(navigations.length, 0);
+});
+
 test("whole-book adaptation sends the book without a fixed duration or chapter selection", async () => {
   const { api, calls } = setup([{ statusCode: 201, data: { id: "script" } }]);
   const payload = {

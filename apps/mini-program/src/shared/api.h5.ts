@@ -319,6 +319,9 @@ export const miniApi: typeof nativeApi = {
     signedIn = true;
     return auth();
   },
+  linkAccount: async () => {
+    throw new Error("本地预览不连接账号服务，请在小程序真机中绑定已有账号");
+  },
   refresh: async () => {
     if (!signedIn) throw new Error("请先进入预览");
     return auth();

@@ -66,13 +66,43 @@ def publish(db: Session, tenant_id: UUID, payload: PublicationCreate) -> Publica
 
 
 def list_publications(db: Session, tenant_id: UUID) -> list[Publication]:
-    return list(
+    publications = list(
         db.scalars(
             select(Publication)
             .where(Publication.tenant_id == tenant_id)
             .order_by(Publication.created_at.desc())
         )
     )
+    for publication in publications:
+        _withdraw_without_consent(db, publication)
+    db.commit()
+    return publications
+
+
+def _withdraw_without_consent(db: Session, publication: Publication) -> bool:
+    if publication.status != "published" or publication.audience == "private":
+        return False
+    # Only a grant that already existed at publication time can keep this link
+    # alive. Reauthorizing later requires a new publication and a new token.
+    if governance.has_consent(
+        db,
+        publication.tenant_id,
+        publication.subject_id,
+        "publication",
+        publication.audience,
+        at=publication.published_at,
+    ):
+        return False
+    publication.status = "withdrawn"
+    publication.withdrawn_at = datetime.now(UTC)
+    governance.audit(
+        db,
+        publication.tenant_id,
+        "publication.consent_withdrawn",
+        "publication",
+        publication.id,
+    )
+    return True
 
 
 def withdraw(db: Session, tenant_id: UUID, publication_id: UUID) -> Publication:
@@ -98,6 +128,9 @@ def public_lookup(db: Session, token: str) -> Publication:
         )
     )
     if publication is None:
+        raise ApiError(status.HTTP_404_NOT_FOUND, ErrorCode.PUBLICATION_UNAVAILABLE)
+    if _withdraw_without_consent(db, publication):
+        db.commit()
         raise ApiError(status.HTTP_404_NOT_FOUND, ErrorCode.PUBLICATION_UNAVAILABLE)
     run = db.get(ProductionRun, publication.production_run_id)
     project = db.get(ScriptProject, run.project_id) if run else None

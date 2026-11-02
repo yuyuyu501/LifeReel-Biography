@@ -202,6 +202,8 @@ def link(
     code_identity: PlatformCodeIdentity,
 ) -> tuple[PlatformIdentity, MiniSessionPair]:
     user = service.require_user(db, user_id, lock=True)
+    if not user.is_active:
+        raise ApiError(401, ErrorCode.AUTH_SESSION_INACTIVE)
     existing = _identity(db, code_identity)
     if existing and existing.user_id != user.id:
         db.rollback()
@@ -238,12 +240,29 @@ def refresh(
         )
         .with_for_update()
     )
-    expires_at = session.expires_at.replace(tzinfo=UTC) if session else None
+    expires_at = session.expires_at if session else None
+    if expires_at is not None and expires_at.tzinfo is None:
+        expires_at = expires_at.replace(tzinfo=UTC)
     if session is None or expires_at <= utcnow():
         raise ApiError(401, ErrorCode.MINI_PROGRAM_REFRESH_INVALID)
     identity = db.get(PlatformIdentity, session.identity_id)
-    user = db.get(UserAccount, identity.user_id) if identity else None
-    if identity is None or user is None or not user.is_active or user.deleted_at:
+    user = (
+        db.scalar(
+            select(UserAccount)
+            .where(UserAccount.id == identity.user_id)
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
+        if identity
+        else None
+    )
+    if (
+        identity is None
+        or user is None
+        or not user.is_active
+        or user.deleted_at
+        or session.session_version != user.session_version
+    ):
         raise ApiError(401, ErrorCode.MINI_PROGRAM_REFRESH_INVALID)
     session.revoked_at = utcnow()
     pair = _new_pair(db, identity, user)

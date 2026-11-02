@@ -7,7 +7,6 @@ import type {
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ArrowRight,
-  Ban,
   BookOpen,
   Check,
   ChevronRight,
@@ -15,7 +14,6 @@ import {
   FileText,
   Film,
   Play,
-  Send,
   UserRound,
 } from "lucide-react";
 import { useEffect, useState } from "react";
@@ -34,6 +32,7 @@ import {
   ShotPreview,
 } from "../components/ProductionExperience";
 import { usePageSubject } from "../usePageSubject";
+import { PublicationControls } from "../components/PublicationControls";
 
 function matchesChapter(
   run: ProductionRun,
@@ -272,16 +271,6 @@ export function StudioPage() {
       await refresh();
     },
   });
-  const publish = useMutation({
-    mutationFn: (id: string) => api.publish(id, "family"),
-    onSuccess: () =>
-      queryClient.invalidateQueries({ queryKey: ["publications"] }),
-  });
-  const withdraw = useMutation({
-    mutationFn: api.withdrawPublication,
-    onSuccess: () =>
-      queryClient.invalidateQueries({ queryKey: ["publications"] }),
-  });
   const retry = useMutation({
     mutationFn: api.retryJob,
     onSuccess: async () => {
@@ -325,11 +314,7 @@ export function StudioPage() {
         <QueryState queries={queries} loadingText="正在准备影像制作台……" />
       ) : (
         <>
-          <ErrorNotice
-            error={
-              produce.error || publish.error || withdraw.error || retry.error
-            }
-          />
+          <ErrorNotice error={produce.error || retry.error} />
           {effectiveSubjectId && (
             <BookScriptGenerator
               key={effectiveSubjectId}
@@ -722,39 +707,20 @@ export function StudioPage() {
                         disabled={isGenerating || scriptEditing}
                       />
                     )}
-                    {activeAsset && (
-                      <div className="studio-publish-row">
-                        {publication ? (
-                          <>
-                            <span className="studio-muted">已发布给家人</span>
-                            <Button
-                              variant="destructive"
-                              size="sm"
-                              className="button secondary small danger"
-                              disabled={withdraw.isPending}
-                              onClick={() => withdraw.mutate(publication.id)}
-                            >
-                              <Ban size={15} aria-hidden="true" /> 撤回发布
-                            </Button>
-                          </>
-                        ) : (
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            className="button secondary small"
-                            disabled={
-                              publish.isPending ||
-                              activeRun?.status !== "completed"
-                            }
-                            onClick={() =>
-                              activeRun && publish.mutate(activeRun.id)
-                            }
-                          >
-                            <Send size={16} aria-hidden="true" /> 发布给家人
-                          </Button>
-                        )}
-                      </div>
-                    )}
+                    {activeAsset &&
+                      activeRun?.status === "completed" &&
+                      people.data?.find(
+                        (person) => person.id === effectiveSubjectId,
+                      ) && (
+                        <PublicationControls
+                          key={activeRun.id}
+                          runId={activeRun.id}
+                          person={people.data.find(
+                            (person) => person.id === effectiveSubjectId,
+                          )!}
+                          publication={publication}
+                        />
+                      )}
                   </div>
                   <div
                     id="studio-panel-script"

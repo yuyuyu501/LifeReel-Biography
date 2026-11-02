@@ -136,7 +136,10 @@ def consume(db: Session, payload: SmsVerification, purpose: str) -> None:
     )
     if not challenge or challenge.consumed_at:
         raise ApiError(400, ErrorCode.SMS_CODE_INVALID)
-    if challenge.expires_at.replace(tzinfo=UTC) <= utcnow():
+    expires_at = challenge.expires_at
+    if expires_at.tzinfo is None:
+        expires_at = expires_at.replace(tzinfo=UTC)
+    if expires_at <= utcnow():
         raise ApiError(400, ErrorCode.SMS_CODE_EXPIRED)
     if challenge.attempts >= 5:
         raise ApiError(429, ErrorCode.SMS_CODE_LOCKED)

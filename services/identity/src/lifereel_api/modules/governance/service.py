@@ -15,6 +15,10 @@ from lifereel_api.modules.identity.models import Person
 SCOPE_ORDER = {"private": 0, "family": 1, "friends": 2, "public": 3}
 
 
+def _utc(value: datetime) -> datetime:
+    return value.replace(tzinfo=UTC) if value.tzinfo is None else value.astimezone(UTC)
+
+
 def audit(
     db: Session,
     tenant_id: UUID,
@@ -73,7 +77,13 @@ def revoke_consent(db: Session, tenant_id: UUID, consent_id: UUID) -> ConsentGra
 
 
 def has_consent(
-    db: Session, tenant_id: UUID, subject_id: UUID, consent_type: str, audience: str
+    db: Session,
+    tenant_id: UUID,
+    subject_id: UUID,
+    consent_type: str,
+    audience: str,
+    *,
+    at: datetime | None = None,
 ) -> bool:
     grants = list(
         db.scalars(
@@ -87,7 +97,8 @@ def has_consent(
     )
     now = datetime.now(UTC)
     return any(
-        (grant.expires_at is None or grant.expires_at >= now)
+        (grant.expires_at is None or _utc(grant.expires_at) > now)
+        and (at is None or _utc(grant.created_at) <= _utc(at))
         and SCOPE_ORDER.get(grant.scope, -1) >= SCOPE_ORDER.get(audience, 99)
         for grant in grants
     )

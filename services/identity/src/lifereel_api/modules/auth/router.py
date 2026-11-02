@@ -21,6 +21,7 @@ from lifereel_api.modules.auth.schemas import (
     AuthUserRead,
     LoginRequest,
     LoginResponse,
+    MiniProgramAccountLinkRequest,
     MiniProgramAuthResponse,
     MiniProgramIdentityResponse,
     MiniProgramLoginRequest,
@@ -102,6 +103,23 @@ async def mini_program_login(payload: MiniProgramLoginRequest, db: Db):
 @router.post("/mini-program/refresh", response_model=MiniProgramAuthResponse)
 def mini_program_refresh(payload: MiniProgramRefreshRequest, db: Db):
     user, identity, pair = mini_program.refresh(db, payload.refresh_token)
+    return _mini_auth_response(db, user, identity, pair)
+
+
+@router.post("/mini-program/link-account", response_model=MiniProgramAuthResponse)
+async def mini_program_link_account(
+    payload: MiniProgramAccountLinkRequest, db: Db, request: Request
+):
+    limit("login-ip", client_address(request), 100, 600)
+    limit("login-account", payload.email, 15, 600)
+    account, _token = service.login(db, payload.email, payload.password)
+    code_identity = await mini_program.exchange_code(payload.platform, payload.code)
+    # Lock and recheck credentials after the external exchange, before committing
+    # the link. A concurrent password reset must not authorize a new device.
+    user = service.require_user(db, account.user.id)
+    db.refresh(user)
+    service.require_password(user, payload.password)
+    identity, pair = mini_program.link(db, user.id, account.user.tenant_id, code_identity)
     return _mini_auth_response(db, user, identity, pair)
 
 

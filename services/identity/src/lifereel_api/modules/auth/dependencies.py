@@ -24,6 +24,7 @@ PUBLIC_AUTH_PATHS = {
     "/v1/auth/password/reset",
     "/v1/auth/mini-program/login",
     "/v1/auth/mini-program/refresh",
+    "/v1/auth/mini-program/link-account",
 }
 
 

@@ -184,6 +184,20 @@ export const miniApi = {
         ...(displayName ? { display_name: displayName } : {}),
       },
     }),
+  linkAccount: (
+    platform: "wechat" | "douyin",
+    code: string,
+    email: string,
+    password: string,
+  ) =>
+    request<MiniAuth>(
+      "/v1/auth/mini-program/link-account",
+      {
+        method: "POST",
+        data: { platform, code, email, password },
+      },
+      false,
+    ),
   refresh: () => {
     const refreshToken = getStored<string>(REFRESH_TOKEN);
     if (!refreshToken) throw new Error("登录状态已失效，请重新登录");

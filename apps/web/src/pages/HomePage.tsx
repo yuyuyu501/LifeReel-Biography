@@ -29,13 +29,22 @@ export function HomePage() {
   const scripts = useQuery({ queryKey: ["scripts"], queryFn: api.listScripts });
   const books = useQuery({ queryKey: ["books"], queryFn: booksApi.list });
   const overviewQueries = [people, interviews, evidence, scripts, books];
-  const activeInterview = interviews.data?.find((s) => s.profile_id);
-  const latestInterview = interviews.data?.[0];
+  const recordedInterviews =
+    interviews.data?.filter((session) =>
+      session.rounds.some((round) => round.answer_text?.trim()),
+    ) ?? [];
+  const activeInterview = [...recordedInterviews]
+    .filter((session) => session.profile_id && session.status !== "completed")
+    .sort((a, b) => Date.parse(b.updated_at) - Date.parse(a.updated_at))[0];
+  const draftedBooks =
+    books.data?.filter((book) =>
+      book.chapters.some((chapter) => chapter.current),
+    ) ?? [];
   const nextAction = activeInterview
     ? {
         to: `/interviews/${activeInterview.id}`,
         label: "继续上次采访",
-        description: `已记录 ${activeInterview.round_count} 轮对话，原有内容均已保存。`,
+        description: `已记录 ${activeInterview.rounds.filter((round) => round.answer_text?.trim()).length} 轮回答，原有内容均已保存。`,
         icon: Mic2,
       }
     : people.data?.length
@@ -121,7 +130,7 @@ export function HomePage() {
                 <div>
                   <dt>采访记录</dt>
                   <dd>
-                    {interviews.data?.length ?? 0}
+                    {recordedInterviews.length}
                     <small>次</small>
                   </dd>
                 </div>
@@ -167,7 +176,7 @@ export function HomePage() {
               <Link
                 to="/interviews"
                 className={
-                  interviews.data?.length
+                  recordedInterviews.length
                     ? "done"
                     : people.data?.length
                       ? "current"
@@ -175,37 +184,37 @@ export function HomePage() {
                 }
               >
                 <span>
-                  {interviews.data?.length ? <CheckCircle2 /> : <Mic2 />}
+                  {recordedInterviews.length ? <CheckCircle2 /> : <Mic2 />}
                 </span>
                 <strong>采访</strong>
                 <small>
-                  {interviews.data?.length
-                    ? `${interviews.data.length} 次记录`
+                  {recordedInterviews.length
+                    ? `${recordedInterviews.length} 份对话记录`
                     : "尚未开始"}
                 </small>
               </Link>
-              <Link
-                to="/memories"
-                className={evidence.data?.length ? "done" : ""}
-              >
+              <Link to="/memories" className="">
                 <span>
-                  {evidence.data?.length ? <CheckCircle2 /> : <BookOpenText />}
+                  <BookOpenText />
                 </span>
                 <strong>记忆</strong>
                 <small>
                   {evidence.data?.length
-                    ? `${evidence.data.length} 份文件 · 记忆图谱`
+                    ? `${evidence.data.length} 份素材 · 可查看整理结果`
                     : "等待采访沉淀"}
                 </small>
               </Link>
-              <Link to="/books" className={books.data?.length ? "done" : ""}>
+              <Link
+                to="/books"
+                className={draftedBooks.length ? "current" : ""}
+              >
                 <span>
                   <BookOpenText />
                 </span>
                 <strong>写书</strong>
                 <small>
                   {books.data?.length
-                    ? `${books.data.length} 本人生书`
+                    ? `${draftedBooks.length} 本已有成稿 · ${books.data.length} 本书籍`
                     : "等待创作"}
                 </small>
               </Link>
@@ -214,43 +223,8 @@ export function HomePage() {
                   <Film />
                 </span>
                 <strong>影像</strong>
-                <small>授权后进入制作</small>
+                <small>书稿改编 · 发布需授权</small>
               </Link>
-            </div>
-          </section>
-
-          <section className="home-lower-grid is-single">
-            <div className="activity-panel">
-              <div className="section-heading compact-heading">
-                <div>
-                  <span className="eyebrow">最近记录</span>
-                  <h2>工作动态</h2>
-                </div>
-              </div>
-              {latestInterview ? (
-                <Link
-                  className="activity-row"
-                  to={`/interviews/${latestInterview.id}`}
-                >
-                  <span className="activity-icon">
-                    <Mic2 size={18} />
-                  </span>
-                  <div>
-                    <strong>采访已保存</strong>
-                    <small>
-                      {latestInterview.round_count} 轮对话 ·{" "}
-                      {latestInterview.status === "completed"
-                        ? "已完成"
-                        : "可继续"}
-                    </small>
-                  </div>
-                  <ArrowRight size={17} />
-                </Link>
-              ) : (
-                <div className="activity-empty">
-                  完成第一段采访后，最近记录会显示在这里。
-                </div>
-              )}
             </div>
           </section>
         </>

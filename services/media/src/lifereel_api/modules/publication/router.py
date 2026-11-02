@@ -38,11 +38,16 @@ def withdraw(publication_id: UUID, db: Db, tenant_id: Tenant) -> PublicationRead
 
 
 @router.get("/public/{access_token}", response_model=PublicPublicationRead)
-def public_publication(access_token: str, db: Db) -> PublicPublicationRead:
+def public_publication(access_token: str, db: Db, response: Response) -> PublicPublicationRead:
+    response.headers["Cache-Control"] = "no-store"
     return service.public_lookup(db, access_token)
 
 
 @router.get("/public/{access_token}/content")
 def public_content(access_token: str, db: Db) -> Response:
     asset = service.public_asset(db, access_token)
-    return Response(content=private_storage().get(asset.storage_key), media_type=asset.mime_type)
+    return Response(
+        content=private_storage().get(asset.storage_key),
+        media_type=asset.mime_type,
+        headers={"Cache-Control": "no-store"},
+    )
