@@ -994,3 +994,23 @@ test("an updated script can generate after an older version was rejected", async
   renderPage(<StudioPage />, "/studio");
   expect(await screen.findByRole("button", { name: "重新生成" })).toBeEnabled();
 });
+
+test("studio stays private without querying publication or consent services", async () => {
+  renderPage(<StudioPage />, "/studio");
+  expect(
+    await screen.findByText("内容仅在当前账号内可见。"),
+  ).toBeInTheDocument();
+  expect(
+    screen.queryByRole("button", { name: "管理发布授权" }),
+  ).not.toBeInTheDocument();
+  expect(
+    screen.queryByRole("button", { name: "发布给家人" }),
+  ).not.toBeInTheDocument();
+  expect(
+    vi
+      .mocked(fetch)
+      .mock.calls.some(([input]) =>
+        /\/v1\/(publications|consents|public)(\/|$)/.test(String(input)),
+      ),
+  ).toBe(false);
+});

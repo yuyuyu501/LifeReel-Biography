@@ -17,7 +17,7 @@ def require_api_access(
 ) -> None:
     settings = get_settings()
     request.state.internal_access = False
-    if settings.is_development or request.url.path.startswith("/v1/public/"):
+    if settings.is_development:
         return
     if request.url.path in PUBLIC_AUTH_PATHS:
         request.state.internal_access = bool(

@@ -207,7 +207,7 @@ export const ERROR_MESSAGES: Record<string, string> = {
   PRODUCTION_NOT_COMPLETED: "视频制作完成后才能发布。",
   PUBLICATION_AUDIENCE_MISMATCH: "发布范围与制作时选择的范围不一致。",
   PUBLICATION_NOT_FOUND: "未找到该发布记录。",
-  PUBLICATION_UNAVAILABLE: "该影传不存在、已撤回或暂不可访问。",
+  PUBLICATION_UNAVAILABLE: "分享功能暂未开放，内容仅供所属账号查看。",
   PUBLICATION_ASSET_UNAVAILABLE: "已发布的影传文件暂不可用。",
   JOB_NOT_FOUND: "未找到该任务。",
   JOB_RETRY_NOT_ALLOWED: "只有失败或已取消的任务可以重试。",

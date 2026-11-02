@@ -12,7 +12,6 @@ import { WalletPage } from "./pages/WalletPage";
 import { LoginPage } from "./pages/LoginPage";
 import { AccountPage } from "./pages/AccountPage";
 import { AccountsAdminPage } from "./pages/AccountsAdminPage";
-import { PublicReelPage } from "./pages/PublicReelPage";
 import { PhotoRestorationPage } from "./pages/PhotoRestorationPage";
 import { api } from "./api/client";
 import { isAuthenticationError } from "./api/errors";
@@ -91,7 +90,15 @@ export default function App() {
       <Route path="/login" element={<LoginPage key="login" />} />
       <Route path="/register" element={<LoginPage key="register" />} />
       <Route path="/forgot-password" element={<LoginPage key="reset" />} />
-      <Route path="/watch/:token" element={<PublicReelPage />} />
+      <Route
+        path="/watch/:token"
+        element={
+          <main className="public-reel">
+            <h1>分享功能暂未开放</h1>
+            <p>内容仅供所属账号登录后查看。</p>
+          </main>
+        }
+      />
       <Route path="/*" element={<ProtectedApp />} />
     </Routes>
   );

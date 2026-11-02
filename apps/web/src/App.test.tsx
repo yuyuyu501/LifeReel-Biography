@@ -9,15 +9,21 @@ function response(ok: boolean, status: number, payload: unknown) {
 }
 
 beforeEach(() => {
-  vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
-    const url = String(input);
-    if (url.endsWith("/v1/auth/me")) return response(true, 200, { display_name: "测试用户", role: "owner" });
-    return response(true, 200, []);
-  }) as unknown as typeof fetch);
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith("/v1/auth/me"))
+        return response(true, 200, { display_name: "测试用户", role: "owner" });
+      return response(true, 200, []);
+    }) as unknown as typeof fetch,
+  );
 });
 
 test("renders the LifeReel home experience", async () => {
-  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
   render(
     <QueryClientProvider client={queryClient}>
       <MemoryRouter>
@@ -25,13 +31,22 @@ test("renders the LifeReel home experience", async () => {
       </MemoryRouter>
     </QueryClientProvider>,
   );
-  expect(await screen.findByRole("heading", { name: "继续整理这份人生" })).toBeInTheDocument();
+  expect(
+    await screen.findByRole("heading", { name: "继续整理这份人生" }),
+  ).toBeInTheDocument();
   expect(await screen.findByText("从讲述到成片")).toBeInTheDocument();
 });
 
 test("redirects an expired session to the Chinese login page", async () => {
-  vi.stubGlobal("fetch", vi.fn(async () => response(false, 401, { error: { code: "AUTH_REQUIRED" } })) as unknown as typeof fetch);
-  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async () =>
+      response(false, 401, { error: { code: "AUTH_REQUIRED" } }),
+    ) as unknown as typeof fetch,
+  );
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
   render(
     <QueryClientProvider client={queryClient}>
       <MemoryRouter>
@@ -39,11 +54,15 @@ test("redirects an expired session to the Chinese login page", async () => {
       </MemoryRouter>
     </QueryClientProvider>,
   );
-  expect(await screen.findByRole("heading", { name: "登录后继续整理" })).toBeInTheDocument();
+  expect(
+    await screen.findByRole("heading", { name: "登录后继续整理" }),
+  ).toBeInTheDocument();
 });
 
 test("redirects the old material page to the memory archive", async () => {
-  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
   render(
     <QueryClientProvider client={queryClient}>
       <MemoryRouter initialEntries={["/evidence"]}>
@@ -51,7 +70,30 @@ test("redirects the old material page to the memory archive", async () => {
       </MemoryRouter>
     </QueryClientProvider>,
   );
-  expect(await screen.findByRole("heading", { name: "记忆档案" })).toBeInTheDocument();
+  expect(
+    await screen.findByRole("heading", { name: "记忆档案" }),
+  ).toBeInTheDocument();
   expect(screen.queryByRole("link", { name: /^素材/ })).not.toBeInTheDocument();
-  expect(within(screen.getByRole("navigation", { name: "个人资料" })).getByRole("link", { name: "记忆" })).toHaveAttribute("href", "/memories");
+  expect(
+    within(screen.getByRole("navigation", { name: "个人资料" })).getByRole(
+      "link",
+      { name: "记忆" },
+    ),
+  ).toHaveAttribute("href", "/memories");
+});
+
+test("legacy sharing links show no content and never request a public token", async () => {
+  const queryClient = new QueryClient();
+  render(
+    <QueryClientProvider client={queryClient}>
+      <MemoryRouter initialEntries={["/watch/legacy-token"]}>
+        <App />
+      </MemoryRouter>
+    </QueryClientProvider>,
+  );
+  expect(
+    screen.getByRole("heading", { name: "分享功能暂未开放" }),
+  ).toBeInTheDocument();
+  expect(document.querySelector("video")).toBeNull();
+  expect(fetch).not.toHaveBeenCalled();
 });

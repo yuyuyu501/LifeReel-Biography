@@ -21,7 +21,6 @@ import type {
   PersonUpdate,
   ProductionRun,
   ProductionSettings,
-  Publication,
   ConsentGrant,
   EvidenceObservation,
   ScriptProject,
@@ -593,26 +592,6 @@ export const api = {
       method: "POST",
       body: JSON.stringify(payload),
     }),
-  listPublications: () => request<Publication[]>("/v1/publications"),
-  publicPublication: (token: string) =>
-    request<
-      Pick<
-        Publication,
-        "id" | "production_run_id" | "audience" | "status" | "published_at"
-      >
-    >(`/v1/public/${token}`),
-  publish: (
-    production_run_id: string,
-    audience: "private" | "family" | "friends" | "public",
-  ) =>
-    request<Publication>("/v1/publications", {
-      method: "POST",
-      body: JSON.stringify({ production_run_id, audience }),
-    }),
-  withdrawPublication: (publicationId: string) =>
-    request<Publication>(`/v1/publications/${publicationId}/withdraw`, {
-      method: "POST",
-    }),
   listJobs: () => request<Job[]>("/v1/jobs"),
   retryJob: (jobId: string) =>
     request<Job>(`/v1/jobs/${jobId}/retry`, { method: "POST" }),
@@ -644,8 +623,4 @@ export function productionReviewUrl(
     "/review/" +
     position
   );
-}
-
-export function publicContentUrl(token: string) {
-  return `${API_BASE_URL}/v1/public/${token}/content`;
 }

@@ -43,7 +43,7 @@ def auth_context(
     lifereel_session: Annotated[str | None, Cookie()] = None,
 ) -> AuthContext:
     settings = get_settings()
-    if request.url.path.startswith("/v1/public/") or request.url.path in PUBLIC_AUTH_PATHS:
+    if request.url.path in PUBLIC_AUTH_PATHS:
         return AuthContext(None, settings.default_tenant_id, "public")
     bearer_token = None
     if (
@@ -92,7 +92,7 @@ def enforce_write_role(
 ) -> None:
     if request.method in {"GET", "HEAD", "OPTIONS"}:
         return
-    if request.url.path in PUBLIC_AUTH_PATHS or request.url.path.startswith("/v1/public/"):
+    if request.url.path in PUBLIC_AUTH_PATHS:
         return
     if request.url.path.startswith("/v1/auth/") and context.user_id:
         return

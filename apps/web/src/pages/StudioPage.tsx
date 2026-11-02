@@ -32,7 +32,6 @@ import {
   ShotPreview,
 } from "../components/ProductionExperience";
 import { usePageSubject } from "../usePageSubject";
-import { PublicationControls } from "../components/PublicationControls";
 
 function matchesChapter(
   run: ProductionRun,
@@ -118,10 +117,6 @@ export function StudioPage() {
       void queryClient.invalidateQueries({ queryKey: ["wallet-ledger"] });
     }
   }, [terminalRuns, queryClient]);
-  const publications = useQuery({
-    queryKey: ["publications"],
-    queryFn: api.listPublications,
-  });
   const orderedRuns = [...(productionRuns.data ?? [])].sort(
     (left, right) =>
       new Date(right.created_at).getTime() -
@@ -207,10 +202,6 @@ export function StudioPage() {
       activeRun?.recovery?.code === "VIDEO_REFERENCE_REJECTED" ||
       activeRun?.error_message === "VIDEO_REFERENCE_REJECTED"),
   );
-  const publication = publications.data?.find(
-    (item) =>
-      item.production_run_id === activeRun?.id && item.status === "published",
-  );
   const isGenerating = chapterRuns.some((run) =>
     ["queued", "running"].includes(run.status),
   );
@@ -278,14 +269,7 @@ export function StudioPage() {
       await refresh();
     },
   });
-  const queries = [
-    people,
-    scripts,
-    settings,
-    productionRuns,
-    publications,
-    wallet,
-  ];
+  const queries = [people, scripts, settings, productionRuns, wallet];
 
   return (
     <div className="page film-studio-page">
@@ -707,20 +691,7 @@ export function StudioPage() {
                         disabled={isGenerating || scriptEditing}
                       />
                     )}
-                    {activeAsset &&
-                      activeRun?.status === "completed" &&
-                      people.data?.find(
-                        (person) => person.id === effectiveSubjectId,
-                      ) && (
-                        <PublicationControls
-                          key={activeRun.id}
-                          runId={activeRun.id}
-                          person={people.data.find(
-                            (person) => person.id === effectiveSubjectId,
-                          )!}
-                          publication={publication}
-                        />
-                      )}
+                    <p className="muted">内容仅在当前账号内可见。</p>
                   </div>
                   <div
                     id="studio-panel-script"

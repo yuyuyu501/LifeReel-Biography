@@ -9,12 +9,10 @@ from sqlalchemy.orm import Session
 
 from lifereel_api.core.database import get_db
 from lifereel_api.core.tenant import get_tenant_id
-from lifereel_api.modules.evidence.storage import private_storage
 from lifereel_api.modules.publication import service
 from lifereel_api.modules.publication.schemas import (
     PublicationCreate,
     PublicationRead,
-    PublicPublicationRead,
 )
 
 router = APIRouter(tags=["publication"])
@@ -37,17 +35,8 @@ def withdraw(publication_id: UUID, db: Db, tenant_id: Tenant) -> PublicationRead
     return service.withdraw(db, tenant_id, publication_id)
 
 
-@router.get("/public/{access_token}", response_model=PublicPublicationRead)
-def public_publication(access_token: str, db: Db, response: Response) -> PublicPublicationRead:
-    response.headers["Cache-Control"] = "no-store"
-    return service.public_lookup(db, access_token)
-
-
+@router.get("/public/{access_token}")
 @router.get("/public/{access_token}/content")
-def public_content(access_token: str, db: Db) -> Response:
-    asset = service.public_asset(db, access_token)
-    return Response(
-        content=private_storage().get(asset.storage_key),
-        media_type=asset.mime_type,
-        headers={"Cache-Control": "no-store"},
-    )
+def public_unavailable(access_token: str) -> Response:
+    # A tombstone for old clients: never return metadata or bytes from a token.
+    return Response(status_code=404, headers={"Cache-Control": "no-store"})

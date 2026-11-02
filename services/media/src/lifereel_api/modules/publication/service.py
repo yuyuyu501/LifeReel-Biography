@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import secrets
 from datetime import UTC, datetime
 from uuid import UUID
 
@@ -10,59 +9,14 @@ from sqlalchemy.orm import Session
 
 from lifereel_api.core.errors import ApiError, ErrorCode
 from lifereel_api.modules.governance import service as governance
-from lifereel_api.modules.production.models import GeneratedAsset, ProductionRun
+from lifereel_api.modules.production.models import GeneratedAsset
 from lifereel_api.modules.publication.models import Publication
 from lifereel_api.modules.publication.schemas import PublicationCreate
-from lifereel_api.modules.script.models import ScriptProject
 
 
 def publish(db: Session, tenant_id: UUID, payload: PublicationCreate) -> Publication:
-    run = db.scalar(
-        select(ProductionRun)
-        .where(
-            ProductionRun.id == payload.production_run_id,
-            ProductionRun.tenant_id == tenant_id,
-        )
-        .with_for_update()
-    )
-    if (
-        run is None
-        or run.status != "completed"
-        or (run.output_manifest or {}).get("media_retention")
-    ):
-        raise ApiError(status.HTTP_409_CONFLICT, ErrorCode.PRODUCTION_NOT_COMPLETED)
-    if payload.audience != run.audience:
-        raise ApiError(status.HTTP_409_CONFLICT, ErrorCode.PUBLICATION_AUDIENCE_MISMATCH)
-    project = db.get(ScriptProject, run.project_id)
-    if project is None:
-        raise ApiError(status.HTTP_404_NOT_FOUND, ErrorCode.SCRIPT_PROJECT_NOT_FOUND)
-    validate_sources(db, tenant_id, project)
-    if payload.audience != "private" and not governance.has_consent(
-        db, tenant_id, project.subject_id, "publication", payload.audience
-    ):
-        raise ApiError(status.HTTP_409_CONFLICT, ErrorCode.PUBLICATION_CONSENT_REQUIRED)
-    publication = Publication(
-        tenant_id=tenant_id,
-        production_run_id=run.id,
-        subject_id=project.subject_id,
-        audience=payload.audience,
-        status="published",
-        access_token=secrets.token_urlsafe(24),
-        published_at=datetime.now(UTC),
-    )
-    db.add(publication)
-    db.flush()
-    governance.audit(
-        db,
-        tenant_id,
-        "publication.published",
-        "publication",
-        publication.id,
-        {"audience": payload.audience},
-    )
-    db.commit()
-    db.refresh(publication)
-    return publication
+    # Publication is deliberately disabled while the product is account-private.
+    raise ApiError(status.HTTP_409_CONFLICT, ErrorCode.PUBLICATION_UNAVAILABLE)
 
 
 def list_publications(db: Session, tenant_id: UUID) -> list[Publication]:
@@ -73,36 +27,7 @@ def list_publications(db: Session, tenant_id: UUID) -> list[Publication]:
             .order_by(Publication.created_at.desc())
         )
     )
-    for publication in publications:
-        _withdraw_without_consent(db, publication)
-    db.commit()
     return publications
-
-
-def _withdraw_without_consent(db: Session, publication: Publication) -> bool:
-    if publication.status != "published" or publication.audience == "private":
-        return False
-    # Only a grant that already existed at publication time can keep this link
-    # alive. Reauthorizing later requires a new publication and a new token.
-    if governance.has_consent(
-        db,
-        publication.tenant_id,
-        publication.subject_id,
-        "publication",
-        publication.audience,
-        at=publication.published_at,
-    ):
-        return False
-    publication.status = "withdrawn"
-    publication.withdrawn_at = datetime.now(UTC)
-    governance.audit(
-        db,
-        publication.tenant_id,
-        "publication.consent_withdrawn",
-        "publication",
-        publication.id,
-    )
-    return True
 
 
 def withdraw(db: Session, tenant_id: UUID, publication_id: UUID) -> Publication:
@@ -122,46 +47,9 @@ def withdraw(db: Session, tenant_id: UUID, publication_id: UUID) -> Publication:
 
 
 def public_lookup(db: Session, token: str) -> Publication:
-    publication = db.scalar(
-        select(Publication).where(
-            Publication.access_token == token, Publication.status == "published"
-        )
-    )
-    if publication is None:
-        raise ApiError(status.HTTP_404_NOT_FOUND, ErrorCode.PUBLICATION_UNAVAILABLE)
-    if _withdraw_without_consent(db, publication):
-        db.commit()
-        raise ApiError(status.HTTP_404_NOT_FOUND, ErrorCode.PUBLICATION_UNAVAILABLE)
-    run = db.get(ProductionRun, publication.production_run_id)
-    project = db.get(ScriptProject, run.project_id) if run else None
-    if project:
-        try:
-            validate_sources(db, publication.tenant_id, project)
-        except ApiError:
-            raise ApiError(404, ErrorCode.PUBLICATION_UNAVAILABLE) from None
-    return publication
+    # Reject legacy tokens too, regardless of their saved audience or consent.
+    raise ApiError(status.HTTP_404_NOT_FOUND, ErrorCode.PUBLICATION_UNAVAILABLE)
 
 
 def public_asset(db: Session, token: str) -> GeneratedAsset:
-    publication = public_lookup(db, token)
-    asset = db.scalar(
-        select(GeneratedAsset).where(
-            GeneratedAsset.production_run_id == publication.production_run_id,
-            GeneratedAsset.kind.in_(["final_video", "final_video_manifest"]),
-        )
-    )
-    if asset is None:
-        raise ApiError(status.HTTP_404_NOT_FOUND, ErrorCode.PUBLICATION_ASSET_UNAVAILABLE)
-    return asset
-
-
-def validate_sources(db, tenant, project):
-    if project.source_type == "book":
-        from lifereel_api.modules.script.book_adaptation import sources
-
-        sources(
-            db,
-            tenant,
-            project.subject_id,
-            [UUID(r["revision_id"]) for r in project.source_snapshot["revisions"]],
-        )
+    raise ApiError(status.HTTP_404_NOT_FOUND, ErrorCode.PUBLICATION_UNAVAILABLE)

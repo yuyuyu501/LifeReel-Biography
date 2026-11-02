@@ -43,6 +43,8 @@ test("empty sessions and book shells do not imply recorded interviews or complet
   expect(
     await screen.findByText("0 本已有成稿 · 1 本书籍"),
   ).toBeInTheDocument();
+  expect(screen.getByText("书稿改编 · 账号私密")).toBeInTheDocument();
+  expect(screen.queryByText("发布需授权")).not.toBeInTheDocument();
   expect(screen.queryByText("工作动态")).not.toBeInTheDocument();
   expect(screen.queryByText("继续上次采访")).not.toBeInTheDocument();
   expect(screen.getByRole("link", { name: /采访 尚未开始/ })).not.toHaveClass(

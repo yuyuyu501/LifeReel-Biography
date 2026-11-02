@@ -1,5 +1,17 @@
 # 部署说明
 
+## 账号私密内容（2026-11-02）
+
+本轮取消发布授权与公开分享，内容仅供所属账号查看。所有新发布请求均拒绝，
+历史 token 无论 audience/授权状态均拒绝访问；网关也直接拒绝 `/v1/public/`。
+旧 `/watch/:token` 显示未开放提示，不加载元数据或内容。历史数据库记录保留。
+详见 [私密访问验证](reports/2026-11-02-private-content.md)。
+
+发布名 `private-content-20261102`，沿用四阶段脚本及 `--model-pools --script-model gpt-6.1-sol --video-per-second`。
+备份目录 `/opt/lifereel-backups/private-content-20261102`，回执目录 `/opt/lifereel-deploy/private-content-20261102`。
+无新增迁移；核验认证、安全、发布模块运行哈希和网关配置、HTTPS 公开路径拒绝访问。
+回退仍须保留本轮关闭公开分享的限制，不直接恢复上一版可公开访问行为，不回滚生产用户数据。
+
 ## 首页与跨端流程修正（2026-11-02）
 
 移除首页“工作动态”，修正空采访及空书籍的进度展示；补充影像发布授权、

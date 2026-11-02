@@ -69,7 +69,7 @@ export function HomePage() {
           <span className="eyebrow">档案工作台 · 今日概览</span>
           <h1>继续整理这份人生</h1>
           <p className="page-intro">
-            从原声采访到家庭影传，每一条记忆都有来源，每一步发布都需要确认。
+            从原声采访到家庭影传，每一条记忆都有来源，内容仅在当前账号内可见。
           </p>
         </div>
         <div className="home-hero-action">
@@ -223,7 +223,7 @@ export function HomePage() {
                   <Film />
                 </span>
                 <strong>影像</strong>
-                <small>书稿改编 · 发布需授权</small>
+                <small>书稿改编 · 账号私密</small>
               </Link>
             </div>
           </section>

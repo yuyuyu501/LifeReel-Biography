@@ -4,11 +4,6 @@ from uuid import UUID, uuid4
 
 import httpx
 import pytest
-from sqlalchemy import func, select
-
-from lifereel_api.core.config import get_settings
-from lifereel_api.core.database import SessionLocal
-from lifereel_api.core.errors import ApiError, ErrorCode
 from lifereel_api.modules.billing.models import Charge
 from lifereel_api.modules.book import service, writing
 from lifereel_api.modules.book.models import BookRevision
@@ -19,6 +14,11 @@ from lifereel_api.modules.jobs.models import Job
 from lifereel_api.modules.memory.models import MemoryClaim, MemoryConflict
 from lifereel_api.providers.openai_compatible import OpenAICompatibleClient
 from lifereel_api.providers.rpc import provider_error, raise_provider_error
+from sqlalchemy import func, select
+
+from lifereel_api.core.config import get_settings
+from lifereel_api.core.database import SessionLocal
+from lifereel_api.core.errors import ApiError, ErrorCode
 
 
 @pytest.fixture
@@ -689,3 +689,52 @@ def test_model_failure_survives_gateway_and_worker_without_losing_old_draft(
         assert sorted(db.scalars(select(Charge.status).where(Charge.kind == "book"))) == [
             "released", "settled",
         ]
+
+
+def test_signed_accounts_can_only_list_and_open_their_own_books(client, book, monkeypatch):
+    from lifereel_api.modules.auth.models import TenantMembership, UserAccount
+    from lifereel_api.modules.auth.security import create_token
+
+    settings = get_settings()
+    monkeypatch.setattr(settings, "auth_token_secret", "synthetic-account-isolation-secret")
+    with SessionLocal() as db:
+        tenant = Tenant(name="第二个账号空间", slug=uuid4().hex)
+        db.add(tenant)
+        db.flush()
+        person = Person(tenant_id=tenant.id, display_name="另一个账号的家人")
+        db.add(person)
+        db.flush()
+        second = service.create(db, tenant.id, BookCreate(subject_id=person.id))
+        second_id = str(second.id)
+        tokens = []
+        for tenant_id in (book["tenant"], tenant.id):
+            user = UserAccount(
+                email=f"{uuid4().hex}@example.test", display_name="隔离测试账号",
+                password_hash="unused-synthetic-hash",
+            )
+            db.add(user)
+            db.flush()
+            db.add(TenantMembership(tenant_id=tenant_id, user_id=user.id, role="owner"))
+            tokens.append(create_token({
+                "sub": str(user.id), "tenant_id": str(tenant_id), "role": "owner",
+                "version": 0,
+            }))
+        db.commit()
+    monkeypatch.setattr(settings, "app_env", "production")
+    monkeypatch.setattr(settings, "api_access_key", "synthetic-gateway-key")
+    headers = {"X-API-Key": "synthetic-gateway-key", "X-Tenant-ID": str(book["tenant"])}
+    for token, own_id, hidden_id in (
+        (tokens[0], book["book"]["id"], second_id),
+        (tokens[1], second_id, book["book"]["id"]),
+    ):
+        client.cookies.set("lifereel_session", token)
+        response = client.get("/v1/books", headers=headers)
+        assert response.status_code == 200
+        assert [item["id"] for item in response.json()] == [own_id]
+        assert client.get(f"/v1/books/{own_id}", headers=headers).status_code == 200
+        for suffix in ("", "/export", f"/chapters/{book['chapter']['id']}/versions"):
+            assert client.get(f"/v1/books/{hidden_id}{suffix}", headers=headers).status_code == 404
+    client.cookies.clear()
+    assert client.get(
+        "/v1/books", headers={"X-API-Key": "synthetic-gateway-key"}
+    ).status_code == 401
