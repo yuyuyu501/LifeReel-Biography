@@ -279,6 +279,8 @@ export const api = {
   logout: () => request<void>("/v1/auth/logout", { method: "POST" }),
   health: () => request<{ status: string }>("/health"),
   listPersons: () => request<Person[]>("/v1/persons"),
+  deletePerson: (personId: string) =>
+    request<void>(`/v1/persons/${personId}`, { method: "DELETE" }),
   createPerson: (payload: PersonCreate) =>
     request<Person>("/v1/persons", {
       method: "POST",

@@ -42,6 +42,15 @@ MODULES = {
     },
     "lifereel_api.core.config": "apps/api/src/lifereel_api/core/config.py",
     "lifereel_api.core.errors": "apps/api/src/lifereel_api/core/errors.py",
+    "lifereel_api.modules.identity.router": (
+        "services/identity/src/lifereel_api/modules/identity/router.py"
+    ),
+    "lifereel_api.modules.identity.deletion": (
+        "services/identity/src/lifereel_api/modules/identity/deletion.py"
+    ),
+    "lifereel_api.modules.jobs.service": (
+        "services/tasks/src/lifereel_api/modules/jobs/service.py"
+    ),
     "lifereel_api.providers.rpc": "services/model-gateway/src/lifereel_api/providers/rpc.py",
     "lifereel_api.modules.book.writing": "services/book/src/lifereel_api/modules/book/writing.py",
     "lifereel_api.modules.book.service": "services/book/src/lifereel_api/modules/book/service.py",
@@ -321,8 +330,8 @@ def verify(release, script_model=None, model_pools=False, video_per_second=False
     )
     script_models = {}
     for service in (
-        "interview", "worker-interview", "model-gateway", "book", "worker-book", "script",
-        "media", "worker-media", "billing",
+        "identity", "interview", "worker-interview", "model-gateway", "book", "worker-book",
+        "script", "media", "worker-media", "billing", "tasks",
     ):
         assert json.loads(out(*COMPOSE, "exec", "-T", service, "python", "-c", code)) == expected, (
             service

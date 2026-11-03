@@ -166,6 +166,8 @@ def _retry_job(
     resume_original: bool = False,
 ) -> Job:
     job = get_job(db, tenant_id, job_id)
+    if job.error_code == ErrorCode.PERSON_DELETED:
+        raise ApiError(status.HTTP_409_CONFLICT, ErrorCode.JOB_RETRY_NOT_ALLOWED)
     if job.status not in {"failed", "cancelled"}:
         raise ApiError(status.HTTP_409_CONFLICT, ErrorCode.JOB_RETRY_NOT_ALLOWED)
     if job.kind == "production.render":

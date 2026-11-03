@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 from lifereel_api.core.database import get_db
 from lifereel_api.core.tenant import get_tenant_id
 from lifereel_api.modules.identity import service
+from lifereel_api.modules.identity.deletion import delete_person
 from lifereel_api.modules.identity.schemas import PersonCreate, PersonRead, PersonUpdate
 
 router = APIRouter(prefix="/persons", tags=["persons"])
@@ -34,3 +35,8 @@ def person(person_id: UUID, db: Db, tenant_id: Tenant) -> PersonRead:
 @router.patch("/{person_id}", response_model=PersonRead)
 def patch_person(person_id: UUID, payload: PersonUpdate, db: Db, tenant_id: Tenant) -> PersonRead:
     return service.update_person(db, tenant_id, person_id, payload)
+
+
+@router.delete("/{person_id}", status_code=status.HTTP_204_NO_CONTENT)
+def remove_person(person_id: UUID, db: Db, tenant_id: Tenant) -> None:
+    delete_person(db, tenant_id, person_id)

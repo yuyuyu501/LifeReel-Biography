@@ -255,6 +255,9 @@
   .modal-actions {
     flex-direction: column-reverse;
   }
+  .person-delete-confirm-actions {
+    flex-direction: column;
+  }
   .modal-actions .button {
     width: 100%;
   }

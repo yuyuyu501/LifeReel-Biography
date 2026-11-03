@@ -109,6 +109,9 @@ export const ERROR_MESSAGES: Record<string, string> = {
   AUTH_READ_ONLY: "当前账号只有查看权限，不能执行此操作。",
   AUTH_USER_NOT_FOUND: "登录账号已不存在，请联系管理员。",
   PERSON_NOT_FOUND: "未找到该人物。",
+  PERSON_DELETE_BUSY:
+    "账号中还有采访、生成或计费任务正在处理，请结束或等待任务完成后再删除家人。",
+  PERSON_DELETED: "关联家人已删除，无法重试此任务。",
   SUBJECT_NOT_FOUND: "未找到传记主人公。",
   CHAPTER_NOT_FOUND: "未找到该采访章节。",
   INTERVIEW_NOT_FOUND: "未找到该采访。",
