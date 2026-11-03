@@ -411,3 +411,81 @@ test("nested profile objects and arrays display their content without object coe
   expect(row).not.toHaveTextContent("null");
   expect(row).not.toHaveTextContent("hidden-asset");
 });
+
+test("internal evidence and graph keys are omitted from nested fact display", () => {
+  table({
+    ...profile,
+    entries: [
+      entry("birth-1", "birth", "", {
+        value: {
+          place: "安徽芜湖",
+          facts: [{ predicate: "located_at", object_entity_id: "entity-1" }],
+          source_id: "source-1",
+          evidence: [{ quote: "hidden quotation" }],
+        },
+      }),
+    ],
+  });
+  const row = screen
+    .getByText("出生时间")
+    .closest(".profile-field") as HTMLElement;
+  expect(row).toHaveTextContent("安徽芜湖");
+  expect(row).not.toHaveTextContent("located_at");
+  expect(row).not.toHaveTextContent("entity-1");
+  expect(row).not.toHaveTextContent("source-1");
+  expect(row).not.toHaveTextContent("hidden quotation");
+});
+
+test("uploaded material is attached to the draft and saved as a private asset", async () => {
+  const uploaded = {
+    id: "asset-1",
+    original_filename: "family-photo.jpg",
+    kind: "photo",
+  };
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (input: string | URL | Request) => {
+      const url = String(input);
+      if (url.endsWith("/v1/evidence/upload-settings"))
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({ direct_upload: false }),
+        };
+      if (url.endsWith("/v1/evidence/assets"))
+        return { ok: true, status: 201, json: async () => uploaded };
+      return { ok: true, status: 200, json: async () => [] };
+    }),
+  );
+  const field = {
+    ...profile.fields[1],
+    key: "materials.assets[]",
+    label: "照片、录音与其他素材",
+  };
+  table({ ...profile, fields: [field], entries: [] });
+  fireEvent.click(await screen.findByRole("button", { name: "填写" }));
+  const form = screen.getByRole("form");
+  const file = new File(["photo"], "family-photo.jpg", { type: "image/jpeg" });
+  fireEvent.change(within(form).getByLabelText("上传照片、音频或视频"), {
+    target: { files: [file] },
+  });
+  await screen.findByRole("option", { name: "family-photo.jpg" });
+  fireEvent.click(within(form).getByRole("button", { name: "保存资料" }));
+  await waitFor(() => expect(profilesApi.patch).toHaveBeenCalledOnce());
+  expect(vi.mocked(profilesApi.patch).mock.calls[0][2][0]).toMatchObject({
+    field_key: "materials.assets[]",
+    value: {
+      title: "family-photo.jpg",
+      asset_id: "asset-1",
+      kind: "photo",
+    },
+    use_scope: "works",
+  });
+  const uploadRequest = vi
+    .mocked(fetch)
+    .mock.calls.find(([url]) => String(url).endsWith("/v1/evidence/assets"));
+  expect(uploadRequest?.[1]?.body).toBeInstanceOf(FormData);
+  expect((uploadRequest?.[1]?.body as FormData).get("consent_scope")).toBe(
+    "private",
+  );
+});

@@ -259,6 +259,13 @@ export function BookWritingPage() {
   const data = book.data;
   const chapter =
     data.chapters.find((c) => c.chapter_id === selected) || data.chapters[0];
+  const chapterIndex = data.chapters.findIndex(
+    (item) => item.chapter_id === chapter?.chapter_id,
+  );
+  const previousChapter =
+    chapterIndex > 0 ? data.chapters[chapterIndex - 1] : undefined;
+  const nextChapter =
+    chapterIndex >= 0 ? data.chapters[chapterIndex + 1] : undefined;
   const busy = generate.isPending || editing || data.chapters.some(active);
   const completed = data.chapters.filter((c) => c.current).length;
   function submit(mode: "chapter" | "all" | "missing") {
@@ -454,6 +461,34 @@ export function BookWritingPage() {
               busy={busy}
               onEditing={setEditing}
             />
+            <nav className="book-chapter-navigation" aria-label="章节导航">
+              <Button
+                variant="outline"
+                disabled={!previousChapter || editing || generate.isPending}
+                onClick={() => {
+                  if (!previousChapter) return;
+                  setSelected(previousChapter.chapter_id);
+                  setNotice("");
+                }}
+              >
+                <ArrowLeft size={16} aria-hidden="true" />
+                <span>上一章</span>
+                {previousChapter && <small>{previousChapter.title}</small>}
+              </Button>
+              <Button
+                variant="outline"
+                disabled={!nextChapter || editing || generate.isPending}
+                onClick={() => {
+                  if (!nextChapter) return;
+                  setSelected(nextChapter.chapter_id);
+                  setNotice("");
+                }}
+              >
+                <span>下一章</span>
+                {nextChapter && <small>{nextChapter.title}</small>}
+                <ArrowRight size={16} aria-hidden="true" />
+              </Button>
+            </nav>
           </article>
         )}
       </section>

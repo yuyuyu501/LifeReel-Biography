@@ -4,6 +4,7 @@ import {
   fireEvent,
   render,
   screen,
+  within,
   waitFor,
 } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
@@ -127,6 +128,24 @@ it("shows saved prose and both export formats without a target length", async ()
   );
   expect(
     screen.getByRole("link", { name: "导出 Markdown" }),
+  ).toBeInTheDocument();
+});
+
+it("moves between chapters from the manuscript footer", async () => {
+  setup();
+  const navigation = await screen.findByRole("navigation", {
+    name: "章节导航",
+  });
+  expect(
+    within(navigation).getByRole("button", { name: /上一章/ }),
+  ).toBeDisabled();
+  fireEvent.click(within(navigation).getByRole("button", { name: /下一章/ }));
+  expect(
+    await screen.findByRole("heading", { name: "求学", level: 2 }),
+  ).toBeInTheDocument();
+  fireEvent.click(within(navigation).getByRole("button", { name: /上一章/ }));
+  expect(
+    await screen.findByRole("heading", { name: "童年", level: 2 }),
   ).toBeInTheDocument();
 });
 
@@ -307,7 +326,12 @@ it("edits manuscript and preserves version history", async () => {
 
 it("empty chapters point to interviews and cannot generate without sources", async () => {
   setup();
-  fireEvent.click(await screen.findByRole("button", { name: /求学/ }));
+  await screen.findByRole("heading", { name: "章节目录" });
+  fireEvent.click(
+    await within(screen.getByRole("complementary")).findByRole("button", {
+      name: /求学/,
+    }),
+  );
   expect(screen.getByRole("button", { name: "生成本章" })).toBeDisabled();
   expect(screen.getByRole("link", { name: /前往采访/ })).toHaveAttribute(
     "href",

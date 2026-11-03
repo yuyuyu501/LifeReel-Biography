@@ -1,12 +1,13 @@
 import json
 import re
-from uuid import uuid5
+from uuid import UUID, uuid5
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 from sqlalchemy import select
 
 from lifereel_api.core.config import get_settings
 from lifereel_api.core.errors import ApiError, ErrorCode
+from lifereel_api.modules.identity.models import Person
 from lifereel_api.modules.interview import advice, companion, quality
 from lifereel_api.modules.interview import profile_service as profiles
 from lifereel_api.modules.interview.profile_models import LifeProfileRevision
@@ -53,6 +54,10 @@ field_key以[]结尾才是多条记录，新增用record_key=new；其他字段�
 整段经历只能内部保存时，preferences.exclusions记录整段限制，不能缩成仅不写原因。
 逐项检查新回答涉及哪些字段；事实已在别列出现，不代表对应列已经完整，也不要只整理最后一句。
 fields.question说明该列用途，不是要求照着问卷提问。仅整理本轮原话直接支持的维度，不猜缺项。
+speaker_context.record_subject是当前被记录人物，known_narrators是已经确认的讲述者及关系。
+代述时先依照recent_dialogue、已记录关系和本轮原话判断“我”指谁；不得把讲述者身份、
+出生信息或经历写到被记录人物名下。关系已清楚就沿用，不再问“您是在替谁讲述”；
+只有出现会影响事实归属的真实歧义时，才问一个必要澄清问题。
 家人对成长的作用写入family.members[]；家乡印象写入family.origin，而非只放童年日常。
 工作阶段及经营现状写入work.records[]，职责写入work.responsibilities；不能只记在搬迁或选择里。
 伴侣互相支持的共同经历写入relationships.events[]；对家人的寄语写入care.messages。
@@ -284,12 +289,30 @@ def process(db, tenant, profile_id, text, source, request_id, workflow=None):
                     "source_id": f"entry:{entry['id']}:v{entry['version_number']}",
                 }
             )
+        subject = db.get(Person, UUID(str(workspace["subject_id"])))
         material = {
             "fields": [
                 {k: field[k] for k in ("key", "label", "section", "kind", "question")}
                 for field in FIELD_MAP.values()
             ],
             "current_entries": context_entries,
+            "speaker_context": {
+                "record_subject": (
+                    (subject.preferred_name or subject.display_name)
+                    if subject
+                    else "当前档案人物"
+                ),
+                "known_narrators": [
+                    e["value"]
+                    for e in workspace["entries"]
+                    if e["field_key"] == "contributors.records[]"
+                    and e["state"] != "empty"
+                ],
+                "instruction": (
+                    "已记录的代述关系是当前上下文；若关系清楚，直接沿用。"
+                    "只有本轮确有歧义且会影响事实归属时才澄清一次。"
+                ),
+            },
             "entry_index": [
                 {
                     "id": e["id"],

@@ -372,6 +372,18 @@
 .profile-editor fieldset {
   min-width: 0;
 }
+.profile-material-upload {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  margin: 0 0 10px;
+}
+.profile-material-upload > span {
+  color: var(--muted-foreground);
+  font-size: 12px;
+  line-height: 1.5;
+}
 .profile-history {
   margin: 12px 0 20px;
   padding: 12px 0;

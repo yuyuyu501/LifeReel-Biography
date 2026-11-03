@@ -127,6 +127,33 @@ def test_lite_thinking_option_only_reaches_volcengine_interviews(
     assert llm.chat_json("system", "user") == {"ok": True}
 
 
+@pytest.mark.parametrize(
+    "task,backend,provider_name,expected_reasoning",
+    [
+        ("interview", "inherit", None, "low"),
+        ("interview_review", "inherit", None, "low"),
+        ("interview", "volcengine", "volcengine", None),
+        ("interview_review", "inherit", "volcengine", None),
+        ("memory", "inherit", None, None),
+    ],
+)
+def test_reasoning_effort_is_limited_to_cctq_interview_tasks(
+    llm, monkeypatch, task, backend, provider_name, expected_reasoning,
+):
+    settings = get_settings()
+    monkeypatch.setattr(settings, "interview_llm_backend", backend)
+    monkeypatch.setattr(settings, "interview_llm_reasoning_effort", "low")
+    llm.task = task
+    llm.provider = provider_name
+
+    def post(*args, **kwargs):
+        assert kwargs["json"].get("reasoning_effort") == expected_reasoning
+        return response(completion())
+
+    monkeypatch.setattr(httpx, "post", post)
+    assert llm.chat_json("system", "user") == {"ok": True}
+
+
 @pytest.mark.parametrize("value", [0, -1, float("inf"), float("nan"), 3601])
 @pytest.mark.parametrize("field", ["llm_read_timeout_seconds", "memory_llm_pool_timeout_seconds"])
 def test_timeout_settings_reject_disabled_unbounded_or_invalid(field, value):

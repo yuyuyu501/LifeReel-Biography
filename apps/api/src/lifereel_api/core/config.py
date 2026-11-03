@@ -132,6 +132,7 @@ class Settings(BaseSettings):
     interview_llm_model: str | None = None
     interview_llm_backend: Literal["inherit", "volcengine"] = "inherit"
     interview_llm_thinking: Literal["enabled", "disabled"] = "disabled"
+    interview_llm_reasoning_effort: Literal["low", "medium", "high"] = "low"
     interview_enhancements_enabled: bool = False
     interview_recording_method: Literal["legacy", "d4"] = "legacy"
     interview_d4_enhancement: Literal["baseline", "reasoning", "retrieval", "combined"] = "baseline"

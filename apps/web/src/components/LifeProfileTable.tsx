@@ -28,6 +28,7 @@ import {
   Signpost,
   Star,
   Trash2,
+  Upload,
   UserRound,
   UsersRound,
   X,
@@ -37,6 +38,7 @@ import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../api/client";
 import { profilesApi } from "../api/profiles";
+import { EVIDENCE_LIMITS, evidenceKindFromMime } from "../evidenceLimits";
 import { ErrorNotice } from "./QueryState";
 import { Button } from "./ui/button";
 import {
@@ -89,11 +91,26 @@ function display(value: unknown): string {
     return value.map(display).filter(Boolean).join("、");
   if (typeof value !== "object") return String(value);
   const labels: Record<string, string> = Object.fromEntries(eventFields);
+  const internalKeys = new Set([
+    "asset_id",
+    "kind",
+    "event_id",
+    "source_asset_id",
+    "facts",
+    "entity_id",
+    "object_entity_id",
+    "predicate",
+    "event_key",
+    "status",
+    "certainty",
+    "use_scope",
+    "source_id",
+    "evidence",
+    "binding_evidence",
+    "resolution",
+  ]);
   return Object.entries(value)
-    .filter(
-      ([key]) =>
-        !["asset_id", "kind", "event_id", "source_asset_id"].includes(key),
-    )
+    .filter(([key]) => !internalKeys.has(key))
     .map(([key, v]) => {
       const content = display(v);
       const label =
@@ -101,6 +118,7 @@ function display(value: unknown): string {
         (
           {
             name: "名称",
+            subject: "人物",
             relationship: "关系",
             role: "角色",
             institution: "机构",
@@ -131,6 +149,7 @@ export function LifeProfileTable({
 }) {
   const cache = useQueryClient();
   const editor = useRef<HTMLFormElement>(null);
+  const assetInput = useRef<HTMLInputElement>(null);
   const assets = useQuery({
     queryKey: ["profile-assets", profile.subject_id],
     queryFn: () => api.listEvidence(profile.subject_id),
@@ -180,6 +199,48 @@ export function LifeProfileTable({
         cache.invalidateQueries({ queryKey: ["profile-history", profile.id] }),
         cache.invalidateQueries({ queryKey: ["books"] }),
       ]);
+    },
+  });
+  const uploadAsset = useMutation({
+    mutationFn: async (file: File) => {
+      const kind =
+        evidenceKindFromMime(file.type) ??
+        (/\.(?:png|jpe?g|webp|gif|heic)$/i.test(file.name)
+          ? "photo"
+          : /\.(?:mp3|wav|m4a|aac|ogg|webm)$/i.test(file.name)
+            ? "audio"
+            : /\.(?:mp4|mov|webm|m4v)$/i.test(file.name)
+              ? "video"
+              : null);
+      if (!kind || kind === "document")
+        throw new Error("请选择照片、音频或视频文件。");
+      if (file.size > EVIDENCE_LIMITS[kind].bytes)
+        throw new Error(
+          `${EVIDENCE_LIMITS[kind].label}文件过大，单个文件不能超过${EVIDENCE_LIMITS[kind].display}。`,
+        );
+      return api.uploadEvidence({
+        subjectId: profile.subject_id,
+        kind,
+        consentScope: "private",
+        file,
+      });
+    },
+    onSuccess: (asset) => {
+      cache.setQueryData(
+        ["profile-assets", profile.subject_id],
+        (current: typeof assets.data) => [
+          ...(current || []).filter((item) => item.id !== asset.id),
+          asset,
+        ],
+      );
+      change({
+        value: {
+          ...(draft?.change.value as Record<string, unknown>),
+          title: asset.original_filename,
+          asset_id: asset.id,
+          kind: asset.kind,
+        },
+      });
     },
   });
   function begin(field: ProfileField, entry?: ProfileEntry) {
@@ -311,7 +372,35 @@ export function LifeProfileTable({
         ) : draft.field.key === "materials.assets[]" ? (
           <fieldset>
             <legend>关联已上传素材</legend>
+            <div className="profile-material-upload">
+              <input
+                ref={assetInput}
+                className="sr-only"
+                type="file"
+                aria-label="上传照片、音频或视频"
+                accept="image/*,audio/*,video/*"
+                disabled={uploadAsset.isPending}
+                onChange={(event) => {
+                  const file = event.target.files?.[0];
+                  event.target.value = "";
+                  if (file) uploadAsset.mutate(file);
+                }}
+              />
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={uploadAsset.isPending}
+                onClick={() => assetInput.current?.click()}
+              >
+                <Upload size={15} aria-hidden="true" />
+                {uploadAsset.isPending ? "正在上传…" : "上传照片、音频或视频"}
+              </Button>
+              <span>单个文件最大：图片 20 MB、音频 500 MB、视频 2 GB</span>
+            </div>
+            <ErrorNotice error={uploadAsset.error} />
             <select
+              disabled={uploadAsset.isPending}
               value={String(
                 (draft.change.value as Record<string, unknown>).asset_id || "",
               )}
@@ -403,7 +492,11 @@ export function LifeProfileTable({
         <Button
           type="submit"
           size="sm"
-          disabled={save.isPending || draft.version !== profile.version_number}
+          disabled={
+            save.isPending ||
+            uploadAsset.isPending ||
+            draft.version !== profile.version_number
+          }
         >
           {save.isPending ? "保存中……" : "保存资料"}
         </Button>

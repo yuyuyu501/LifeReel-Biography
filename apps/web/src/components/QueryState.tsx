@@ -13,6 +13,7 @@ export function QueryState({
 }) {
   const failed = queries.find((query) => query.isError);
   if (failed) {
+    const retrying = queries.some((query) => query.isFetching);
     return (
       <div className="query-state error" role="alert">
         <AlertCircle size={22} />
@@ -24,9 +25,16 @@ export function QueryState({
           variant="outline"
           size="sm"
           className="button secondary small"
-          onClick={() => failed.refetch()}
+          disabled={retrying}
+          onClick={() => {
+            void Promise.all(
+              queries
+                .filter((query) => query.isError)
+                .map((query) => query.refetch()),
+            );
+          }}
         >
-          <RefreshCw size={15} /> 重试
+          <RefreshCw size={15} /> {retrying ? "正在重试" : "重试"}
         </Button>
       </div>
     );

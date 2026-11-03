@@ -1,6 +1,7 @@
 export interface QueryLike {
   isPending: boolean;
   isError: boolean;
+  isFetching?: boolean;
   error: unknown;
   refetch: () => unknown;
 }

@@ -134,7 +134,11 @@ export function BookScriptGenerator({
             onClick={() => generate.mutate()}
           >
             <Sparkles size={16} aria-hidden="true" />
-            {generate.isPending ? "正在规划剧情与分镜……" : "生成剧本与分镜"}
+            {generate.isPending
+              ? "正在规划剧情与分镜……"
+              : generate.isError
+                ? "重新尝试生成"
+                : "生成剧本与分镜"}
           </Button>
         </div>
       </div>

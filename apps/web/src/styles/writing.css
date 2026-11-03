@@ -770,6 +770,31 @@
   font-size: 12px;
   line-height: 1.6;
 }
+.book-chapter-navigation {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 16px 20px 20px;
+  border-top: 1px solid var(--line);
+}
+.book-chapter-navigation > [data-slot="button"] {
+  min-width: 0;
+  max-width: min(48%, 360px);
+  gap: 8px;
+  justify-content: flex-start;
+  overflow: hidden;
+}
+.book-chapter-navigation > [data-slot="button"]:last-child {
+  margin-left: auto;
+  justify-content: flex-end;
+}
+.book-chapter-navigation small {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--muted-foreground);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .writing-page .writing-prose {
   max-width: 800px;
   margin: 0 auto;
@@ -937,5 +962,16 @@
     min-height: 300px;
     padding-right: 5px;
     padding-left: 5px;
+  }
+  .book-chapter-navigation {
+    padding: 14px;
+  }
+  .book-chapter-navigation > [data-slot="button"] {
+    max-width: 48%;
+    padding-right: 10px;
+    padding-left: 10px;
+  }
+  .book-chapter-navigation small {
+    display: none;
   }
 }

@@ -276,6 +276,8 @@ class OpenAICompatibleClient:
             and settings.interview_llm_backend == "volcengine"
         ):
             payload["thinking"] = {"type": settings.interview_llm_thinking}
+        elif task in {"interview", "interview_review"}:
+            payload["reasoning_effort"] = settings.interview_llm_reasoning_effort
         if json_output:
             payload["response_format"] = {"type": "json_object"}
         if output_schema is not None:

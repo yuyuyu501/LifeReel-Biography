@@ -558,6 +558,38 @@ def test_context_is_person_and_tenant_scoped(client, enhanced):
     assert profile["id"] != other["id"]
 
 
+def test_profile_extraction_receives_confirmed_narrator_context(
+    client, enhanced, monkeypatch,
+):
+    profile, session = setup(client)
+    profile = client.patch(f"/v1/life-profiles/{profile['id']}", json={
+        "expected_version": profile["version_number"],
+        "changes": [{
+            "field_key": "contributors.records[]",
+            "record_key": "daughter",
+            "value": {"name": "林晓", "relationship": "女儿"},
+        }],
+    }).json()
+    captured = {}
+
+    def provider(self, system, data):
+        material = json.loads(data)
+        if system != companion.AUDIT_PROMPT:
+            captured.update(material.get("speaker_context", {}))
+        if system == companion.AUDIT_PROMPT:
+            assert material["evidence"]["speaker_context"]["record_subject"] == "合成人物"
+            return review()
+        return candidate(material, "您还记得那时的生活吗？")
+
+    monkeypatch.setattr(OpenAICompatibleClient, "chat_json", provider)
+    run_profile(profile, "我是女儿林晓，替妈妈讲她的故事。")
+    assert captured["record_subject"] == "合成人物"
+    assert captured["known_narrators"] == [
+        {"name": "林晓", "relationship": "女儿"},
+    ]
+    assert "直接沿用" in captured["instruction"]
+
+
 def test_task_route_keeps_sol_and_other_tasks_on_cctq():
     settings = Settings(
         _env_file=None,
