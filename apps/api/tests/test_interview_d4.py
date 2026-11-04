@@ -6,12 +6,12 @@ from uuid import UUID, uuid4
 
 import httpx
 import pytest
-
-from lifereel_api.core.config import get_settings
-from lifereel_api.core.database import SessionLocal
 from lifereel_api.modules.interview import d4
 from lifereel_api.modules.interview.profile_extraction import process
 from lifereel_api.providers.openai_compatible import OpenAICompatibleClient
+
+from lifereel_api.core.config import get_settings
+from lifereel_api.core.database import SessionLocal
 
 
 def material(text="我1970年出生，我父亲1940年出生。"):
@@ -264,6 +264,77 @@ def test_sol_rebuilds_and_fills_empty_profile(client, enabled, monkeypatch):
     assert replay["profile"]["version_number"] == result["profile"]["version_number"]
     assert result["audit"]["recording_method"] == d4.VERSION
     assert all(t["status"] == "saved" for f in result["audit"]["fact_ledger"] for t in f["targets"])
+
+
+def test_balanced_interview_strategy_uses_profile_gaps_and_rewrites_low_value_followup(
+    enabled, monkeypatch
+):
+    data = material("车。")
+    data.update(
+        {
+            "readiness": {
+                "missing_fields": [
+                    {"key": "relationships.shared_life", "label": "婚后生活", "section": "关系"}
+                ]
+            },
+            "current_entries": [
+                {
+                    "id": str(uuid4()),
+                    "field_key": "relationships.shared_life",
+                    "record_key": "wedding",
+                    "value": {"what": "婚礼很热闹，有很多车和人"},
+                    "state": "filled",
+                    "certainty": "reported",
+                    "use_scope": "works",
+                    "source": {"quote": "婚礼很热闹，有很多车和人"},
+                }
+            ],
+            "recent_dialogue": [
+                {
+                    "id": "round:wedding:v1",
+                    "question": "婚礼那天有什么让您印象深刻？",
+                    "answer": "婚礼很热闹，有很多车和人。",
+                }
+            ],
+            "interview_policy": {
+                "topic_turns": 2,
+                "change_stage": False,
+                "instruction": "当前细节信息增量低时，转向尚未覆盖的人生经历。",
+            },
+        }
+    )
+    calls = []
+
+    def structured(self, prompt, value, schema, **kwargs):
+        payload = json.loads(value)
+        calls.append((self.model, prompt, payload))
+        sid = payload["target_source"]
+        if self.model == "lite-test":
+            reply = "那辆车还有什么特别之处？"
+        else:
+            assert payload["candidate_draft"]["next_question"] == "那辆车还有什么特别之处？"
+            reply = "结婚以后，您和家人最初的日子是怎么过的？"
+        result = draft([], source=sid)
+        result["next_question"] = reply
+        result["decision"].update(
+            action="transition" if self.model == "sol-test" else "deepen_scene",
+            question_goal="了解婚后初期生活" if self.model == "sol-test" else "了解车辆细节",
+            topic="婚后生活" if self.model == "sol-test" else "婚礼车辆",
+        )
+        return result
+
+    monkeypatch.setattr(OpenAICompatibleClient, "chat_structured", structured)
+    output, trace = d4.generate(OpenAICompatibleClient.for_task("interview"), data)
+
+    assert [call[0] for call in calls] == ["lite-test", "sol-test"]
+    for _, prompt, payload in calls:
+        assert "当前经历有可理解的概述且继续只能补次要细节时" in prompt
+        assert payload["readiness"]["missing_fields"][0]["key"] == "relationships.shared_life"
+        assert payload["current_entries"][0]["value"]["what"] == "婚礼很热闹，有很多车和人"
+        assert payload["recent_dialogue"][0]["answer"] == "婚礼很热闹，有很多车和人。"
+    assert trace["verdict"] == "pass"
+    assert output["decision"]["action"] == "transition"
+    assert output["next_question"] == "结婚以后，您和家人最初的日子是怎么过的？"
 
 
 def test_sol_timeout_fails_closed_without_retry(enabled, monkeypatch):
