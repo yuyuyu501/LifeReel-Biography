@@ -10,12 +10,13 @@ from pathlib import Path
 from uuid import UUID
 
 from fastapi import UploadFile, status
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from lifereel_api.core.capacity import limited
 from lifereel_api.core.config import get_settings
+from lifereel_api.core.database import Base
 from lifereel_api.core.errors import ApiError, ErrorCode
 from lifereel_api.core.processing_limits import require_memory_input
 from lifereel_api.modules.billing.usage import track_usage
@@ -229,6 +230,55 @@ def get_asset(db: Session, tenant_id: UUID, asset_id: UUID) -> SourceAsset:
     return asset
 
 
+def _references_asset(value: object, asset_id: str) -> bool:
+    if isinstance(value, dict):
+        return any(_references_asset(item, asset_id) for item in value.values())
+    if isinstance(value, list):
+        return any(_references_asset(item, asset_id) for item in value)
+    return isinstance(value, str) and value == asset_id
+
+
+def delete_asset(db: Session, tenant_id: UUID, asset_id: UUID) -> None:
+    """Remove unused uploads; retain storage objects to protect concurrent dedup uploads."""
+    from lifereel_api.modules.interview.profile_models import LifeProfileEntry
+    from lifereel_api.modules.jobs.models import Job
+
+    asset = db.scalar(
+        select(SourceAsset)
+        .where(
+            SourceAsset.id == asset_id,
+            SourceAsset.tenant_id == tenant_id,
+        )
+        .with_for_update()
+    )
+    if asset is None:
+        raise ApiError(404, ErrorCode.EVIDENCE_ASSET_NOT_FOUND)
+    identifier = str(asset_id)
+    entries = db.scalars(
+        select(LifeProfileEntry).where(
+            LifeProfileEntry.tenant_id == tenant_id,
+            LifeProfileEntry.state != "empty",
+        )
+    )
+    if any(_references_asset(entry.value, identifier) for entry in entries):
+        raise ApiError(409, ErrorCode.EVIDENCE_ASSET_IN_USE)
+    jobs = db.scalars(select(Job).where(Job.tenant_id == tenant_id))
+    if any(_references_asset(job.payload, identifier) for job in jobs):
+        raise ApiError(409, ErrorCode.EVIDENCE_ASSET_IN_USE)
+    # Any existing relational use (including transcripts, analysis and derived
+    # media) protects the source. Upload permits merely cache a completed upload.
+    for table in Base.metadata.sorted_tables:
+        for fk in table.foreign_keys:
+            if fk.column is SourceAsset.__table__.c.id:
+                predicate = fk.parent == asset_id
+                if table.name == "evidence_uploads":
+                    db.execute(update(table).where(predicate).values(asset_id=None))
+                elif db.execute(select(table).where(predicate).limit(1)).first():
+                    raise ApiError(409, ErrorCode.EVIDENCE_ASSET_IN_USE)
+    db.delete(asset)
+    db.commit()
+
+
 @limited("transcription")
 @track_usage("asr")
 def transcribe_asset(db: Session, tenant_id: UUID, asset_id: UUID) -> Transcript:
@@ -398,20 +448,21 @@ def list_observations(db: Session, tenant_id: UUID, asset_id: UUID) -> list[Evid
 def analyze_asset(db: Session, tenant_id: UUID, asset_id: UUID) -> EvidenceObservation:
     from lifereel_api.architecture.internal import call, committed_read
     from lifereel_api.architecture.topology import is_remote
+
     if is_remote("media"):
         committed_read(db)
         result = call("media", "evidence.analyze", tenant_id, {"asset_id": str(asset_id)})
-        return db.scalar(select(EvidenceObservation).where(
-            EvidenceObservation.id == UUID(result["observation_id"]),
-            EvidenceObservation.tenant_id == tenant_id,
-        ))
+        return db.scalar(
+            select(EvidenceObservation).where(
+                EvidenceObservation.id == UUID(result["observation_id"]),
+                EvidenceObservation.tenant_id == tenant_id,
+            )
+        )
     asset = get_asset(db, tenant_id, asset_id)
     if asset.is_redraw or asset.is_restoration:
         raise ApiError(422, ErrorCode.EVIDENCE_ANALYSIS_UNSUPPORTED)
     settings = get_settings()
-    content = (
-        private_storage().get(asset.storage_key) if asset.kind == "photo" else b""
-    )
+    content = private_storage().get(asset.storage_key) if asset.kind == "photo" else b""
     transcript_version: TranscriptVersion | None = None
     provider = "local"
     model_name: str | None = None
@@ -565,8 +616,11 @@ def analyze_asset(db: Session, tenant_id: UUID, asset_id: UUID) -> EvidenceObser
         text=text.strip(),
         locator={
             "filename": asset.original_filename,
-            **({"coverage": "full", "extracted_chars": len(text),
-                "source_sha256": asset.sha256} if asset.kind == "document" else {}),
+            **(
+                {"coverage": "full", "extracted_chars": len(text), "source_sha256": asset.sha256}
+                if asset.kind == "document"
+                else {}
+            ),
         },
         confidence=confidence,
         review_status="unreviewed",

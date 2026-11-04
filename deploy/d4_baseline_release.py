@@ -25,6 +25,12 @@ POOLS = {
     "script": ",".join((PRIMARY, PRO, LITE)),
 }
 MODULES = {
+    "lifereel_api.modules.evidence.router": (
+        "services/media/src/lifereel_api/modules/evidence/router.py"
+    ),
+    "lifereel_api.modules.evidence.service": (
+        "services/media/src/lifereel_api/modules/evidence/service.py"
+    ),
     **{
         f"lifereel_api.modules.interview.{name}": (
             f"services/interview/src/lifereel_api/modules/interview/{name}.py"

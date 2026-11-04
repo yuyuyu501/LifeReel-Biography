@@ -1,4 +1,6 @@
 export const ERROR_MESSAGES: Record<string, string> = {
+  EVIDENCE_ASSET_IN_USE:
+    "该文件仍被资料条目、采访或作品引用。请先解除资料关联；已用于采访或作品的原始素材暂不能删除。",
   PROFILE_NOT_FOUND: "未找到这份资料或条目，请刷新确认。",
   PROFILE_EDIT_CONFLICT:
     "资料已有新版本，您的草稿保留，请核对最新内容后再保存。",

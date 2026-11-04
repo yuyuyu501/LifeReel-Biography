@@ -436,56 +436,137 @@ test("internal evidence and graph keys are omitted from nested fact display", ()
   expect(row).not.toHaveTextContent("hidden quotation");
 });
 
-test("uploaded material is attached to the draft and saved as a private asset", async () => {
-  const uploaded = {
-    id: "asset-1",
-    original_filename: "family-photo.jpg",
-    kind: "photo",
-  };
-  vi.stubGlobal(
-    "fetch",
-    vi.fn(async (input: string | URL | Request) => {
-      const url = String(input);
-      if (url.endsWith("/v1/evidence/upload-settings"))
-        return {
-          ok: true,
-          status: 200,
-          json: async () => ({ direct_upload: false }),
-        };
-      if (url.endsWith("/v1/evidence/assets"))
-        return { ok: true, status: 201, json: async () => uploaded };
-      return { ok: true, status: 200, json: async () => [] };
-    }),
-  );
-  const field = {
-    ...profile.fields[1],
-    key: "materials.assets[]",
-    label: "照片、录音与其他素材",
-  };
-  table({ ...profile, fields: [field], entries: [] });
-  fireEvent.click(await screen.findByRole("button", { name: "填写" }));
-  const form = screen.getByRole("form");
-  const file = new File(["photo"], "family-photo.jpg", { type: "image/jpeg" });
-  fireEvent.change(within(form).getByLabelText("上传照片、音频或视频"), {
-    target: { files: [file] },
-  });
-  await screen.findByRole("option", { name: "family-photo.jpg" });
-  fireEvent.click(within(form).getByRole("button", { name: "保存资料" }));
-  await waitFor(() => expect(profilesApi.patch).toHaveBeenCalledOnce());
-  expect(vi.mocked(profilesApi.patch).mock.calls[0][2][0]).toMatchObject({
-    field_key: "materials.assets[]",
-    value: {
-      title: "family-photo.jpg",
-      asset_id: "asset-1",
-      kind: "photo",
-    },
-    use_scope: "works",
-  });
-  const uploadRequest = vi
-    .mocked(fetch)
-    .mock.calls.find(([url]) => String(url).endsWith("/v1/evidence/assets"));
-  expect(uploadRequest?.[1]?.body).toBeInstanceOf(FormData);
-  expect((uploadRequest?.[1]?.body as FormData).get("consent_scope")).toBe(
-    "private",
-  );
-});
+test.each([
+  ["family-photo.jpg", "image/jpeg", "photo"],
+  ["memoir.txt", "text/plain", "document"],
+  ["memoir.txt", "", "document"],
+])(
+  "uploaded %s is attached and saved as a private asset",
+  async (filename, mime, kind) => {
+    const uploaded = {
+      id: "asset-1",
+      original_filename: filename,
+      kind,
+    };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: string | URL | Request) => {
+        const url = String(input);
+        if (url.endsWith("/v1/evidence/upload-settings"))
+          return {
+            ok: true,
+            status: 200,
+            json: async () => ({ direct_upload: false }),
+          };
+        if (url.endsWith("/v1/evidence/assets"))
+          return { ok: true, status: 201, json: async () => uploaded };
+        return { ok: true, status: 200, json: async () => [] };
+      }),
+    );
+    const field = {
+      ...profile.fields[1],
+      key: "materials.assets[]",
+      label: "照片、录音与其他素材",
+    };
+    table({ ...profile, fields: [field], entries: [] });
+    fireEvent.click(await screen.findByRole("button", { name: "填写" }));
+    const form = screen.getByRole("form");
+    const file = new File(["synthetic material"], filename, { type: mime });
+    fireEvent.change(
+      within(form).getByLabelText("上传照片、音频、视频或文档"),
+      {
+        target: { files: [file] },
+      },
+    );
+    await screen.findByRole("option", { name: filename });
+    fireEvent.click(within(form).getByRole("button", { name: "保存资料" }));
+    await waitFor(() => expect(profilesApi.patch).toHaveBeenCalledOnce());
+    expect(vi.mocked(profilesApi.patch).mock.calls[0][2][0]).toMatchObject({
+      field_key: "materials.assets[]",
+      value: {
+        title: filename,
+        asset_id: "asset-1",
+        kind,
+      },
+      use_scope: "works",
+    });
+    const uploadRequest = vi
+      .mocked(fetch)
+      .mock.calls.find(([url]) => String(url).endsWith("/v1/evidence/assets"));
+    expect(uploadRequest?.[1]?.body).toBeInstanceOf(FormData);
+    expect((uploadRequest?.[1]?.body as FormData).get("consent_scope")).toBe(
+      "private",
+    );
+  },
+);
+
+test.each([false, true])(
+  "file deletion confirms, refreshes, and preserves failed selections (%s)",
+  async (fails) => {
+    const asset = {
+      id: "asset-delete",
+      original_filename: "memoir.txt",
+      kind: "document",
+    };
+    const fetchMock = vi.fn(
+      async (_input: string | URL | Request, init?: RequestInit) => {
+        if (init?.method === "DELETE")
+          return fails
+            ? {
+                ok: false,
+                status: 409,
+                json: async () => ({
+                  error: { code: "EVIDENCE_ASSET_IN_USE" },
+                }),
+              }
+            : { ok: true, status: 204, json: async () => undefined };
+        return { ok: true, status: 200, json: async () => [asset] };
+      },
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const field = {
+      ...profile.fields[1],
+      key: "materials.assets[]",
+      label: "照片、录音与其他素材",
+    };
+    table({ ...profile, fields: [field], entries: [] });
+    fireEvent.click(await screen.findByRole("button", { name: "填写" }));
+    await screen.findByRole("option", { name: "memoir.txt" });
+    const select = screen
+      .getByRole("option", { name: "memoir.txt" })
+      .closest("select")!;
+    fireEvent.change(select, { target: { value: asset.id } });
+    fireEvent.click(screen.getByRole("button", { name: "删除选中文件" }));
+    expect(
+      fetchMock.mock.calls.some(([, init]) => init?.method === "DELETE"),
+    ).toBe(false);
+    fireEvent.click(screen.getByRole("button", { name: "保留文件" }));
+    expect(select).toHaveValue(asset.id);
+    fireEvent.click(screen.getByRole("button", { name: "删除选中文件" }));
+    fireEvent.click(screen.getByRole("button", { name: "确认删除文件" }));
+    await waitFor(() =>
+      expect(
+        fetchMock.mock.calls.some(
+          ([url, init]) =>
+            String(url).endsWith("/v1/evidence/assets/asset-delete") &&
+            init?.method === "DELETE",
+        ),
+      ).toBe(true),
+    );
+    if (fails) {
+      await screen.findByText(/该文件仍被资料条目/);
+      expect(select).toHaveValue(asset.id);
+      expect(
+        screen.getByRole("option", { name: "memoir.txt" }),
+      ).toBeInTheDocument();
+    } else {
+      await waitFor(() =>
+        expect(
+          screen.queryByRole("option", { name: "memoir.txt" }),
+        ).not.toBeInTheDocument(),
+      );
+      expect(select).toHaveValue("");
+    }
+    expect(profilesApi.patch).not.toHaveBeenCalled();
+  },
+);

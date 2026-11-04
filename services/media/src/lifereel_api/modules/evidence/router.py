@@ -160,13 +160,21 @@ def asset_content(
     )
 
 
+@router.delete("/assets/{asset_id}", status_code=204)
+def delete_asset(asset_id: UUID, db: Db, tenant_id: Tenant) -> Response:
+    service.delete_asset(db, tenant_id, asset_id)
+    return Response(status_code=204)
+
+
 @router.get("/assets/{asset_id}/redraw")
 def redraw_status(asset_id: UUID, db: Db, tenant_id: Tenant) -> dict:
     job = redraw.current_job(db, tenant_id, asset_id)
     settings = get_settings()
     configured = (
-        settings.photo_redraw_provider == "siliconflow" and bool(settings.siliconflow_api_key)
-        or settings.photo_redraw_provider == "mock" and settings.is_development
+        settings.photo_redraw_provider == "siliconflow"
+        and bool(settings.siliconflow_api_key)
+        or settings.photo_redraw_provider == "mock"
+        and settings.is_development
     )
     return {
         "enabled": configured and settings.job_queue_backend == "database",

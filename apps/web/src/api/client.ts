@@ -472,6 +472,8 @@ export const api = {
     request<SourceAsset[]>(
       `/v1/evidence/assets${subjectId ? `?subject_id=${subjectId}` : ""}`,
     ),
+  deleteEvidence: (assetId: string) =>
+    request<void>(`/v1/evidence/assets/${assetId}`, { method: "DELETE" }),
   getTranscript: (transcriptId: string) =>
     request<Transcript>(`/v1/evidence/transcripts/${transcriptId}`),
   getAssetTranscript: (assetId: string) =>

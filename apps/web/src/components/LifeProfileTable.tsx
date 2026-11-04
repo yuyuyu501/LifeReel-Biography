@@ -162,6 +162,7 @@ export function LifeProfileTable({
     request: string;
   } | null>(null);
   const [showHistory, setShowHistory] = useState(false);
+  const [confirmAssetDelete, setConfirmAssetDelete] = useState(false);
   const [filter, setFilter] = useState<"all" | "empty">("all");
   const [category, setCategory] = useState("all");
   const [expandedValues, setExpandedValues] = useState<string[]>([]);
@@ -211,9 +212,11 @@ export function LifeProfileTable({
             ? "audio"
             : /\.(?:mp4|mov|webm|m4v)$/i.test(file.name)
               ? "video"
-              : null);
-      if (!kind || kind === "document")
-        throw new Error("请选择照片、音频或视频文件。");
+              : /\.(?:txt|md|pdf)$/i.test(file.name)
+                ? "document"
+                : null);
+      if (!kind)
+        throw new Error("请选择照片、音频、视频或 TXT、Markdown、PDF 文档。");
       if (file.size > EVIDENCE_LIMITS[kind].bytes)
         throw new Error(
           `${EVIDENCE_LIMITS[kind].label}文件过大，单个文件不能超过${EVIDENCE_LIMITS[kind].display}。`,
@@ -243,8 +246,24 @@ export function LifeProfileTable({
       });
     },
   });
+  const deleteAsset = useMutation({
+    mutationFn: (id: string) => api.deleteEvidence(id),
+    onSuccess: async (_, id) => {
+      cache.setQueryData(
+        ["profile-assets", profile.subject_id],
+        (current: typeof assets.data) =>
+          (current || []).filter((item) => item.id !== id),
+      );
+      change({ value: {} });
+      setConfirmAssetDelete(false);
+      await cache.invalidateQueries({ queryKey: ["evidence"] });
+    },
+  });
   function begin(field: ProfileField, entry?: ProfileEntry) {
     save.reset();
+    uploadAsset.reset();
+    deleteAsset.reset();
+    setConfirmAssetDelete(false);
     setDraft({
       field,
       entry,
@@ -311,11 +330,21 @@ export function LifeProfileTable({
       aria-label={`编辑${draft.field.label}`}
       onSubmit={(e) => {
         e.preventDefault();
-        if (!save.isPending && draft.version === profile.version_number)
+        if (
+          !save.isPending &&
+          !uploadAsset.isPending &&
+          !deleteAsset.isPending &&
+          draft.version === profile.version_number
+        )
           save.mutate();
       }}
     >
-      <fieldset className="profile-editor-content" disabled={save.isPending}>
+      <fieldset
+        className="profile-editor-content"
+        disabled={
+          save.isPending || uploadAsset.isPending || deleteAsset.isPending
+        }
+      >
         {structuredEvent ? (
           [
             ...(draft.field.key.endsWith("events[]") ? eventFields : []),
@@ -377,9 +406,13 @@ export function LifeProfileTable({
                 ref={assetInput}
                 className="sr-only"
                 type="file"
-                aria-label="上传照片、音频或视频"
-                accept="image/*,audio/*,video/*"
-                disabled={uploadAsset.isPending}
+                aria-label="上传照片、音频、视频或文档"
+                accept="image/*,audio/*,video/*,.txt,.md,.pdf,text/plain,text/markdown,application/pdf"
+                disabled={
+                  uploadAsset.isPending ||
+                  deleteAsset.isPending ||
+                  save.isPending
+                }
                 onChange={(event) => {
                   const file = event.target.files?.[0];
                   event.target.value = "";
@@ -390,21 +423,31 @@ export function LifeProfileTable({
                 type="button"
                 variant="outline"
                 size="sm"
-                disabled={uploadAsset.isPending}
+                disabled={
+                  uploadAsset.isPending ||
+                  deleteAsset.isPending ||
+                  save.isPending
+                }
                 onClick={() => assetInput.current?.click()}
               >
                 <Upload size={15} aria-hidden="true" />
-                {uploadAsset.isPending ? "正在上传…" : "上传照片、音频或视频"}
+                {uploadAsset.isPending
+                  ? "正在上传…"
+                  : "上传照片、音频、视频或文档"}
               </Button>
-              <span>单个文件最大：图片 20 MB、音频 500 MB、视频 2 GB</span>
+              <span>
+                单个文件最大：图片 20 MB、文档 50 MB、音频 500 MB、视频 2 GB
+              </span>
             </div>
             <ErrorNotice error={uploadAsset.error} />
             <select
-              disabled={uploadAsset.isPending}
+              disabled={uploadAsset.isPending || deleteAsset.isPending}
               value={String(
                 (draft.change.value as Record<string, unknown>).asset_id || "",
               )}
               onChange={(e) => {
+                setConfirmAssetDelete(false);
+                deleteAsset.reset();
                 const asset = assets.data?.find((a) => a.id === e.target.value);
                 if (asset)
                   change({
@@ -416,13 +459,63 @@ export function LifeProfileTable({
                   });
               }}
             >
-              <option value="">请选择照片、录音或文档</option>
+              <option value="">请选择照片、录音、视频或文档</option>
               {assets.data?.map((a) => (
                 <option key={a.id} value={a.id}>
                   {a.original_filename}
                 </option>
               ))}
             </select>
+            {Boolean(
+              (draft.change.value as Record<string, unknown>).asset_id,
+            ) && (
+              <div className="profile-material-upload">
+                {!confirmAssetDelete ? (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={uploadAsset.isPending || save.isPending}
+                    onClick={() => setConfirmAssetDelete(true)}
+                  >
+                    <Trash2 size={15} />
+                    删除选中文件
+                  </Button>
+                ) : (
+                  <>
+                    <span>
+                      确认从上传列表移除该文件？历史引用受保护，底层存储副本由管理员清理。
+                    </span>
+                    <Button
+                      type="button"
+                      variant="destructive"
+                      size="sm"
+                      disabled={deleteAsset.isPending}
+                      onClick={() =>
+                        deleteAsset.mutate(
+                          String(
+                            (draft.change.value as Record<string, unknown>)
+                              .asset_id,
+                          ),
+                        )
+                      }
+                    >
+                      {deleteAsset.isPending ? "正在删除…" : "确认删除文件"}
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      disabled={deleteAsset.isPending}
+                      onClick={() => setConfirmAssetDelete(false)}
+                    >
+                      保留文件
+                    </Button>
+                  </>
+                )}
+              </div>
+            )}
+            <ErrorNotice error={deleteAsset.error} />
             <label>
               素材说明
               <Textarea
@@ -495,6 +588,7 @@ export function LifeProfileTable({
           disabled={
             save.isPending ||
             uploadAsset.isPending ||
+            deleteAsset.isPending ||
             draft.version !== profile.version_number
           }
         >
@@ -505,7 +599,9 @@ export function LifeProfileTable({
           variant="outline"
           size="sm"
           onClick={() => setDraft(null)}
-          disabled={save.isPending}
+          disabled={
+            save.isPending || uploadAsset.isPending || deleteAsset.isPending
+          }
         >
           取消
         </Button>
