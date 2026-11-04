@@ -239,8 +239,10 @@ def _references_asset(value: object, asset_id: str) -> bool:
 
 
 def delete_asset(db: Session, tenant_id: UUID, asset_id: UUID) -> None:
-    """Remove unused uploads; retain storage objects to protect concurrent dedup uploads."""
-    from lifereel_api.modules.interview.profile_models import LifeProfileEntry
+    """Unlink material entries and delete atomically; preserve historical sources."""
+    from lifereel_api.modules.interview import profile_service
+    from lifereel_api.modules.interview.profile_models import LifeProfile, LifeProfileEntry
+    from lifereel_api.modules.interview.profile_schemas import EntryChange, ProfilePatch
     from lifereel_api.modules.jobs.models import Job
 
     asset = db.scalar(
@@ -254,27 +256,72 @@ def delete_asset(db: Session, tenant_id: UUID, asset_id: UUID) -> None:
     if asset is None:
         raise ApiError(404, ErrorCode.EVIDENCE_ASSET_NOT_FOUND)
     identifier = str(asset_id)
+    # Profile patches lock the parent too. Read links only after locking, so
+    # deleting a material cannot overwrite a newer edit to that profile.
+    profiles = list(
+        db.scalars(
+            select(LifeProfile)
+            .where(LifeProfile.tenant_id == tenant_id)
+            .order_by(LifeProfile.id)
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
+    )
     entries = db.scalars(
         select(LifeProfileEntry).where(
             LifeProfileEntry.tenant_id == tenant_id,
             LifeProfileEntry.state != "empty",
         )
     )
-    if any(_references_asset(entry.value, identifier) for entry in entries):
-        raise ApiError(409, ErrorCode.EVIDENCE_ASSET_IN_USE)
+    links: dict[UUID, list[LifeProfileEntry]] = {}
+    for entry in entries:
+        if not _references_asset(entry.value, identifier):
+            continue
+        if (
+            entry.field_key != "materials.assets[]"
+            or not isinstance(entry.value, dict)
+            or entry.value.get("asset_id") != identifier
+        ):
+            raise ApiError(409, ErrorCode.EVIDENCE_ASSET_IN_USE)
+        links.setdefault(entry.profile_id, []).append(entry)
     jobs = db.scalars(select(Job).where(Job.tenant_id == tenant_id))
     if any(_references_asset(job.payload, identifier) for job in jobs):
         raise ApiError(409, ErrorCode.EVIDENCE_ASSET_IN_USE)
     # Any existing relational use (including transcripts, analysis and derived
     # media) protects the source. Upload permits merely cache a completed upload.
+    permits = []
     for table in Base.metadata.sorted_tables:
         for fk in table.foreign_keys:
             if fk.column is SourceAsset.__table__.c.id:
                 predicate = fk.parent == asset_id
                 if table.name == "evidence_uploads":
-                    db.execute(update(table).where(predicate).values(asset_id=None))
+                    permits.append((table, predicate))
                 elif db.execute(select(table).where(predicate).limit(1)).first():
                     raise ApiError(409, ErrorCode.EVIDENCE_ASSET_IN_USE)
+    for profile in profiles:
+        if profile.id not in links:
+            continue
+        profile_service.patch(
+            db,
+            tenant_id,
+            profile.id,
+            ProfilePatch(
+                expected_version=profile.version_number,
+                changes=[
+                    EntryChange(
+                        id=entry.id,
+                        field_key=entry.field_key,
+                        record_key=entry.record_key,
+                        delete=True,
+                    )
+                    for entry in links[profile.id]
+                ],
+            ),
+            actor="manual:asset-delete",
+            commit=False,
+        )
+    for table, predicate in permits:
+        db.execute(update(table).where(predicate).values(asset_id=None))
     db.delete(asset)
     db.commit()
 

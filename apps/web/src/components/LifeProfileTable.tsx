@@ -254,9 +254,16 @@ export function LifeProfileTable({
         (current: typeof assets.data) =>
           (current || []).filter((item) => item.id !== id),
       );
-      change({ value: {} });
+      setDraft(null);
       setConfirmAssetDelete(false);
-      await cache.invalidateQueries({ queryKey: ["evidence"] });
+      await Promise.all([
+        cache.invalidateQueries({ queryKey: ["evidence"] }),
+        cache.invalidateQueries({ queryKey: ["life-profile"] }),
+        cache.invalidateQueries({ queryKey: ["interview-workspace"] }),
+        cache.invalidateQueries({ queryKey: ["profile-history", profile.id] }),
+        cache.invalidateQueries({ queryKey: ["books"] }),
+        cache.invalidateQueries({ queryKey: ["memories"] }),
+      ]);
     },
   });
   function begin(field: ProfileField, entry?: ProfileEntry) {
@@ -484,7 +491,7 @@ export function LifeProfileTable({
                 ) : (
                   <>
                     <span>
-                      确认从上传列表移除该文件？历史引用受保护，底层存储副本由管理员清理。
+                      确认删除该文件并移除资料表中的关联条目？已用于采访或作品的文件会受到保护，底层存储副本由管理员清理。
                     </span>
                     <Button
                       type="button"

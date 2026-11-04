@@ -272,7 +272,14 @@ def read(db, tenant, profile_id):
     }
 
 
-def patch(db, tenant, profile_id, payload: ProfilePatch, *, actor="manual", source=None):
+def patch(
+    db, tenant, profile_id, payload: ProfilePatch, *, actor="manual", source=None, commit=True
+):
+    """Apply a versioned patch; callers using commit=False own the transaction.
+
+    The transactional outbox still schedules memory synchronization when the
+    caller commits, without an RPC observing an uncommitted profile.
+    """
     profile = get(db, tenant, profile_id, lock=True)
     fingerprint = digest(payload.model_dump(mode="json"))
     prior = db.scalar(
@@ -286,8 +293,9 @@ def patch(db, tenant, profile_id, payload: ProfilePatch, *, actor="manual", sour
             raise ApiError(409, ErrorCode.PROFILE_REQUEST_CONFLICT)
         # Memory locks this same profile in its own database session.
         # Replaying an accepted request must release our lock before that RPC.
-        db.commit()
-        sync_memory(db, tenant, profile_id)
+        if commit:
+            db.commit()
+            sync_memory(db, tenant, profile_id)
         return read(db, tenant, profile_id)
     if profile.version_number != payload.expected_version:
         raise ApiError(409, ErrorCode.PROFILE_EDIT_CONFLICT)
@@ -417,8 +425,9 @@ def patch(db, tenant, profile_id, payload: ProfilePatch, *, actor="manual", sour
     db.flush()
     profile.readiness = evaluate(db, profile)
     enqueue_sync(db, tenant, profile)
-    db.commit()
-    sync_memory(db, tenant, profile.id)
+    if commit:
+        db.commit()
+        sync_memory(db, tenant, profile.id)
     return read(db, tenant, profile_id)
 
 

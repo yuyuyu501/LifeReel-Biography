@@ -128,6 +128,7 @@ function table(data = profile) {
   const result = render(view(data));
   return {
     onTalk,
+    client,
     update: (current: LifeProfile) => result.rerender(view(current)),
   };
 }
@@ -554,7 +555,7 @@ test.each([false, true])(
       ).toBe(true),
     );
     if (fails) {
-      await screen.findByText(/该文件仍被资料条目/);
+      await screen.findByText(/该文件已用于采访/);
       expect(select).toHaveValue(asset.id);
       expect(
         screen.getByRole("option", { name: "memoir.txt" }),
@@ -565,8 +566,63 @@ test.each([false, true])(
           screen.queryByRole("option", { name: "memoir.txt" }),
         ).not.toBeInTheDocument(),
       );
-      expect(select).toHaveValue("");
+      expect(screen.queryByRole("form")).not.toBeInTheDocument();
     }
     expect(profilesApi.patch).not.toHaveBeenCalled();
   },
 );
+
+test("deleting a saved material closes its editor and refreshes the linked profile", async () => {
+  const asset = {
+    id: "asset-linked",
+    original_filename: "saved-video.mp4",
+    kind: "video",
+  };
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (_input: string | URL | Request, init?: RequestInit) =>
+      init?.method === "DELETE"
+        ? { ok: true, status: 204, json: async () => undefined }
+        : { ok: true, status: 200, json: async () => [asset] },
+    ),
+  );
+  const field = {
+    ...profile.fields[1],
+    key: "materials.assets[]",
+    label: "照片、录音与其他素材",
+  };
+  const savedEntry = entry("linked-entry", field.key, "", {
+    value: {
+      asset_id: asset.id,
+      title: asset.original_filename,
+      kind: asset.kind,
+    },
+  });
+  const { client } = table({
+    ...profile,
+    fields: [field],
+    entries: [savedEntry],
+  });
+  const invalidate = vi.spyOn(client, "invalidateQueries");
+  fireEvent.click(screen.getByRole("button", { name: "编辑资料" }));
+  await screen.findByRole("option", { name: asset.original_filename });
+  fireEvent.click(screen.getByRole("button", { name: "删除选中文件" }));
+  expect(
+    screen.getByText(/确认删除该文件并移除资料表中的关联条目/),
+  ).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "确认删除文件" }));
+  await waitFor(() =>
+    expect(screen.queryByRole("form")).not.toBeInTheDocument(),
+  );
+  expect(invalidate).toHaveBeenCalledWith({ queryKey: ["life-profile"] });
+  expect(invalidate).toHaveBeenCalledWith({
+    queryKey: ["interview-workspace"],
+  });
+  expect(invalidate).toHaveBeenCalledWith({
+    queryKey: ["profile-history", profile.id],
+  });
+  expect(client.getQueryData(["profile-assets", profile.subject_id])).toEqual(
+    [],
+  );
+  expect(profilesApi.patch).not.toHaveBeenCalled();
+});

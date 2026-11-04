@@ -3,7 +3,6 @@ from uuid import UUID, uuid4
 
 import pytest
 from lifereel_api.modules.evidence.models import SourceAsset, Transcript
-from lifereel_api.modules.interview.profile_models import LifeProfile, LifeProfileEntry
 from sqlalchemy import select
 
 from lifereel_api.core.config import get_settings
@@ -47,38 +46,147 @@ def test_cannot_delete_other_tenant_asset(client):
     assert client.get(url + "/content").status_code == 200
 
 
-@pytest.mark.parametrize("reference", ["profile", "transcript"])
-def test_referenced_asset_is_preserved(client, reference):
-    person, asset = upload(client)
+def test_transcript_source_is_preserved(client):
+    _, asset = upload(client)
     with SessionLocal() as db:
-        tenant = get_settings().default_tenant_id
-        if reference == "transcript":
-            db.add(Transcript(tenant_id=tenant, source_asset_id=UUID(asset["id"])))
-        else:
-            profile = db.scalar(
-                select(LifeProfile).where(LifeProfile.subject_id == UUID(person["id"]))
+        db.add(
+            Transcript(
+                tenant_id=get_settings().default_tenant_id, source_asset_id=UUID(asset["id"])
             )
-            if profile is None:
-                profile = LifeProfile(
-                    tenant_id=tenant, subject_id=UUID(person["id"]), template_version="test"
-                )
-                db.add(profile)
-                db.flush()
-            db.add(
-                LifeProfileEntry(
-                    tenant_id=tenant,
-                    profile_id=profile.id,
-                    field_key="materials.assets[]",
-                    record_key="test",
-                    value={"asset_id": asset["id"]},
-                )
-            )
+        )
         db.commit()
     url = f"/v1/evidence/assets/{asset['id']}"
     response = client.delete(url)
     assert response.status_code == 409, response.text
     assert response.json()["error"]["code"] == "EVIDENCE_ASSET_IN_USE"
     assert client.get(url + "/content").status_code == 200
+
+
+def link_material(client, person, asset, *, repeats=1):
+    profile = client.get("/v1/life-profiles/subjects/" + person["id"]).json()
+    response = client.patch(
+        "/v1/life-profiles/" + profile["id"],
+        json={
+            "expected_version": profile["version_number"],
+            "request_id": str(uuid4()),
+            "changes": [
+                {
+                    "field_key": "materials.assets[]",
+                    "record_key": "material-" + str(i),
+                    "value": {"asset_id": asset["id"], "title": "合成资料"},
+                }
+                for i in range(repeats)
+            ],
+        },
+    )
+    assert response.status_code == 200, response.text
+    return response.json()
+
+
+@pytest.mark.parametrize("repeats", [1, 2])
+def test_delete_unlinks_saved_material_and_updates_profile_history(client, repeats):
+    from lifereel_api.modules.interview.profile_models import LifeProfileRevision
+    from lifereel_api.modules.interview.profile_service import sync_memory
+    from lifereel_api.modules.jobs.events import OutboxEvent
+    from lifereel_api.modules.memory.models import MemoryClaim
+
+    person, asset = upload(client)
+    profile = link_material(client, person, asset, repeats=repeats)
+    other_person = client.post("/v1/persons", json={"display_name": "另一个合成人物"}).json()
+    other_profile = client.get("/v1/life-profiles/subjects/" + other_person["id"]).json()
+    url = f"/v1/evidence/assets/{asset['id']}"
+    assert client.delete(url).status_code == 204
+    assert client.get(url + "/content").status_code == 404
+    assert client.get("/v1/evidence/assets", params={"subject_id": person["id"]}).json() == []
+    updated = client.get("/v1/life-profiles/" + profile["id"]).json()
+    assert updated["version_number"] == profile["version_number"] + 1
+    assert updated["readiness"]["profile_version"] == updated["version_number"]
+    materials = [e for e in updated["entries"] if e["field_key"] == "materials.assets[]"]
+    assert len(materials) == repeats
+    assert all(e["state"] == "empty" and e["value"] == "" for e in materials)
+    assert client.get("/v1/life-profiles/" + other_profile["id"]).json() == other_profile
+    with SessionLocal() as db:
+        revision = db.scalar(
+            select(LifeProfileRevision).where(
+                LifeProfileRevision.profile_id == UUID(profile["id"]),
+                LifeProfileRevision.version_number == updated["version_number"],
+            )
+        )
+        assert revision.actor == "manual:asset-delete"
+        assert len(revision.changes) == repeats
+        assert all(c["after"] is None for c in revision.changes)
+        assert (
+            db.scalar(
+                select(OutboxEvent).where(
+                    OutboxEvent.event_type == "profile.sync.requested",
+                    OutboxEvent.aggregate_id == UUID(profile["id"]),
+                    OutboxEvent.payload["version"].as_integer() == updated["version_number"],
+                )
+            )
+            is not None
+        )
+        sync_memory(db, get_settings().default_tenant_id, UUID(profile["id"]))
+        claims = list(
+            db.scalars(
+                select(MemoryClaim).where(
+                    MemoryClaim.profile_entry_id.in_([UUID(e["id"]) for e in materials]),
+                )
+            )
+        )
+        assert len(claims) == repeats
+        assert all(c.review_status == "superseded" for c in claims)
+    # A stale editor must not restore the removed link after the profile version changed.
+    stale = client.patch(
+        "/v1/life-profiles/" + profile["id"],
+        json={
+            "expected_version": profile["version_number"],
+            "request_id": str(uuid4()),
+            "changes": [
+                {
+                    "field_key": "materials.assets[]",
+                    "record_key": "material-0",
+                    "value": {"asset_id": asset["id"]},
+                }
+            ],
+        },
+    )
+    assert stale.status_code == 409
+
+
+def test_protected_source_does_not_partially_unlink_profile(client):
+    person, asset = upload(client)
+    profile = link_material(client, person, asset)
+    with SessionLocal() as db:
+        db.add(
+            Transcript(
+                tenant_id=get_settings().default_tenant_id, source_asset_id=UUID(asset["id"])
+            )
+        )
+        db.commit()
+    assert client.delete(f"/v1/evidence/assets/{asset['id']}").status_code == 409
+    assert client.get("/v1/life-profiles/" + profile["id"]).json() == profile
+    with SessionLocal() as db:
+        assert db.get(SourceAsset, UUID(asset["id"])) is not None
+
+
+def test_delete_failure_rolls_back_profile_and_asset_together(client, monkeypatch):
+    from lifereel_api.modules.evidence.service import delete_asset
+    from lifereel_api.modules.interview import profile_service
+
+    person, asset = upload(client)
+    profile = link_material(client, person, asset)
+    apply = profile_service.patch
+
+    def fail_after_patch(*args, **kwargs):
+        apply(*args, **kwargs)
+        raise RuntimeError("synthetic deletion failure")
+
+    monkeypatch.setattr(profile_service, "patch", fail_after_patch)
+    with SessionLocal() as db:
+        with pytest.raises(RuntimeError, match="synthetic deletion failure"):
+            delete_asset(db, get_settings().default_tenant_id, UUID(asset["id"]))
+        db.rollback()
+    assert client.get("/v1/life-profiles/" + profile["id"]).json() == profile
     with SessionLocal() as db:
         assert db.get(SourceAsset, UUID(asset["id"])) is not None
 
