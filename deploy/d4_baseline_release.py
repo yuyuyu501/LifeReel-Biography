@@ -37,7 +37,7 @@ MODULES = {
         )
         for name in (
             "d4", "grounding", "retrieval", "quality", "companion",
-            "profile_extraction", "profile_service",
+            "profile_extraction", "profile_service", "organization",
         )
     },
     **{
@@ -62,6 +62,9 @@ MODULES = {
     "lifereel_api.modules.book.service": "services/book/src/lifereel_api/modules/book/service.py",
     "lifereel_api.modules.book.profile_sources": (
         "services/book/src/lifereel_api/modules/book/profile_sources.py"
+    ),
+    "lifereel_api.modules.memory.profile_sync": (
+        "services/memory/src/lifereel_api/modules/memory/profile_sync.py"
     ),
     "lifereel_api.modules.book.schemas": "services/book/src/lifereel_api/modules/book/schemas.py",
     "lifereel_api.modules.script.service": (

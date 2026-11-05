@@ -12,7 +12,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from lifereel_api.core.config import get_settings
 from lifereel_api.core.errors import ApiError
-from lifereel_api.modules.interview import companion, historical_context, quality
+from lifereel_api.modules.interview import companion, historical_context, organization, quality
 from lifereel_api.modules.interview.profile_template import FIELD_MAP
 from lifereel_api.providers.openai_compatible import OpenAICompatibleClient
 
@@ -492,6 +492,7 @@ def merge_atoms(previous, rows, evidence, *, correction, reconciliations):
             "value": label(row.object_entity_id)
             if row.predicate in {"call_recipient", "host"} else row.value,
             "status": row.status, "event_key": row.event_key,
+            "evidence": organization.fact_evidence(row, evidence),
         }
         # A refusal is a status, not a growing collection of synonymous explanations.
         if row.status == "declined" and row.predicate in {"debt_cause"}:
@@ -502,10 +503,16 @@ def merge_atoms(previous, rows, evidence, *, correction, reconciliations):
         prior_index = relation.get("prior_fact_index")
         linked = original[prior_index] if prior_index is not None else None
         if linked is not None and relation["relation"] == "reaffirm":
+            target = next((a for a in merged if a == linked), None)
+            if target is not None:
+                target["evidence"] = [
+                    *target.get("evidence", []),
+                    *[e for e in atom["evidence"] if e not in target.get("evidence", [])],
+                ]
             continue
         peers = [a for a in merged if a.get("entity_id") == atom["entity_id"]
                  and a.get("predicate") == atom["predicate"]]
-        if field_for(row) == "family.members[]":
+        if row.predicate not in {"birth_year", "debt_cause"}:
             peers = [a for a in peers if not a.get("event_key")
                      or a["event_key"] == row.event_key]
         replacements = []
@@ -522,11 +529,17 @@ def merge_atoms(previous, rows, evidence, *, correction, reconciliations):
         if row.predicate in EXCLUSIVE and incompatible:
             conflicts = True
         merged = [a for a in merged if a not in replacements]
-        if not any(atom_key(a) == atom_key(atom) and (
+        duplicate = next((a for a in merged if atom_key(a) == atom_key(atom) and (
             not a.get("event_key") or a["event_key"] == atom["event_key"]
             or atom["predicate"] == "debt_cause" and atom["status"] == "declined"
-        ) for a in merged):
+        )), None)
+        if duplicate is None:
             merged.append(atom)
+        else:
+            duplicate["evidence"] = [
+                *duplicate.get("evidence", []),
+                *[e for e in atom["evidence"] if e not in duplicate.get("evidence", [])],
+            ]
     return merged, conflicts
 
 
@@ -544,6 +557,7 @@ def validation_change(change):
     if isinstance(result["value"], dict):
         for atom in result["value"].get("facts", []):
             atom.pop("event_key", None)
+            atom.pop("evidence", None)
     return result
 
 
@@ -611,6 +625,11 @@ def sync_event_references(output, material, record_evidence, trace):
                         and set(re.findall(r"(?<!\d)(?:18|19|20)\d{2}(?!\d)",
                                            atom["value"])) == {old}):
                     atom["value"] = re.sub(rf"(?<!\d){old}(?!\d)", new, atom["value"])
+                    atom["evidence"] = [
+                        *atom.get("evidence", []),
+                        *[e for e in record_evidence[str(root)]
+                          if e not in atom.get("evidence", [])],
+                    ]
                     patched.append(position)
             if not patched or index is None and len(output["changes"]) >= 40:
                 continue
@@ -684,6 +703,18 @@ def adapt(draft, material, trace):
                 except ValueError:
                     pass
             continue
+        if entry is None:
+            match = organization.resolve_entry(row, field, material["current_entries"], evidence)
+            if match:
+                entry, matched = match
+                row = row.model_copy(update={
+                    "entry_id": entry["id"],
+                    "event_key": matched.get("event_key") or row.event_key,
+                })
+                trace.setdefault("organized_links", []).append({
+                    "candidate_id": row.candidate_id, "entry_id": entry["id"],
+                    "reason": "same_fact_and_original_evidence",
+                })
         record = (
             entry["record_key"]
             if entry

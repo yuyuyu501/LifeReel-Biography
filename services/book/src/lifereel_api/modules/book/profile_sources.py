@@ -1,4 +1,3 @@
-import json
 from uuid import UUID
 
 from sqlalchemy import select
@@ -116,7 +115,7 @@ def source(db, book, chapter_id):
     selected_ids = selected_entries(book, chapter, profile)
     selected = set(selected_ids)
     candidates = [e for e in profile["entries"] if e["id"] in selected]
-    from lifereel_api.modules.interview.profile_service import anonymized
+    from lifereel_api.modules.interview.profile_service import anonymized, value_text
 
     allowed = [
         anonymized(e)
@@ -149,9 +148,7 @@ def source(db, book, chapter_id):
                 "id": e["id"],
                 "revision": e["version_number"],
                 "field_key": e["field_key"],
-                "text": e["value"]
-                if isinstance(e["value"], str)
-                else json.dumps(e["value"], ensure_ascii=False),
+                "text": value_text(e["value"]),
                 "source_quote": e["source"].get("quote", ""),
                 "certainty": e["certainty"],
                 "use_scope": e["use_scope"],

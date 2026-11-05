@@ -179,6 +179,8 @@ class Inspection(BaseModel):
 
 def source_catalog(material):
     """Expose original excerpts and keep a program-owned mapping to user versions."""
+    from lifereel_api.modules.interview.organization import active_evidence
+
     current_id = material["source_ids"][0]
     _, record_id, version = current_id.rsplit(":", 2)
     records = {current_id: [{**material.get("current_source", {
@@ -191,8 +193,7 @@ def source_catalog(material):
     for entry in material["current_entries"]:
         if entry["state"] != "filled" or entry["certainty"] not in {"reported", "confirmed"}:
             continue
-        source = entry.get("source", {})
-        evidence = [source] + source.get("evidence", [])
+        evidence = active_evidence(entry)
         records[entry.get("source_id", f"entry:{entry['id']}")] = [
             {k: e[k] for k in ("type", "id", "version", "quote", "retained_keys", "start", "end")
              if k in e}

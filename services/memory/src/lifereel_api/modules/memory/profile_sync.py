@@ -1,10 +1,9 @@
-import json
 from uuid import UUID, uuid5
 
 from sqlalchemy import delete, select
 
 from lifereel_api.modules.interview.profile_models import LifeProfileEntry
-from lifereel_api.modules.interview.profile_service import get, usable
+from lifereel_api.modules.interview.profile_service import get, usable, value_text
 from lifereel_api.modules.memory.models import MemoryClaim, MemoryConflict, TimelineAnchor
 
 
@@ -53,9 +52,7 @@ def sync(db, tenant, data):
         if changed:
             changed_ids.add(str(claim.id))
         claim.source_revision = row.version_number
-        claim.claim_text = (
-            row.value if isinstance(row.value, str) else json.dumps(row.value, ensure_ascii=False)
-        )
+        claim.claim_text = value_text(row.value)
         claim.source_quote = str(row.source.get("quote") or claim.claim_text)
         claim.fact_overrides = []
         claim.review_status = "verified" if row.certainty == "confirmed" else "unreviewed"

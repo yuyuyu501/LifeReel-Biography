@@ -7,6 +7,7 @@ from sqlalchemy import select
 
 from lifereel_api.core.errors import ApiError, ErrorCode
 from lifereel_api.modules.identity.models import Person
+from lifereel_api.modules.interview.organization import content
 from lifereel_api.modules.interview.profile_models import (
     LifeProfile,
     LifeProfileEntry,
@@ -186,7 +187,7 @@ def usable(row):
 
 
 def value_text(value):
-    return value if isinstance(value, str) else json.dumps(value, ensure_ascii=False)
+    return value if isinstance(value, str) else json.dumps(content(value), ensure_ascii=False)
 
 
 def evaluate(db, profile):

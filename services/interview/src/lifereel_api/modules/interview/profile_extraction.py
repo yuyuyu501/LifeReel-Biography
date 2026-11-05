@@ -8,7 +8,7 @@ from sqlalchemy import select
 from lifereel_api.core.config import get_settings
 from lifereel_api.core.errors import ApiError, ErrorCode
 from lifereel_api.modules.identity.models import Person
-from lifereel_api.modules.interview import advice, companion, quality
+from lifereel_api.modules.interview import advice, companion, organization, quality
 from lifereel_api.modules.interview import profile_service as profiles
 from lifereel_api.modules.interview.profile_models import LifeProfileRevision
 from lifereel_api.modules.interview.profile_schemas import EntryChange, ProfilePatch
@@ -296,6 +296,7 @@ def process(db, tenant, profile_id, text, source, request_id, workflow=None):
                 for field in FIELD_MAP.values()
             ],
             "current_entries": context_entries,
+            "organization": organization.context(workspace["entries"], context_entries),
             "speaker_context": {
                 "record_subject": (
                     (subject.preferred_name or subject.display_name)

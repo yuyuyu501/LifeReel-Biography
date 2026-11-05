@@ -618,6 +618,15 @@ WHISPER_COMPUTE_TYPE=int8
 
 ## 人生资料与依赖锁（0044）
 
+2026-11-05 资料整理首版沿用现有 D4/OpenInterviewer、资料 JSON、事务及版本锁，
+无新增迁移或外部整理服务。事实级出处保存在原子 `evidence` 中，正文读取须使用
+`profile_service.value_text` 或 `organization.content`，不能把出处当作当前个人事实。
+发布名为 `profile-organization-20261105`；部署与备份分别记录在
+`/opt/lifereel-deploy/profile-organization-20261105/` 和
+`/opt/lifereel-backups/profile-organization-20261105/`。
+范围、工程验证与真实访谈验收边界见
+[资料整理报告](reports/2026-11-05-profile-organization.md)。
+
 新流程为人生资料表 → 独立书籍目录与保存书稿 → 剧本与分镜 → 影像。
 迁移 `20261008_0044` 在 interview Schema 增加资料、条目及变更记录三张表，
 保留历史问答、书稿版本、影像与所有原始媒体路径。初始化只迁入可核验的现行事实，
