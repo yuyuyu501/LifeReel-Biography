@@ -101,7 +101,7 @@ def initialize(db, tenant, book, profile):
     db.flush()
 
 
-def source(db, book, chapter_id):
+def source(db, book, chapter_id, *, profile=None):
     chapter = db.scalar(
         select(BookChapter).where(
             BookChapter.book_id == book.id,
@@ -111,7 +111,8 @@ def source(db, book, chapter_id):
     )
     if chapter is None:
         raise ApiError(404, ErrorCode.BOOK_CHAPTER_NOT_FOUND)
-    profile = profile_read(db, book.tenant_id, profile_id=book.profile_id)
+    if profile is None:
+        profile = profile_read(db, book.tenant_id, profile_id=book.profile_id)
     selected_ids = selected_entries(book, chapter, profile)
     selected = set(selected_ids)
     candidates = [e for e in profile["entries"] if e["id"] in selected]

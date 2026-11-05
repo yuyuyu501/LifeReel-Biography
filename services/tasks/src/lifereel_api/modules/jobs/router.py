@@ -25,7 +25,10 @@ def jobs(db: Db, tenant_id: Tenant) -> list[JobRead]:
 
 @router.get("/{job_id}", response_model=JobRead)
 def job(job_id: UUID, db: Db, tenant_id: Tenant) -> JobRead:
-    return service.get_job(db, tenant_id, job_id)
+    row = service.get_job(db, tenant_id, job_id)
+    if row.kind == "book.fact_check":
+        raise ApiError(404, ErrorCode.JOB_NOT_FOUND)
+    return row
 
 
 @router.post("/{job_id}/retry", response_model=JobRead)

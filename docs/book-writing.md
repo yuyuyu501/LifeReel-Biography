@@ -14,13 +14,15 @@ Web 左侧导航选择“写书”，在“人生书架”选择人物并创建�
 
 “编辑正文”保存新版本，“版本记录”查看旧稿。重新生成和人工编辑都保留历史版本；失败不覆盖已有稿件。采访资料补充或更正后，旧稿标出“资料已更新”，由用户主动生成新稿；不会自动扣费重写。
 
+“检查全书事实”会对当前已成稿章节执行只读核查，检查书稿与当前可用资料的明确冲突、缺少依据及跨章节不一致。报告保留书稿原句、章节位置和可定位证据，作者可将误报标记留档；正文或资料变化后报告标为过期，过期报告不继续展示结论。检查不会修改书稿、修改资料或阻止导出。成功核查按纳入检查的章节数沿用单章写作费用；按量模式按实际模型用量计费。
+
 至少一章成稿后可导出整书 TXT 或 Markdown。导出包含目录，并标注未成稿及资料已更新的章节；需要登录和所属租户权限。当前不提供排版 PDF、印刷或电子书发行服务。
 
 ## 服务边界与运行
 
 - API：`services/book/`，独立 Dockerfile；路由 `/v1/books`。
-- 执行器：`workers/book/`，独立 Dockerfile；持久任务 `book.chapter.generate`，写书 lane 并发为 1。
-- 数据：`book.books`、`book.book_chapters`、`book.book_revisions`；迁移 `20260930_0043`。
+- 执行器：`workers/book/`，独立 Dockerfile；持久任务 `book.chapter.generate`、`book.fact_check`，写书 lane 并发为 1。
+- 数据：`book.books`、`book.book_chapters`、`book.book_revisions`、`book.book_fact_checks`；书稿核查报告迁移 `20261105_0046`。
 - 模型：使用 `SCRIPT_LLM_MODEL=gpt-6.1-sol` 和现有模型网关，生产模型池为 Sol → Pro → Lite，详见[模型池说明](reports/2026-10-16-model-pool.md)。该配置也供视频剧本使用，采访独立配置。先组织提纲再生成有来源引用的正文；结构、引用或事实检查失败最多修复一次，篇幅不触发修复。模型未配置时明确报错，不返回模拟书稿。
 - 故障提示：上游不可用、限流、超时及请求被拒分别记录为 `BOOK_MODEL_UNAVAILABLE`、`BOOK_MODEL_RATE_LIMITED`、`BOOK_MODEL_TIMEOUT`、`BOOK_MODEL_REQUEST_FAILED`；认证或模型不存在使用 `BOOK_MODEL_NOT_CONFIGURED`。模型池按既有规则有限切换，耗尽后将错误交给写书任务，任务层不另行重试传输故障；内容拒绝、未知消费等保护继续生效。日志只记录模型、HTTP 状态和错误类别，失败保留旧稿，预占费用按现有计费规则释放。
 - 钱包：沿用现有文字计费规则；按量模式已发生的 AI 用量会计费，包括结果验证失败的调用。按成功章节模式只结算成功章节。重复提交的同一个请求不重复创建任务。
@@ -31,4 +33,4 @@ Web 左侧导航选择“写书”，在“人生书架”选择人物并创建�
 
 ## 测试与发布
 
-单元/API 回归位于 `apps/api/tests/test_books.py` 和 `test_book_profile_materials.py`，PostgreSQL 升降级测试位于 `test_book_migration.py`，Web 回归位于 `apps/web/src/pages/BooksPage.test.tsx`。发布测试使用隔离数据库、合成资料和模拟供应商，不调用付费 AI、短信、支付或视频。真实文学质量须独立验收。
+单元/API 回归位于 `apps/api/tests/test_books.py`、`test_book_fact_check.py` 和 `test_book_profile_materials.py`，PostgreSQL 升降级测试位于 `test_book_migration.py`，Web 回归位于 `apps/web/src/pages/BooksPage.test.tsx`。发布测试使用隔离数据库、合成资料和模拟供应商，不调用付费 AI、短信、支付或视频。真实模型质量须独立验收。

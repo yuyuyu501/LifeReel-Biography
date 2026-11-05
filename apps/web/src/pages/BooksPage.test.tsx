@@ -10,7 +10,7 @@ import {
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { beforeEach, expect, it, vi } from "vitest";
 import { BookWritingPage, BooksPage } from "./BooksPage";
-import type { Book } from "../api/books";
+import type { Book, BookFactCheck } from "../api/books";
 
 const seed: Book = {
   id: "book-1",
@@ -57,6 +57,7 @@ const seed: Book = {
   ],
 };
 let book: Book;
+let factCheckReport: BookFactCheck | null;
 const reply = (data: unknown, status = 200) =>
   ({ ok: status < 400, status, json: async () => data }) as Response;
 function setup(path = "/books/book-1") {
@@ -77,6 +78,7 @@ function setup(path = "/books/book-1") {
 }
 beforeEach(() => {
   book = structuredClone(seed);
+  factCheckReport = null;
   vi.stubGlobal(
     "fetch",
     vi.fn(async (url: string, init?: RequestInit) => {
@@ -84,6 +86,36 @@ beforeEach(() => {
         return reply(book, 201);
       if (url === "/v1/books") return reply([book]);
       if (url === "/v1/books/book-1") return reply(book);
+      if (url.endsWith("/fact-checks/latest")) return reply(factCheckReport);
+      if (url.includes("/findings/") && init?.method === "PATCH") {
+        const findingId = String(url).split("/").at(-1);
+        if (factCheckReport) {
+          factCheckReport = {
+            ...factCheckReport,
+            findings: factCheckReport.findings.map((finding) =>
+              finding.id === findingId
+                ? { ...finding, review_status: "false_positive" }
+                : finding,
+            ),
+          };
+        }
+        return reply(factCheckReport);
+      }
+      if (url.endsWith("/fact-checks") && init?.method === "POST") {
+        factCheckReport = {
+          id: "check-1",
+          job_id: "job-check-1",
+          status: "queued",
+          stale: false,
+          chapters_checked: 1,
+          snapshot_chapters: [],
+          findings: [],
+          error_code: null,
+          created_at: "2026-11-05T00:00:00Z",
+          updated_at: "2026-11-05T00:00:00Z",
+        };
+        return reply(factCheckReport, 202);
+      }
       if (url === "/v1/persons")
         return reply([
           { id: "person-1", display_name: "合成人物", preferred_name: null },
@@ -129,6 +161,88 @@ it("shows saved prose and both export formats without a target length", async ()
   expect(
     screen.getByRole("link", { name: "导出 Markdown" }),
   ).toBeInTheDocument();
+});
+
+it("queues a fact check for the saved book and shows task state", async () => {
+  setup();
+  fireEvent.click(await screen.findByRole("button", { name: "检查全书事实" }));
+  expect(await screen.findByText("检查任务已排队。")).toBeInTheDocument();
+  const call = vi
+    .mocked(fetch)
+    .mock.calls.find(
+      ([path, init]) =>
+        String(path).endsWith("/fact-checks") && init?.method === "POST",
+    )!;
+  expect(JSON.parse(call[1]!.body as string).idempotency_key).toMatch(
+    /^[0-9a-f-]{36}$/,
+  );
+});
+
+it("shows verified evidence and can focus the reported chapter", async () => {
+  factCheckReport = {
+    id: "check-1",
+    job_id: "job-check-1",
+    status: "completed",
+    stale: false,
+    chapters_checked: 2,
+    snapshot_chapters: [
+      {
+        chapter_id: "chapter-1",
+        chapter_title: "童年",
+        revision_id: "revision-2",
+        version_number: 2,
+        source_digest: "a".repeat(64),
+      },
+      {
+        chapter_id: "chapter-2",
+        chapter_title: "求学",
+        revision_id: "revision-3",
+        version_number: 1,
+        source_digest: "b".repeat(64),
+      },
+    ],
+    findings: [
+      {
+        id: "finding-1",
+        type: "cross_chapter",
+        chapter_id: "chapter-2",
+        chapter_title: "求学",
+        quote: "我在厦门上学。",
+        quote_location: "body",
+        quote_position: 0,
+        explanation: "另一章节的地点不同。",
+        review_status: "pending",
+        evidence: [
+          {
+            kind: "chapter",
+            chapter_id: "chapter-1",
+            chapter_title: "童年",
+            quote: "我在泉州上学。",
+            claim_id: null,
+            revision_id: "revision-2",
+            version_number: 2,
+          },
+        ],
+      },
+    ],
+    error_code: null,
+    created_at: "2026-11-05T00:00:00Z",
+    updated_at: "2026-11-05T00:00:00Z",
+  };
+  setup();
+  expect(await screen.findByText("另一章节的地点不同。")).toBeInTheDocument();
+  fireEvent.click(screen.getByText(/本次检查版本/));
+  expect(screen.getByText("修订 revision-2")).toBeInTheDocument();
+  expect(screen.getByText(`资料摘要 ${"a".repeat(64)}`)).toBeInTheDocument();
+  expect(screen.getByText("我在泉州上学。")).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "定位章节" }));
+  expect(
+    await screen.findByRole("heading", { name: "求学", level: 2 }),
+  ).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "标记误报" }));
+  expect(
+    await screen.findByRole("button", { name: "已标记误报" }),
+  ).toBeDisabled();
 });
 
 it("moves between chapters from the manuscript footer", async () => {

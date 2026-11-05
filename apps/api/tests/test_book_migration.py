@@ -25,6 +25,7 @@ def test_books_upgrade_metadata_and_guarded_rollback(postgres):  # noqa: F811
         "books",
         "book_chapters",
         "book_revisions",
+        "book_fact_checks",
     }
     with target.begin() as db:
         db.execute(
@@ -35,6 +36,21 @@ def test_books_upgrade_metadata_and_guarded_rollback(postgres):  # noqa: F811
             '00000000-0000-0000-0000-000000000044','Synthetic book',now(),now())""")
         )
         assert db.scalar(text("SELECT target_words FROM book.books")) == 1000
+        db.execute(
+            text("""INSERT INTO book.book_fact_checks
+            (id,tenant_id,book_id,request_id,status,input_digest,input_snapshot,findings,
+             created_at,updated_at) VALUES
+            ('00000000-0000-0000-0000-000000000046',
+            '00000000-0000-0000-0000-000000000043',
+            '00000000-0000-0000-0000-000000000045','synthetic-check','completed',
+            'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+            '{"chapters":[]}'::json,'[]'::json,now(),now())""")
+        )
+    with pytest.raises(RuntimeError, match="Book fact-check reports exist"):
+        command.downgrade(config, "20261012_0045")
+    with target.begin() as db:
+        assert db.scalar(text("SELECT count(*) FROM book.book_fact_checks")) == 1
+        db.execute(text("DELETE FROM book.book_fact_checks"))
     with pytest.raises(RuntimeError, match="Book data exists"):
         command.downgrade(config, "20260930_0042")
     with target.begin() as db:

@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   Link,
   useNavigate,
@@ -14,9 +14,13 @@ import {
   BookOpen,
   BookOpenText,
   ChevronRight,
+  CircleAlert,
+  CircleCheck,
+  CircleX,
   Download,
   FileText,
   ListPlus,
+  LoaderCircle,
   RotateCcw,
   UserRound,
 } from "lucide-react";
@@ -205,18 +209,30 @@ function WritingPrice() {
   const price = wallet.data?.prices;
   if (!price)
     return (
-      <p className="wallet-note">
-        生成会调用文字模型并计费，请在钱包查看现行价格。
-      </p>
+      <>
+        <p className="wallet-note">
+          生成会调用文字模型并计费，请在钱包查看现行价格。
+        </p>
+        <p className="wallet-note">
+          事实核查会调用文字模型，并按当前写书计费规则计费。
+        </p>
+      </>
     );
   return (
-    <p className="wallet-note">
-      {price.script_billing_mode === "tokens"
-        ? "写书按实际 AI 用量计费，沿用官方标准价的1.5倍；生成失败时，已发生的模型用量仍会计费。"
-        : "每章每次成功生成或重写 " +
-          (price.script_chapter_cents / 100).toFixed(2) +
-          " 元，失败不扣章节费；相同请求重试不重复收费。"}
-    </p>
+    <>
+      <p className="wallet-note">
+        {price.script_billing_mode === "tokens"
+          ? "写书按实际 AI 用量计费，沿用官方标准价的1.5倍；生成失败时，已发生的模型用量仍会计费。"
+          : "每章每次成功生成或重写 " +
+            (price.script_chapter_cents / 100).toFixed(2) +
+            " 元，失败不扣章节费；相同请求重试不重复收费。"}
+      </p>
+      <p className="wallet-note">
+        {price.script_billing_mode === "tokens"
+          ? "事实核查按实际 AI 用量计费。"
+          : `事实核查成功后按核查章节数计费，每章 ${(price.script_chapter_cents / 100).toFixed(2)} 元。`}
+      </p>
+    </>
   );
 }
 
@@ -233,6 +249,15 @@ export function BookWritingPage() {
   const [editing, setEditing] = useState(false);
   const [notice, setNotice] = useState("");
   const request = useRef<{ fingerprint: string; id: string } | null>(null);
+  const factCheckRequest = useRef<string | null>(null);
+  const factCheck = useQuery({
+    queryKey: ["book-fact-check", bookId],
+    queryFn: () => booksApi.latestFactCheck(bookId),
+    refetchInterval: (query) =>
+      ["queued", "running"].includes(query.state.data?.status || "")
+        ? 2500
+        : false,
+  });
   const generate = useMutation({
     mutationFn: (payload: BookGeneration) => booksApi.generate(bookId, payload),
     onSuccess: async (result) => {
@@ -249,6 +274,52 @@ export function BookWritingPage() {
     },
     onSettled: () => cache.invalidateQueries({ queryKey: ["wallet"] }),
   });
+  const runFactCheck = useMutation({
+    mutationFn: () => {
+      factCheckRequest.current ||= crypto.randomUUID();
+      return booksApi.queueFactCheck(bookId, factCheckRequest.current);
+    },
+    onSuccess: async (report) => {
+      factCheckRequest.current = null;
+      cache.setQueryData(["book-fact-check", bookId], report);
+      await cache.invalidateQueries({
+        queryKey: ["book-fact-check", bookId],
+      });
+      await cache.invalidateQueries({ queryKey: ["wallet"] });
+    },
+  });
+  const reviewFactCheck = useMutation({
+    mutationFn: (findingId: string) => {
+      const checkId = factCheck.data?.id;
+      if (!checkId) throw new Error("Missing fact check report");
+      return booksApi.reviewFactCheckFinding(bookId, checkId, findingId);
+    },
+    onSuccess: (report) => {
+      cache.setQueryData(["book-fact-check", bookId], report);
+    },
+  });
+  const factCheckInputVersion = book.data
+    ? [
+        book.data.directory_version,
+        ...book.data.chapters.map(
+          (item) => `${item.chapter_id}:${item.current?.id || "none"}`,
+        ),
+      ].join("|")
+    : undefined;
+  const previousFactCheckInput = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    if (!factCheckInputVersion) return;
+    if (previousFactCheckInput.current === undefined) {
+      previousFactCheckInput.current = factCheckInputVersion;
+      return;
+    }
+    if (previousFactCheckInput.current !== factCheckInputVersion) {
+      previousFactCheckInput.current = factCheckInputVersion;
+      void cache.invalidateQueries({
+        queryKey: ["book-fact-check", bookId],
+      });
+    }
+  }, [bookId, cache, factCheckInputVersion]);
   if (hasQueryIssue([book]))
     return (
       <div className="page">
@@ -268,6 +339,16 @@ export function BookWritingPage() {
     chapterIndex >= 0 ? data.chapters[chapterIndex + 1] : undefined;
   const busy = generate.isPending || editing || data.chapters.some(active);
   const completed = data.chapters.filter((c) => c.current).length;
+  const pendingFindingCount =
+    factCheck.data?.findings.filter(
+      (finding) => finding.review_status !== "false_positive",
+    ).length || 0;
+  const checking = ["queued", "running"].includes(factCheck.data?.status || "");
+  const checkTypeText: Record<string, string> = {
+    conflict: "书稿与资料冲突",
+    unsupported: "缺少资料依据",
+    cross_chapter: "章节之间不一致",
+  };
   function submit(mode: "chapter" | "all" | "missing") {
     if (busy || !chapter) return;
     const payload = {
@@ -320,6 +401,23 @@ export function BookWritingPage() {
           <BookDirectoryEditor book={data} disabled={busy} />
           <Button
             size="lg"
+            variant="outline"
+            disabled={
+              busy || completed === 0 || checking || runFactCheck.isPending
+            }
+            onClick={() => runFactCheck.mutate()}
+          >
+            {checking || runFactCheck.isPending ? (
+              <LoaderCircle size={16} className="book-fact-check-spinner" />
+            ) : (
+              <CircleCheck size={16} />
+            )}
+            {checking || runFactCheck.isPending
+              ? "正在检查全书……"
+              : "检查全书事实"}
+          </Button>
+          <Button
+            size="lg"
             disabled={busy || !data.chapters.some((c) => c.source_count)}
             variant="outline"
             onClick={() => submit("all")}
@@ -362,6 +460,149 @@ export function BookWritingPage() {
         </div>
         {notice && <p role="status">{notice}</p>}
         <ErrorNotice error={generate.error} />
+      </section>
+      <section className="book-fact-check" aria-label="书稿事实核查">
+        <div className="book-fact-check-header">
+          <div>
+            <h2>事实核查</h2>
+            <p>
+              {completed
+                ? `最近检查 ${factCheck.data?.chapters_checked || completed} 章`
+                : "完成章节后可检查全书"}
+            </p>
+          </div>
+          {factCheck.data?.status === "completed" && (
+            <span className="book-fact-check-result">
+              {pendingFindingCount
+                ? `${pendingFindingCount} 项待核对`
+                : factCheck.data.findings.length
+                  ? "问题均已标记误报"
+                  : "未发现可定位问题"}
+            </span>
+          )}
+        </div>
+        <ErrorNotice
+          error={factCheck.error || runFactCheck.error || reviewFactCheck.error}
+        />
+        {factCheck.data?.status === "queued" && (
+          <p role="status">检查任务已排队。</p>
+        )}
+        {factCheck.data?.status === "running" && (
+          <p role="status">
+            <LoaderCircle
+              size={15}
+              className="book-fact-check-spinner"
+              aria-hidden="true"
+            />
+            正在逐项核对书稿与资料。
+          </p>
+        )}
+        {factCheck.data?.status === "stale" && (
+          <p className="book-fact-check-stale" role="status">
+            <CircleAlert size={16} aria-hidden="true" />
+            书稿或资料已有更新，请重新检查。
+          </p>
+        )}
+        {factCheck.data?.status === "failed" && (
+          <p className="book-fact-check-failed" role="alert">
+            {ERROR_MESSAGES[factCheck.data.error_code || ""] ||
+              "核查未完成；书稿未受影响。"}
+          </p>
+        )}
+        {!!factCheck.data?.snapshot_chapters.length && (
+          <details className="book-fact-check-snapshot">
+            <summary>
+              本次检查版本 · {factCheck.data.snapshot_chapters.length} 章
+            </summary>
+            <ul>
+              {factCheck.data.snapshot_chapters.map((item) => (
+                <li key={item.chapter_id}>
+                  <span>
+                    {item.chapter_title} · 第 {item.version_number} 版
+                  </span>
+                  <code>修订 {item.revision_id}</code>
+                  <code>资料摘要 {item.source_digest}</code>
+                </li>
+              ))}
+            </ul>
+          </details>
+        )}
+        {factCheck.data?.status === "completed" &&
+          !factCheck.data.findings.length && (
+            <p className="book-fact-check-empty">
+              未发现可定位的明显问题。自动核查不能替代人工核对。
+            </p>
+          )}
+        {factCheck.data?.status === "completed" &&
+          factCheck.data.findings.length > 0 &&
+          pendingFindingCount === 0 && (
+            <p className="book-fact-check-empty">
+              报告中的项目均已标记为误报，原始核查记录仍保留。
+            </p>
+          )}
+        {!!factCheck.data?.findings.length && (
+          <ol className="book-fact-check-list">
+            {factCheck.data.findings.map((finding, index) => (
+              <li
+                className="book-fact-check-item"
+                key={`${finding.type}-${finding.chapter_id}-${index}`}
+              >
+                <div className="book-fact-check-item-heading">
+                  <strong>{checkTypeText[finding.type] || "待核对内容"}</strong>
+                  <span>{finding.chapter_title}</span>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => setSelected(finding.chapter_id)}
+                  >
+                    <ArrowRight size={15} />
+                    定位章节
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    disabled={
+                      finding.review_status === "false_positive" ||
+                      reviewFactCheck.isPending ||
+                      factCheck.data?.stale
+                    }
+                    onClick={() => reviewFactCheck.mutate(finding.id)}
+                  >
+                    <CircleX size={15} />
+                    {finding.review_status === "false_positive"
+                      ? "已标记误报"
+                      : "标记误报"}
+                  </Button>
+                </div>
+                <p className="book-fact-check-position">
+                  {finding.quote_location === "title"
+                    ? "章节标题"
+                    : `正文第 ${finding.quote_position + 1} 字`}
+                </p>
+                <blockquote>{finding.quote}</blockquote>
+                <p>{finding.explanation}</p>
+                {!!finding.evidence.length && (
+                  <ul className="book-fact-check-evidence">
+                    {finding.evidence.map((evidence, evidenceIndex) => (
+                      <li
+                        key={`${evidence.claim_id || evidence.revision_id}-${evidenceIndex}`}
+                      >
+                        <span>
+                          {evidence.kind === "source" ? "资料" : "书稿"} ·{" "}
+                          {evidence.chapter_title}
+                          {evidence.version_number
+                            ? ` · 版本 ${evidence.version_number}`
+                            : ""}
+                        </span>
+                        <blockquote>{evidence.quote}</blockquote>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </li>
+            ))}
+          </ol>
+        )}
       </section>
       <section className="book-reading-layout" aria-label="书稿章节">
         <aside className="book-toc">

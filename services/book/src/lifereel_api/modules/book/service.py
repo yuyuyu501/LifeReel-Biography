@@ -2,6 +2,7 @@
 
 import hashlib
 import json
+from contextlib import ExitStack, contextmanager
 from uuid import UUID
 
 from sqlalchemy import select
@@ -13,7 +14,7 @@ from lifereel_api.modules.billing import service as billing
 from lifereel_api.modules.billing.commands import enqueue_transition
 from lifereel_api.modules.billing.usage import track_usage
 from lifereel_api.modules.book import writing
-from lifereel_api.modules.book.models import Book, BookChapter, BookRevision
+from lifereel_api.modules.book.models import Book, BookChapter, BookFactCheck, BookRevision
 from lifereel_api.modules.book.schemas import BookRead, ChapterRead, RevisionRead
 from lifereel_api.modules.identity.models import Person
 from lifereel_api.modules.interview.models import Chapter
@@ -63,6 +64,43 @@ def current_revision(db, row):
             BookRevision.version_number == row.version_number,
         )
     )
+
+
+@contextmanager
+def revision_lock(db, book, row_ids=None):
+    """Serialize book-wide checks with edits, generation, and directory changes."""
+    requested = set(row_ids) if row_ids is not None else None
+    for _ in range(3):
+        if requested is None:
+            candidate_ids = set(
+                db.scalars(
+                    select(BookChapter.id).where(
+                        BookChapter.book_id == book.id,
+                        BookChapter.tenant_id == book.tenant_id,
+                    )
+                )
+            )
+        else:
+            candidate_ids = requested
+        keys = sorted({book.id, *candidate_ids}, key=str)
+        with ExitStack() as stack:
+            if not all(stack.enter_context(execution_lock(db, key)) for key in keys):
+                yield False
+                return
+            if requested is None:
+                current_ids = set(
+                    db.scalars(
+                        select(BookChapter.id).where(
+                            BookChapter.book_id == book.id,
+                            BookChapter.tenant_id == book.tenant_id,
+                        )
+                    )
+                )
+                if current_ids != candidate_ids:
+                    continue
+            yield True
+            return
+    yield False
 
 
 def source(db, book, chapter_id):
@@ -250,6 +288,15 @@ def queue(db, tenant, book_id, payload):
     with execution_lock(db, book.id) as acquired:
         if not acquired:
             raise ApiError(409, ErrorCode.BOOK_GENERATION_BUSY)
+        active_check = db.scalar(
+            select(BookFactCheck.id).where(
+                BookFactCheck.book_id == book.id,
+                BookFactCheck.tenant_id == tenant,
+                BookFactCheck.status.in_(["queued", "running"]),
+            )
+        )
+        if active_check:
+            raise ApiError(409, ErrorCode.BOOK_GENERATION_BUSY)
         request_data = payload.model_dump(
             mode="json", exclude={"missing_only"} if not payload.missing_only else set(),
         )
@@ -361,10 +408,10 @@ def execute(db, tenant, job_id):
     if row is None:
         raise ApiError(404, ErrorCode.BOOK_CHAPTER_NOT_FOUND)
     key = f"book-chapter:{job.id}"
-    with execution_lock(db, row.id) as acquired:
+    book = get_book(db, tenant, row.book_id)
+    with revision_lock(db, book, [row.id]) as acquired:
         if not acquired:
             raise ApiError(409, ErrorCode.BOOK_GENERATION_BUSY)
-        book = get_book(db, tenant, row.book_id)
         try:
             if row.latest_job_id != job.id or row.version_number != job.payload["expected_version"]:
                 raise ApiError(409, ErrorCode.BOOK_VERSION_CONFLICT)
@@ -425,7 +472,7 @@ def execute(db, tenant, job_id):
 
 def edit(db, tenant, book_id, chapter_id, payload):
     book, row = get_chapter(db, tenant, book_id, chapter_id)
-    with execution_lock(db, row.id) as acquired:
+    with revision_lock(db, book, [row.id]) as acquired:
         if not acquired:
             raise ApiError(409, ErrorCode.BOOK_GENERATION_BUSY)
         db.refresh(row)

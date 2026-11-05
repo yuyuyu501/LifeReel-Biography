@@ -11,17 +11,8 @@ from pathlib import Path
 from uuid import uuid4
 
 import pytest
-from sqlalchemy import create_engine, delete, inspect, select, text, update
-from sqlalchemy.engine import make_url
-from sqlalchemy.exc import IntegrityError, SQLAlchemyError
-from sqlalchemy.orm import Session
-
-from alembic import command
 from alembic.config import Config
 from alembic.script import ScriptDirectory
-from lifereel_api.core.config import get_settings
-from lifereel_api.core.database import Base, engine
-from lifereel_api.core.schema import SERVICE_SCHEMAS, SQLITE_SCHEMA_MAP
 from lifereel_api.modules.billing.models import Wallet
 from lifereel_api.modules.evidence.models import SourceAsset
 from lifereel_api.modules.identity.models import Person, Tenant
@@ -29,6 +20,15 @@ from lifereel_api.modules.interview.models import Chapter
 from lifereel_api.modules.jobs.models import Job
 from lifereel_api.modules.memory.models import MemoryClaim
 from lifereel_api.providers.models import ModelInvocation
+from sqlalchemy import create_engine, delete, inspect, select, text, update
+from sqlalchemy.engine import make_url
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
+from sqlalchemy.orm import Session
+
+from alembic import command
+from lifereel_api.core.config import get_settings
+from lifereel_api.core.database import Base, engine
+from lifereel_api.core.schema import SERVICE_SCHEMAS, SQLITE_SCHEMA_MAP
 
 API = Path(__file__).parents[1]
 spec = importlib.util.spec_from_file_location(
@@ -45,7 +45,9 @@ def test_all_models_match_frozen_schema_inventory():
     # 0040 stays frozen; newly owned tables are added by the later book migration.
     current_owners = {
         **OWNERS,
-        **dict.fromkeys(("books", "book_chapters", "book_revisions"), "book"),
+        **dict.fromkeys(
+            ("books", "book_chapters", "book_revisions", "book_fact_checks"), "book"
+        ),
     }
     current_owners.update(
         dict.fromkeys(

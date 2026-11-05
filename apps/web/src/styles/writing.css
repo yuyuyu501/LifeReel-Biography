@@ -557,6 +557,159 @@
   margin: -16px -16px 0;
 }
 
+.book-fact-check {
+  margin: 20px 0 0;
+  padding: 17px 0 4px;
+  border-top: 1px solid var(--line);
+  color: var(--ink-soft);
+}
+.book-fact-check-header {
+  min-height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+}
+.book-fact-check-header > div {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+}
+.book-fact-check-header h2 {
+  margin: 0;
+  color: var(--ink);
+  font-size: 16px;
+}
+.book-fact-check-header p,
+.book-fact-check > p {
+  margin: 0;
+  color: var(--muted-foreground);
+  font-size: 13px;
+  line-height: 1.7;
+}
+.book-fact-check-result {
+  color: var(--green-dark);
+  font-size: 13px;
+  font-weight: 700;
+}
+.book-fact-check-list {
+  margin: 10px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.book-fact-check-item {
+  padding: 14px 0;
+  border-top: 1px solid var(--line);
+}
+.book-fact-check-item-heading {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 5px 12px;
+}
+.book-fact-check-item-heading > strong {
+  color: #9a4d23;
+  font-size: 13px;
+}
+.book-fact-check-item-heading > span {
+  min-width: 0;
+  color: var(--muted-foreground);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.book-fact-check-item-heading > button {
+  margin-left: auto;
+  color: var(--green-dark);
+}
+.book-fact-check-item > blockquote,
+.book-fact-check-evidence blockquote {
+  margin: 9px 0 5px;
+  padding-left: 12px;
+  border-left: 2px solid #c5d9d3;
+  color: var(--ink);
+  line-height: 1.75;
+  overflow-wrap: anywhere;
+}
+.book-fact-check-position {
+  margin: 7px 0 0;
+  color: var(--muted-foreground);
+  font-size: 12px;
+}
+.book-fact-check-item > p {
+  margin: 5px 0;
+  color: var(--ink-soft);
+  font-size: 13px;
+  line-height: 1.7;
+  overflow-wrap: anywhere;
+}
+.book-fact-check-evidence {
+  margin: 10px 0 0;
+  padding: 0 0 0 14px;
+  display: grid;
+  gap: 8px;
+  color: var(--muted-foreground);
+  font-size: 12px;
+}
+.book-fact-check-evidence li {
+  min-width: 0;
+}
+.book-fact-check-evidence blockquote {
+  margin-top: 4px;
+  margin-bottom: 0;
+  color: var(--ink-soft);
+  font-size: 13px;
+}
+.book-fact-check-stale,
+.book-fact-check-failed {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 10px 0 0;
+  color: #855a23;
+  font-size: 13px;
+  line-height: 1.7;
+}
+.book-fact-check-snapshot {
+  margin-top: 8px;
+  color: var(--muted-foreground);
+  font-size: 12px;
+}
+.book-fact-check-snapshot summary {
+  width: fit-content;
+  cursor: pointer;
+}
+.book-fact-check-snapshot ul {
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.book-fact-check-snapshot li {
+  display: grid;
+  gap: 3px;
+  padding: 7px 0;
+  border-top: 1px solid var(--line);
+}
+.book-fact-check-snapshot code {
+  color: var(--ink-soft);
+  overflow-wrap: anywhere;
+}
+.book-fact-check-stale svg {
+  flex: 0 0 auto;
+  margin-top: 2px;
+}
+.book-fact-check-empty {
+  margin-top: 8px !important;
+}
+.book-fact-check-spinner {
+  animation: book-fact-check-spin 1s linear infinite;
+}
+@keyframes book-fact-check-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
 .writing-page .book-reading-layout {
   grid-template-columns: minmax(240px, 0.27fr) minmax(0, 0.73fr);
   align-items: stretch;
@@ -973,5 +1126,10 @@
   }
   .book-chapter-navigation small {
     display: none;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .book-fact-check-spinner {
+    animation: none;
   }
 }

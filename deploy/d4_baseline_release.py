@@ -57,9 +57,21 @@ MODULES = {
     "lifereel_api.modules.jobs.service": (
         "services/tasks/src/lifereel_api/modules/jobs/service.py"
     ),
+    "lifereel_api.modules.jobs.dispatch": (
+        "services/tasks/src/lifereel_api/modules/jobs/dispatch.py"
+    ),
+    "lifereel_api.modules.jobs.router": (
+        "services/tasks/src/lifereel_api/modules/jobs/router.py"
+    ),
+    "lifereel_api.architecture.events": "apps/api/src/lifereel_api/architecture/events.py",
     "lifereel_api.providers.rpc": "services/model-gateway/src/lifereel_api/providers/rpc.py",
     "lifereel_api.modules.book.writing": "services/book/src/lifereel_api/modules/book/writing.py",
     "lifereel_api.modules.book.service": "services/book/src/lifereel_api/modules/book/service.py",
+    "lifereel_api.modules.book.fact_check": (
+        "services/book/src/lifereel_api/modules/book/fact_check.py"
+    ),
+    "lifereel_api.modules.book.models": "services/book/src/lifereel_api/modules/book/models.py",
+    "lifereel_api.modules.book.router": "services/book/src/lifereel_api/modules/book/router.py",
     "lifereel_api.modules.book.profile_sources": (
         "services/book/src/lifereel_api/modules/book/profile_sources.py"
     ),

@@ -23,7 +23,7 @@ SCHEMA_TABLES = {
     "interview_voice_calls life_profiles life_profile_entries life_profile_revisions",
     "memory": "memory_claims memory_conflicts memory_entities timeline_anchors",
     "script": "script_generation_receipts script_projects script_scenes script_shots",
-    "book": "books book_chapters book_revisions",
+    "book": "books book_chapters book_revisions book_fact_checks",
     "media": "chapter_reference_packages evidence_observations evidence_uploads generated_assets "
     "production_runs publications restoration_photos source_assets transcript_segments "
     "transcript_versions transcripts",

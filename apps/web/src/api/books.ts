@@ -44,6 +44,46 @@ export type BookGeneration = {
   missing_only?: boolean;
   expected_versions?: Record<string, number>;
 };
+export type BookFactCheckEvidence = {
+  kind: "source" | "chapter";
+  chapter_id: string;
+  chapter_title: string;
+  quote: string;
+  claim_id: string | null;
+  revision_id: string | null;
+  version_number: number | null;
+};
+export type BookFactCheckFinding = {
+  id: string;
+  type: "conflict" | "unsupported" | "cross_chapter";
+  chapter_id: string;
+  chapter_title: string;
+  quote: string;
+  quote_location: "body" | "title";
+  quote_position: number;
+  explanation: string;
+  evidence: BookFactCheckEvidence[];
+  review_status: "pending" | "false_positive";
+};
+export type BookFactCheckSnapshotChapter = {
+  chapter_id: string;
+  chapter_title: string;
+  revision_id: string;
+  version_number: number;
+  source_digest: string;
+};
+export type BookFactCheck = {
+  id: string;
+  job_id: string | null;
+  status: "queued" | "running" | "completed" | "failed" | "stale";
+  stale: boolean;
+  chapters_checked: number;
+  snapshot_chapters: BookFactCheckSnapshotChapter[];
+  findings: BookFactCheckFinding[];
+  error_code: string | null;
+  created_at: string;
+  updated_at: string;
+};
 export const booksApi = {
   directory: (
     id: string,
@@ -93,5 +133,22 @@ export const booksApi = {
   history: (id: string, chapterId: string) =>
     request<BookRevision[]>(
       "/v1/books/" + id + "/chapters/" + chapterId + "/versions",
+    ),
+  queueFactCheck: (id: string, idempotencyKey: string) =>
+    request<BookFactCheck>(`/v1/books/${id}/fact-checks`, {
+      method: "POST",
+      body: JSON.stringify({ idempotency_key: idempotencyKey }),
+    }),
+  latestFactCheck: (id: string) =>
+    request<BookFactCheck | null>(`/v1/books/${id}/fact-checks/latest`),
+  factCheck: (id: string, checkId: string) =>
+    request<BookFactCheck>(`/v1/books/${id}/fact-checks/${checkId}`),
+  reviewFactCheckFinding: (id: string, checkId: string, findingId: string) =>
+    request<BookFactCheck>(
+      `/v1/books/${id}/fact-checks/${checkId}/findings/${findingId}`,
+      {
+        method: "PATCH",
+        body: JSON.stringify({ status: "false_positive" }),
+      },
     ),
 };

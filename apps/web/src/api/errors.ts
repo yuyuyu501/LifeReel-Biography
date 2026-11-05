@@ -32,6 +32,10 @@ export const ERROR_MESSAGES: Record<string, string> = {
   BOOK_GENERATION_BUSY: "本书有相关章节正在处理，请完成后再操作。",
   BOOK_REQUEST_CONFLICT: "生成请求与原请求不一致，请刷新后重新提交。",
   BOOK_EMPTY: "尚无已保存的书稿，请先完成写书。",
+  BOOK_CHECK_NOT_FOUND: "未找到这份核查报告。",
+  BOOK_CHECK_NOT_REVIEWABLE: "报告已过期或尚未完成，请重新检查后再复核。",
+  BOOK_CHECK_OUTPUT_INVALID:
+    "核查结果未能通过原文和证据校验，没有生成可用报告。请稍后重新检查。",
   VOICE_NOT_CONFIGURED: "实时语音暂未开通。",
   VOICE_CALL_BUSY: "当前已有语音采访，请先结束正在进行的通话。",
   VOICE_CALL_NOT_FOUND: "找不到这次语音采访。",

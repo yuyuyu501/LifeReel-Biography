@@ -95,3 +95,57 @@ class DirectoryEdit(BaseModel):
 class GenerationRead(BaseModel):
     job_ids: list[UUID]
     skipped_chapter_ids: list[UUID]
+
+
+class BookFactCheckCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    idempotency_key: UUID
+
+
+class BookFactCheckEvidence(BaseModel):
+    kind: Literal["source", "chapter"]
+    chapter_id: UUID
+    chapter_title: str
+    quote: str
+    claim_id: str | None = None
+    revision_id: UUID | None = None
+    version_number: int | None = None
+
+
+class BookFactCheckFinding(BaseModel):
+    id: UUID
+    type: Literal["conflict", "unsupported", "cross_chapter"]
+    chapter_id: UUID
+    chapter_title: str
+    quote: str
+    quote_location: Literal["body", "title"]
+    quote_position: int = Field(ge=0)
+    explanation: str
+    evidence: list[BookFactCheckEvidence] = Field(default_factory=list)
+    review_status: Literal["pending", "false_positive"] = "pending"
+
+
+class BookFactCheckFindingReview(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    status: Literal["false_positive"]
+
+
+class BookFactCheckSnapshotChapter(BaseModel):
+    chapter_id: UUID
+    chapter_title: str
+    revision_id: UUID
+    version_number: int = Field(ge=1)
+    source_digest: str = Field(min_length=64, max_length=64)
+
+
+class BookFactCheckRead(BaseModel):
+    id: UUID
+    job_id: UUID | None
+    status: Literal["queued", "running", "completed", "failed", "stale"]
+    stale: bool
+    chapters_checked: int
+    snapshot_chapters: list[BookFactCheckSnapshotChapter] = Field(default_factory=list)
+    findings: list[BookFactCheckFinding] = Field(default_factory=list)
+    error_code: str | None
+    created_at: datetime
+    updated_at: datetime

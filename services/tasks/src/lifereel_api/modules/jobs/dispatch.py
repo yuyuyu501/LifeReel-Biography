@@ -21,6 +21,7 @@ from lifereel_api.modules.production.locking import execution_lock
 
 KINDS = {"interview": "interview.turn.process", "video": "production.render",
          "book": "book.chapter.generate"}
+BOOK_FACT_CHECK = "book.fact_check"
 ACTIVE = ("queued", "running")
 
 
@@ -63,6 +64,8 @@ def claim_job(db: Session, lane: str):
         if lane == "video"
         else [kind, "interview.advice"] if lane == "interview" else [kind]
     )
+    if lane == "book":
+        kinds.append(BOOK_FACT_CHECK)
     limit = {"interview": settings.interview_concurrency,
              "video": settings.video_concurrency, "book": 1}[lane]
     # Serialise only admission to each lane, not its jobs or their AI calls.
@@ -176,7 +179,8 @@ def execute_claim(db: Session, job_id: UUID, token: UUID):
         if distributed():
             expected = {KINDS["interview"]: "worker-interview",
                         "interview.advice": "worker-interview",
-                        KINDS["book"]: "worker-book"}.get(job.kind, "worker-media")
+                        KINDS["book"]: "worker-book",
+                        BOOK_FACT_CHECK: "worker-book"}.get(job.kind, "worker-media")
             if service_name() != expected:
                 raise ApiError(403, ErrorCode.AUTH_READ_ONLY)
         try:
@@ -189,6 +193,10 @@ def execute_claim(db: Session, job_id: UUID, token: UUID):
                 from lifereel_api.modules.book.service import execute as write_chapter
 
                 write_chapter(db, job.tenant_id, job.id)
+            elif job.kind == BOOK_FACT_CHECK:
+                from lifereel_api.modules.book.fact_check import execute as check_book
+
+                check_book(db, job.tenant_id, job.id)
             elif job.kind == KINDS["interview"]:
                 interviews.execute_turn(
                     db, job.tenant_id, UUID(job.payload["workflow_id"]), recover_interrupted=True

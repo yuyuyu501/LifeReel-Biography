@@ -28,6 +28,7 @@ def event_type_for_job(kind: str) -> str:
         "interview.turn.process": "interview.turn.queued",
         "interview.advice": "interview.advice.queued",
         "book.chapter.generate": "book.chapter.queued",
+        "book.fact_check": "book.fact_check.queued",
         "production.render": "media.production.queued",
         "production.cleanup": "media.cleanup.queued",
         "evidence.photo_redraw": "media.photo_redraw.queued",

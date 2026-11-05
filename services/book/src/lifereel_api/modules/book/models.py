@@ -73,3 +73,27 @@ class BookRevision(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     source_claim_ids: Mapped[list[str]] = mapped_column(JSON, default=list)
     author: Mapped[str] = mapped_column(String(24))
     generation_model: Mapped[str | None] = mapped_column(String(180), nullable=True)
+
+
+class BookFactCheck(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    __tablename__ = "book_fact_checks"
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "book_id", "request_id", name="uq_book_fact_check_request"),
+        {"schema": "book"},
+    )
+
+    tenant_id: Mapped[UUID] = mapped_column(
+        Uuid, ForeignKey("identity.tenants.id", ondelete="CASCADE"), index=True
+    )
+    book_id: Mapped[UUID] = mapped_column(
+        Uuid, ForeignKey("book.books.id", ondelete="CASCADE"), index=True
+    )
+    job_id: Mapped[UUID | None] = mapped_column(
+        Uuid, ForeignKey("tasks.jobs.id", ondelete="SET NULL"), nullable=True
+    )
+    request_id: Mapped[str] = mapped_column(String(100))
+    status: Mapped[str] = mapped_column(String(24), default="queued")
+    input_digest: Mapped[str] = mapped_column(String(64))
+    input_snapshot: Mapped[dict] = mapped_column(JSON, default=dict)
+    findings: Mapped[list] = mapped_column(JSON, default=list)
+    error_code: Mapped[str | None] = mapped_column(String(120), nullable=True)

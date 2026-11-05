@@ -12,6 +12,9 @@ from lifereel_api.modules.book import service
 from lifereel_api.modules.book.models import Book
 from lifereel_api.modules.book.schemas import (
     BookCreate,
+    BookFactCheckCreate,
+    BookFactCheckFindingReview,
+    BookFactCheckRead,
     BookGenerate,
     BookRead,
     ChapterEdit,
@@ -55,6 +58,56 @@ def directory(book_id: UUID, payload: DirectoryEdit, db: Db, tenant: Tenant):
 @router.post("/{book_id}/generate", response_model=GenerationRead, status_code=202)
 def generate(book_id: UUID, payload: BookGenerate, db: Db, tenant: Tenant):
     return service.queue(db, tenant, book_id, payload)
+
+
+@router.post(
+    "/{book_id}/fact-checks",
+    response_model=BookFactCheckRead,
+    status_code=202,
+)
+def fact_check(book_id: UUID, payload: BookFactCheckCreate, db: Db, tenant: Tenant):
+    from lifereel_api.modules.book.fact_check import queue
+
+    return queue(db, tenant, book_id, payload.idempotency_key)
+
+
+@router.get(
+    "/{book_id}/fact-checks/latest",
+    response_model=BookFactCheckRead | None,
+)
+def latest_fact_check(book_id: UUID, db: Db, tenant: Tenant):
+    from lifereel_api.modules.book.fact_check import latest
+
+    return latest(db, tenant, book_id)
+
+
+@router.get(
+    "/{book_id}/fact-checks/{check_id}",
+    response_model=BookFactCheckRead,
+)
+def read_fact_check(book_id: UUID, check_id: UUID, db: Db, tenant: Tenant):
+    from lifereel_api.modules.book.fact_check import read
+
+    return read(db, tenant, book_id, check_id)
+
+
+@router.patch(
+    "/{book_id}/fact-checks/{check_id}/findings/{finding_id}",
+    response_model=BookFactCheckRead,
+)
+def review_fact_check_finding(
+    book_id: UUID,
+    check_id: UUID,
+    finding_id: UUID,
+    payload: BookFactCheckFindingReview,
+    db: Db,
+    tenant: Tenant,
+):
+    from lifereel_api.modules.book.fact_check import mark_false_positive
+
+    if payload.status != "false_positive":
+        raise ApiError(422, ErrorCode.REQUEST_VALIDATION_FAILED)
+    return mark_false_positive(db, tenant, book_id, check_id, finding_id)
 
 
 @router.patch("/{book_id}/chapters/{chapter_id}", response_model=BookRead)
