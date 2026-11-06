@@ -91,8 +91,20 @@ MODULES = {
     "lifereel_api.modules.book.adaptation": (
         "services/book/src/lifereel_api/modules/book/adaptation.py"
     ),
+    "lifereel_api.modules.script.models": (
+        "services/script/src/lifereel_api/modules/script/models.py"
+    ),
     "lifereel_api.modules.production.planning": (
         "services/media/src/lifereel_api/modules/production/planning.py"
+    ),
+    "lifereel_api.modules.production.router": (
+        "services/media/src/lifereel_api/modules/production/router.py"
+    ),
+    "lifereel_api.modules.production.schemas": (
+        "services/media/src/lifereel_api/modules/production/schemas.py"
+    ),
+    "lifereel_api.modules.production.segmented": (
+        "services/media/src/lifereel_api/modules/production/segmented.py"
     ),
     "lifereel_api.modules.production.service": (
         "services/media/src/lifereel_api/modules/production/service.py"
@@ -166,6 +178,16 @@ def backup_database(name):
 
 def containers():
     return json.loads(out("docker", "inspect", *out(*COMPOSE, "ps", "-q").split()))
+
+
+def parse_alembic_heads(output):
+    heads = {
+        line.split()[0]
+        for line in output.splitlines()
+        if line.strip().endswith("(head)")
+    }
+    assert heads, "Unable to determine Alembic heads"
+    return heads
 
 
 def prepare():
@@ -339,9 +361,24 @@ def verify(release, script_model=None, model_pools=False, video_per_second=False
         "-d",
         "lifereel",
         "-Atc",
-        "SELECT version_num FROM public.alembic_version",
+        "SELECT version_num FROM public.alembic_version ORDER BY version_num",
     )
-    assert migration == "20261012_0045"
+    migrations = set(migration.splitlines())
+    migration_heads = parse_alembic_heads(
+        out(
+            *COMPOSE,
+            "run",
+            "--rm",
+            "--no-deps",
+            "-T",
+            "--entrypoint",
+            "alembic",
+            "migrate",
+            "heads",
+        )
+    )
+    assert migrations == migration_heads, (migrations, migration_heads)
+    migration = ",".join(sorted(migrations))
     expected = {m: hashlib.sha256((ROOT / p).read_bytes()).hexdigest() for m, p in MODULES.items()}
     code = (
         "import importlib,inspect,hashlib,json; from pathlib import Path; ms="
