@@ -25,6 +25,7 @@ import { hasQueryIssue } from "../queryHelpers";
 import { statusLabel } from "../statusLabels";
 import { EditableScript } from "../components/EditableScript";
 import { BookScriptGenerator } from "../components/BookScriptGenerator";
+import { ScriptPlanSummary } from "../components/ScriptPlanSummary";
 import { ProductionDetails } from "../components/ProductionDetails";
 import {
   ProductionQuality,
@@ -700,6 +701,7 @@ export function StudioPage() {
                     hidden={view !== "script"}
                   >
                     <article className="studio-script">
+                      <ScriptPlanSummary project={selected.project} />
                       <div className="studio-script-caption">
                         <span>当前剧本</span>
                         <span>

@@ -30,6 +30,87 @@ class StorySkeleton(BaseModel):
     ending: str = Field(min_length=1, max_length=600)
 
 
+class SourcedNote(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    text: str = Field(min_length=1, max_length=1000)
+    source_revision_ids: list[UUID] = Field(min_length=1, max_length=40)
+
+
+class AdaptationBrief(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    theme: str = Field(min_length=1, max_length=1000)
+    intended_audience: Literal["private", "family", "friends", "public"]
+    dramatic_question: str | None = Field(default=None, max_length=1000)
+    time_scope: str | None = Field(default=None, max_length=500)
+    must_include: list[SourcedNote] = Field(default_factory=list, max_length=40)
+    must_avoid: list[str] = Field(default_factory=list, max_length=40)
+    tone: str | None = Field(default=None, max_length=500)
+    source_revision_ids: list[UUID] = Field(min_length=1, max_length=40)
+
+
+class StoryBibleEntry(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: str = Field(min_length=1, max_length=64, pattern=r"^[a-z0-9][a-z0-9_-]*$")
+    name: str = Field(min_length=1, max_length=180)
+    notes: list[SourcedNote] = Field(default_factory=list, max_length=20)
+    source_revision_ids: list[UUID] = Field(min_length=1, max_length=40)
+
+
+class StoryTimelineEntry(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: str = Field(min_length=1, max_length=64, pattern=r"^[a-z0-9][a-z0-9_-]*$")
+    event: str = Field(min_length=1, max_length=500)
+    time_expression: str | None = Field(default=None, max_length=180)
+    character_refs: list[str] = Field(default_factory=list, max_length=20)
+    location_ref: str | None = Field(default=None, max_length=64)
+    source_revision_ids: list[UUID] = Field(min_length=1, max_length=40)
+
+
+class StoryBible(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    characters: list[StoryBibleEntry] = Field(default_factory=list, max_length=80)
+    locations: list[StoryBibleEntry] = Field(default_factory=list, max_length=80)
+    timeline: list[StoryTimelineEntry] = Field(default_factory=list, max_length=120)
+    key_objects: list[StoryBibleEntry] = Field(default_factory=list, max_length=80)
+    constraints: list[str] = Field(default_factory=list, max_length=40)
+    source_revision_ids: list[UUID] = Field(default_factory=list, max_length=40)
+
+
+class SequencePlanItem(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    key: str = Field(min_length=1, max_length=64, pattern=r"^[a-z0-9][a-z0-9_-]*$")
+    order_index: int = Field(ge=1, strict=True)
+    title: str = Field(min_length=1, max_length=180)
+    narrative_role: Literal[
+        "opening", "setup", "development", "turning_point", "aftermath", "closing",
+        "transition", "montage",
+    ]
+    summary: str = Field(min_length=1, max_length=2000)
+    source_revision_ids: list[UUID] = Field(min_length=1, max_length=40)
+    character_refs: list[str] = Field(default_factory=list, max_length=20)
+    location_refs: list[str] = Field(default_factory=list, max_length=20)
+
+
+class SequencePlan(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    items: list[SequencePlanItem] = Field(min_length=1, max_length=120)
+
+
+class AdaptationPlan(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    adaptation_brief: AdaptationBrief
+    story_bible: StoryBible
+    sequence_plan: SequencePlan
+
+
 class ScriptGenerateRequest(BaseModel):
     subject_id: UUID
     title: str | None = Field(default=None, max_length=180)
@@ -87,6 +168,7 @@ class ScriptSceneRead(BaseModel):
     reference_asset_ids: list[UUID] | None = None
     visual_constraints: VisualConstraints | None = None
     story_skeleton: StorySkeleton | None = None
+    adaptation_metadata: dict = Field(default_factory=dict)
 
 
 class ScriptReferencesUpdate(BaseModel):
@@ -106,6 +188,7 @@ class ScriptShotRead(BaseModel):
     duration_seconds: int
     source_claim_ids: list[str]
     visual_constraints: VisualConstraints | None = None
+    adaptation_metadata: dict = Field(default_factory=dict)
 
 
 class ScriptProjectRead(BaseModel):
@@ -127,4 +210,7 @@ class ScriptProjectRead(BaseModel):
     shots: list[ScriptShotRead] = Field(default_factory=list)
     source_type: str = "legacy"
     source_snapshot: dict = Field(default_factory=dict)
+    adaptation_brief: AdaptationBrief | None = None
+    story_bible: StoryBible | None = None
+    sequence_plan: SequencePlan | None = None
     source_stale: bool = False

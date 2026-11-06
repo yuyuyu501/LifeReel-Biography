@@ -75,6 +75,64 @@
   min-width: 0;
   letter-spacing: 0;
 }
+.script-plan-summary {
+  margin-bottom: 18px;
+  border-bottom: 1px solid var(--line);
+}
+.script-plan-summary > summary {
+  padding: 14px 0;
+  cursor: pointer;
+  color: var(--green-dark);
+  font-size: 15px;
+  font-weight: 700;
+}
+.script-plan-summary-body {
+  display: grid;
+  gap: 18px;
+  padding: 0 0 18px;
+}
+.script-plan-summary-body section {
+  min-width: 0;
+}
+.script-plan-summary-body h4 {
+  margin: 0 0 8px;
+  color: var(--green-dark);
+  font-size: 13px;
+}
+.script-plan-summary-body p,
+.script-plan-summary-body small {
+  display: block;
+  margin: 0;
+  color: var(--ink-soft);
+  font-size: 13px;
+  line-height: 1.7;
+  overflow-wrap: anywhere;
+}
+.script-plan-summary-body small + small {
+  margin-top: 4px;
+}
+.script-plan-summary-body ol {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding-left: 20px;
+}
+.script-plan-summary-body li {
+  padding-left: 4px;
+  color: var(--ink-soft);
+}
+.script-plan-summary-body li strong,
+.script-plan-summary-body li span {
+  display: inline;
+  font-size: 13px;
+}
+.script-plan-summary-body li span {
+  margin-left: 8px;
+  color: var(--green);
+}
+.script-plan-summary-body li p {
+  margin-top: 3px;
+}
 .script-sections > section {
   padding-block: 20px;
   border-bottom: 1px solid var(--line);

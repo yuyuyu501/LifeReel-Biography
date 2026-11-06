@@ -1040,6 +1040,11 @@ def update_scene(db, tenant_id, project_id, scene_id, payload: ScriptSceneUpdate
                     order_index=index + 1,
                     **shot.model_dump(),
                     source_claim_ids=sources,
+                    adaptation_metadata=(
+                        previous.adaptation_metadata
+                        if previous and previous.visual_prompt == shot.visual_prompt
+                        else {}
+                    ),
                 )
             )
         project.version_number += 1

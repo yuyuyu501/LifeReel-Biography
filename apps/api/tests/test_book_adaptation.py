@@ -3,7 +3,14 @@ from uuid import UUID, uuid4
 
 import pytest
 from lifereel_api.modules.billing.models import Charge
-from lifereel_api.modules.script.book_adaptation import Draft, mock_draft, validate
+from lifereel_api.modules.script.book_adaptation import (
+    AdaptationPlan,
+    Draft,
+    _attach_plan_metadata,
+    mock_draft,
+    normalize_plan,
+    validate,
+)
 from lifereel_api.modules.script.models import ScriptGenerationReceipt, ScriptProject
 from lifereel_api.providers.openai_compatible import OpenAICompatibleClient
 from pydantic import ValidationError
@@ -139,6 +146,119 @@ def test_whole_book_requires_source_coverage():
         validate(result, snapshot)
 
 
+def test_normalize_plan_creates_source_bound_intermediate_artifacts():
+    snapshot = _snapshot()
+    plan = normalize_plan(
+        snapshot,
+        {
+            "adaptation_brief": {
+                "theme": "巷口的童年",
+                "intended_audience": "family",
+                "source_revision_ids": [snapshot["revisions"][0]["revision_id"]],
+                "must_include": [
+                    {
+                        "text": "在泉州长大",
+                        "source_revision_ids": [snapshot["revisions"][0]["revision_id"]],
+                    }
+                ],
+            },
+            "story_bible": {
+                "source_revision_ids": [snapshot["revisions"][0]["revision_id"]],
+                "locations": [{
+                    "id": "quanzhou",
+                    "name": "泉州",
+                    "source_revision_ids": [snapshot["revisions"][0]["revision_id"]],
+                }],
+            },
+            "sequence_plan": {
+                "items": [{
+                    "key": "opening",
+                    "order_index": 1,
+                    "title": "巷口",
+                    "narrative_role": "opening",
+                    "summary": "从童年生活展开。",
+                    "source_revision_ids": [snapshot["revisions"][0]["revision_id"]],
+                    "location_refs": ["quanzhou"],
+                }]
+            },
+        },
+        "保留生活细节",
+        "family",
+    )
+
+    assert isinstance(plan, AdaptationPlan)
+    assert plan.adaptation_brief.theme == "巷口的童年"
+    assert plan.adaptation_brief.intended_audience == "family"
+    assert plan.story_bible.locations[0].id == "quanzhou"
+    assert plan.sequence_plan.items[0].key == "opening"
+
+
+def test_normalize_plan_rejects_unknown_sources_and_duplicate_keys():
+    snapshot = _snapshot()
+    revision_id = snapshot["revisions"][0]["revision_id"]
+    with pytest.raises(ValueError, match="unknown planning source"):
+        normalize_plan(
+            snapshot,
+            {
+                "sequence_plan": {
+                    "items": [{
+                        "key": "opening",
+                        "title": "开场",
+                        "narrative_role": "opening",
+                        "summary": "越界来源",
+                        "source_revision_ids": [str(uuid4())],
+                    }]
+                }
+            },
+            "",
+            "family",
+        )
+    duplicate = {
+        "sequence_plan": {
+            "items": [
+                {
+                    "key": "same",
+                    "title": "一",
+                    "narrative_role": "opening",
+                    "summary": "一",
+                    "source_revision_ids": [revision_id],
+                },
+                {
+                    "key": "same",
+                    "title": "二",
+                    "narrative_role": "closing",
+                    "summary": "二",
+                    "source_revision_ids": [revision_id],
+                },
+            ]
+        }
+    }
+    with pytest.raises(ValueError, match="duplicate sequence key"):
+        normalize_plan(snapshot, duplicate, "", "family")
+
+
+def test_legacy_scene_plan_remains_compatible_and_scene_order_is_enforced():
+    snapshot = _snapshot()
+    second_id = str(uuid4())
+    snapshot["revisions"].append({
+        "revision_id": second_id,
+        "title": "成年",
+        "body": "后来我到工厂工作。",
+    })
+    plan = normalize_plan(
+        snapshot,
+        {"scene_plan": ["童年", "工作"]},
+        "",
+        "family",
+    )
+    draft = Draft.model_validate(mock_draft(snapshot, planning=plan))
+
+    assert [scene.sequence_key for scene in draft.scenes] == ["scene-1", "scene-2"]
+    draft.scenes.reverse()
+    with pytest.raises(ValueError, match="scene order does not match sequence plan"):
+        _attach_plan_metadata(draft, plan)
+
+
 def test_provider_aliases_are_saved_canonically_and_replay_does_not_call_model(client, monkeypatch):
     person = client.post("/v1/persons", json={"display_name": "改编测试人物"}).json()
     profile = client.get("/v1/life-profiles/subjects/" + person["id"]).json()
@@ -230,6 +350,14 @@ def test_provider_aliases_are_saved_canonically_and_replay_does_not_call_model(c
     assert all(d["kind"] == "narration" for s in project["scenes"] for d in s["dialogues"])
     assert [s["source_claim_ids"] for s in project["scenes"]] == [[revision["id"]], [second_id]]
     assert project["source_snapshot"]["book_id"] == book["id"]
+    assert project["adaptation_brief"]["intended_audience"] == "family"
+    assert project["story_bible"]["source_revision_ids"] == [revision["id"], second_id]
+    assert [item["key"] for item in project["sequence_plan"]["items"]] == [
+        "scene-1",
+        "scene-2",
+    ]
+    assert all(scene["adaptation_metadata"]["sequence_key"] for scene in project["scenes"])
+    assert all(shot["adaptation_metadata"] for shot in project["shots"])
     assert all(
         s["visual_constraints"]["notes"] == "避免正脸\n保留工作环境"
         for s in project["scenes"]

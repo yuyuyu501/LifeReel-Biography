@@ -326,6 +326,65 @@ export interface StorySkeleton {
   ending: string;
 }
 
+export interface AdaptationBrief {
+  theme: string;
+  intended_audience: "private" | "family" | "friends" | "public";
+  dramatic_question?: string | null;
+  time_scope?: string | null;
+  must_include: Array<{ text: string; source_revision_ids: UUID[] }>;
+  must_avoid: string[];
+  tone?: string | null;
+  source_revision_ids: UUID[];
+  [key: string]: unknown;
+}
+
+export interface StoryBible {
+  characters: StoryBibleEntry[];
+  locations: StoryBibleEntry[];
+  timeline: Array<{
+    id: string;
+    event: string;
+    time_expression: string | null;
+    character_refs: string[];
+    location_ref: string | null;
+    source_revision_ids: UUID[];
+  }>;
+  key_objects: StoryBibleEntry[];
+  constraints: string[];
+  source_revision_ids: UUID[];
+  [key: string]: unknown;
+}
+
+export interface StoryBibleEntry {
+  id: string;
+  name: string;
+  notes: Array<{ text: string; source_revision_ids: UUID[] }>;
+  source_revision_ids: UUID[];
+}
+
+export interface SequencePlanItem {
+  key: string;
+  order_index: number;
+  title: string;
+  narrative_role:
+    | "opening"
+    | "setup"
+    | "development"
+    | "turning_point"
+    | "aftermath"
+    | "closing"
+    | "transition"
+    | "montage";
+  summary: string;
+  source_revision_ids: UUID[];
+  [key: string]: unknown;
+}
+
+export interface SequencePlan {
+  items: SequencePlanItem[];
+  [key: string]: unknown;
+}
+
 export interface ScriptSceneUpdate {
   expected_version: number;
   heading: string;
@@ -358,6 +417,17 @@ export interface ScriptScene {
   source_claim_ids: UUID[];
   visual_constraints?: VisualConstraints | null;
   story_skeleton?: StorySkeleton | null;
+  adaptation_metadata?: {
+    action?: string;
+    camera_intent?: string;
+    sequence_key?: string;
+    narrative_role?: SequencePlanItem["narrative_role"];
+    character_refs?: string[];
+    location_refs?: string[];
+    time_refs?: string[];
+    continuity_notes?: string[];
+    [key: string]: unknown;
+  };
 }
 
 export interface ScriptShot {
@@ -369,6 +439,15 @@ export interface ScriptShot {
   duration_seconds: number;
   source_claim_ids: UUID[];
   visual_constraints?: VisualConstraints | null;
+  adaptation_metadata?: {
+    action?: string;
+    camera_intent?: string;
+    character_refs?: string[];
+    location_refs?: string[];
+    time_refs?: string[];
+    continuity_notes?: string[];
+    [key: string]: unknown;
+  };
 }
 
 export interface ScriptProject {
@@ -377,6 +456,9 @@ export interface ScriptProject {
     subject_id: string;
     revisions: { revision_id: string; title: string; version_number: number }[];
   };
+  adaptation_brief?: AdaptationBrief | null;
+  story_bible?: StoryBible | null;
+  sequence_plan?: SequencePlan | null;
   source_stale?: boolean;
   id: UUID;
   subject_id: UUID;

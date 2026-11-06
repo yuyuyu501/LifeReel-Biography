@@ -70,6 +70,9 @@ class ScriptProject(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     generation_model: Mapped[str | None] = mapped_column(String(180), nullable=True)
     source_type: Mapped[str] = mapped_column(String(24), default="legacy", server_default="legacy")
     source_snapshot: Mapped[dict] = mapped_column(JSON, default=dict, server_default="{}")
+    adaptation_brief: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    story_bible: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    sequence_plan: Mapped[dict | None] = mapped_column(JSON, nullable=True)
 
 
 class ScriptScene(UUIDPrimaryKeyMixin, Base):
@@ -98,6 +101,7 @@ class ScriptScene(UUIDPrimaryKeyMixin, Base):
     source_claim_ids: Mapped[list[str]] = mapped_column(JSON, default=list)
     visual_constraints: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     story_skeleton: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    adaptation_metadata: Mapped[dict] = mapped_column(JSON, default=dict, server_default="{}")
     review_status: Mapped[str] = mapped_column(String(32), default="needs_review")
     locked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
@@ -121,3 +125,4 @@ class ScriptShot(UUIDPrimaryKeyMixin, Base):
     duration_seconds: Mapped[int] = mapped_column(Integer, default=6)
     source_claim_ids: Mapped[list[str]] = mapped_column(JSON, default=list)
     visual_constraints: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    adaptation_metadata: Mapped[dict] = mapped_column(JSON, default=dict, server_default="{}")
