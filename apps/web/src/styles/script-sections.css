@@ -91,6 +91,28 @@
   gap: 18px;
   padding: 0 0 18px;
 }
+.script-plan-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.script-plan-toolbar h3 {
+  margin: 0;
+}
+.script-plan-entry-list {
+  display: grid;
+  gap: 8px;
+}
+.script-plan-summary-body label {
+  display: grid;
+  gap: 6px;
+  margin-top: 10px;
+}
+.script-plan-summary-body label > span {
+  color: var(--muted-foreground);
+  font-size: 13px;
+}
 .script-plan-summary-body section {
   min-width: 0;
 }

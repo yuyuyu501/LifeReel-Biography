@@ -382,6 +382,52 @@ def test_provider_aliases_are_saved_canonically_and_replay_does_not_call_model(c
         )
         assert list(db.scalars(select(Charge.status))) == ["settled"]
 
+    plan_items = deepcopy(project["sequence_plan"]["items"])
+    plan_items.reverse()
+    plan_items = [
+        {**item, "order_index": index}
+        for index, item in enumerate(plan_items, 1)
+    ]
+    plan_payload = {
+        "expected_version": project["version_number"],
+        "adaptation_brief": {
+            **project["adaptation_brief"],
+            "theme": "从工作到收束",
+        },
+        "story_bible": project["story_bible"],
+        "sequence_plan": {"items": plan_items},
+    }
+    revised_plan = client.patch(
+        f"/v1/scripts/{project['id']}/adaptation-plan",
+        json=plan_payload,
+    )
+    assert revised_plan.status_code == 200, revised_plan.text
+    revised = revised_plan.json()
+    assert revised["version_number"] == project["version_number"] + 1
+    assert revised["adaptation_brief"]["theme"] == "从工作到收束"
+    assert [item["key"] for item in revised["sequence_plan"]["items"]] == [
+        item["key"] for item in plan_items
+    ]
+    assert [
+        scene["adaptation_metadata"]["sequence_key"] for scene in revised["scenes"]
+    ] == [item["key"] for item in plan_items]
+    stale_plan = client.patch(
+        f"/v1/scripts/{project['id']}/adaptation-plan",
+        json=plan_payload,
+    )
+    assert stale_plan.status_code == 409
+    invalid_plan = {
+        **plan_payload,
+        "expected_version": revised["version_number"],
+        "sequence_plan": {
+            "items": [{**plan_items[0], "source_revision_ids": [str(uuid4())]}, *plan_items[1:]]
+        },
+    }
+    assert client.patch(
+        f"/v1/scripts/{project['id']}/adaptation-plan",
+        json=invalid_plan,
+    ).status_code == 422
+
     stale = client.patch(
         f"/v1/books/{book['id']}/chapters/{chapter['id']}",
         json={"expected_version": 1, "title": chapter["title"], "body": "我每天认真核对记录。"},

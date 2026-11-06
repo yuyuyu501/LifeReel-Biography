@@ -385,6 +385,13 @@ export interface SequencePlan {
   [key: string]: unknown;
 }
 
+export interface ScriptAdaptationPlanUpdate {
+  expected_version: number;
+  adaptation_brief: AdaptationBrief;
+  story_bible: StoryBible;
+  sequence_plan: SequencePlan;
+}
+
 export interface ScriptSceneUpdate {
   expected_version: number;
   heading: string;

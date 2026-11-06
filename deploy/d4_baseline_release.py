@@ -82,6 +82,9 @@ MODULES = {
     "lifereel_api.modules.script.service": (
         "services/script/src/lifereel_api/modules/script/service.py"
     ),
+    "lifereel_api.modules.script.router": (
+        "services/script/src/lifereel_api/modules/script/router.py"
+    ),
     "lifereel_api.modules.script.book_adaptation": (
         "services/script/src/lifereel_api/modules/script/book_adaptation.py"
     ),

@@ -15,6 +15,7 @@ from lifereel_api.modules.interview.profile_models import LifeProfile
 from lifereel_api.modules.script import queries, references, service
 from lifereel_api.modules.script.models import ScriptProject
 from lifereel_api.modules.script.schemas import (
+    ScriptAdaptationPlanUpdate,
     ScriptGenerateRequest,
     ScriptProjectRead,
     ScriptReferencesUpdate,
@@ -74,6 +75,16 @@ def generate_script(payload: ScriptGenerateRequest, db: Db, tenant_id: Tenant) -
 def script(project_id: UUID, db: Db, tenant_id: Tenant) -> ScriptProjectRead:
     project, scenes, shots = service.get_project(db, tenant_id, project_id)
     return with_freshness(db, tenant_id, to_read(project, scenes, shots))
+
+
+@router.patch("/{project_id}/adaptation-plan", response_model=ScriptProjectRead)
+def update_adaptation_plan(
+    project_id: UUID,
+    payload: ScriptAdaptationPlanUpdate,
+    db: Db,
+    tenant_id: Tenant,
+) -> ScriptProjectRead:
+    return to_read(*service.update_adaptation_plan(db, tenant_id, project_id, payload))
 
 
 def with_freshness(db, tenant, result):

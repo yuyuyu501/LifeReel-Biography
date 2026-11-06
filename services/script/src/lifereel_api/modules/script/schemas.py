@@ -111,6 +111,15 @@ class AdaptationPlan(BaseModel):
     sequence_plan: SequencePlan
 
 
+class ScriptAdaptationPlanUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    expected_version: int = Field(ge=1)
+    adaptation_brief: AdaptationBrief
+    story_bible: StoryBible
+    sequence_plan: SequencePlan
+
+
 class ScriptGenerateRequest(BaseModel):
     subject_id: UUID
     title: str | None = Field(default=None, max_length=180)

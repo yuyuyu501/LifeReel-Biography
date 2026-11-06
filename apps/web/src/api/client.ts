@@ -383,6 +383,14 @@ export const api = {
       method: "PATCH",
       body: JSON.stringify(payload),
     }),
+  updateScriptAdaptationPlan: (
+    projectId: string,
+    payload: import("@lifereel/contracts").ScriptAdaptationPlanUpdate,
+  ) =>
+    request<ScriptProject>(`/v1/scripts/${projectId}/adaptation-plan`, {
+      method: "PATCH",
+      body: JSON.stringify(payload),
+    }),
   generateScript: (payload: {
     subject_id: string;
     idempotency_key?: string;

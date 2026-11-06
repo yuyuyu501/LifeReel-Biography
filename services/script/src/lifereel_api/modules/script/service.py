@@ -32,6 +32,7 @@ from lifereel_api.modules.script.constraints import (
 from lifereel_api.modules.script.freshness import is_current
 from lifereel_api.modules.script.models import ScriptProject, ScriptScene, ScriptShot
 from lifereel_api.modules.script.schemas import (
+    ScriptAdaptationPlanUpdate,
     ScriptDialogue,
     ScriptGenerateRequest,
     ScriptSceneUpdate,
@@ -1047,6 +1048,95 @@ def update_scene(db, tenant_id, project_id, scene_id, payload: ScriptSceneUpdate
                     ),
                 )
             )
+        project.version_number += 1
+        project.status = "draft"
+        db.commit()
+        return get_project(db, tenant_id, project.id)
+
+
+def update_adaptation_plan(
+    db: Session,
+    tenant_id: UUID,
+    project_id: UUID,
+    payload: ScriptAdaptationPlanUpdate,
+):
+    from lifereel_api.modules.book.service import digest
+    from lifereel_api.modules.script.book_adaptation import _validate_plan, sources
+    from lifereel_api.modules.script.schemas import AdaptationPlan
+
+    project, scenes, shots = get_project(db, tenant_id, project_id)
+    if project.source_type != "book" or not project.source_snapshot:
+        raise ApiError(409, ErrorCode.SCRIPT_EDIT_CONFLICT)
+    with execution_lock(db, project.subject_id) as acquired:
+        if not acquired:
+            raise ApiError(409, ErrorCode.SCRIPT_EDIT_BUSY)
+        db.refresh(project)
+        if project.version_number != payload.expected_version:
+            raise ApiError(409, ErrorCode.SCRIPT_EDIT_CONFLICT)
+        busy = db.scalar(
+            select(InterviewTurnWorkflow.id)
+            .join(InterviewSession)
+            .where(
+                InterviewSession.subject_id == project.subject_id,
+                InterviewTurnWorkflow.tenant_id == tenant_id,
+                InterviewTurnWorkflow.status.in_(["queued", "running"]),
+            )
+            .limit(1)
+        )
+        if busy:
+            raise ApiError(409, ErrorCode.SCRIPT_EDIT_BUSY)
+        try:
+            known_snapshot = sources(
+                db,
+                tenant_id,
+                project.subject_id,
+                [
+                    UUID(item["revision_id"])
+                    for item in project.source_snapshot.get("revisions", [])
+                ],
+                book_id=project.source_snapshot.get("book_id"),
+            )
+            if digest(known_snapshot) != digest(project.source_snapshot):
+                raise ValueError("source snapshot changed")
+            plan = AdaptationPlan(
+                adaptation_brief=payload.adaptation_brief,
+                story_bible=payload.story_bible,
+                sequence_plan=payload.sequence_plan,
+            )
+            _validate_plan(
+                plan,
+                [UUID(item["revision_id"]) for item in project.source_snapshot["revisions"]],
+            )
+            old_keys = {
+                scene.adaptation_metadata.get("sequence_key")
+                for scene in scenes
+                if scene.adaptation_metadata.get("sequence_key")
+            }
+            new_keys = {item.key for item in plan.sequence_plan.items}
+            if old_keys != new_keys:
+                raise ValueError("sequence membership changed")
+        except (ApiError, KeyError, TypeError, ValueError) as exc:
+            if isinstance(exc, ApiError):
+                raise
+            raise ApiError(422, ErrorCode.SCRIPT_CONTENT_INVALID) from exc
+
+        project.adaptation_brief = plan.adaptation_brief.model_dump(mode="json")
+        project.story_bible = plan.story_bible.model_dump(mode="json")
+        project.sequence_plan = plan.sequence_plan.model_dump(mode="json")
+        scene_by_key = {
+            scene.adaptation_metadata["sequence_key"]: scene
+            for scene in scenes
+            if scene.adaptation_metadata.get("sequence_key")
+        }
+        for item in plan.sequence_plan.items:
+            scene = scene_by_key[item.key]
+            scene.order_index = item.order_index
+            scene.adaptation_metadata = {
+                **scene.adaptation_metadata,
+                "narrative_role": item.narrative_role,
+                "character_refs": item.character_refs,
+                "location_refs": item.location_refs,
+            }
         project.version_number += 1
         project.status = "draft"
         db.commit()
