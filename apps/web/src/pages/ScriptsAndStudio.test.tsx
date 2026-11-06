@@ -103,7 +103,7 @@ beforeEach(() => {
   vi.spyOn(window, "confirm").mockReturnValue(true);
   vi.stubGlobal(
     "fetch",
-    vi.fn(async (input: RequestInfo | URL) => {
+    vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input).split("?")[0];
       if (url.endsWith("/v1/wallet"))
         return response({
@@ -125,6 +125,58 @@ beforeEach(() => {
           duration_seconds: 5,
           generate_audio: false,
         });
+      if (url.endsWith("/v1/production/preview")) {
+        const request = JSON.parse(String(init?.body));
+        return response({
+          fingerprint: "a".repeat(64),
+          project_id: project.id,
+          scene_id: request.scene_id,
+          script_version: 1,
+          provider: "volcengine-seedance",
+          mode: "single_clip",
+          generation_config: {
+            model: "doubao-seedance-1-0-pro-fast-251015",
+          },
+          provider_parameters: {
+            model: "doubao-seedance-1-0-pro-fast-251015",
+            resolution: "720p",
+            ratio: "16:9",
+            duration_seconds: 5,
+            generate_audio: false,
+            watermark: true,
+          },
+          billing_quote: {
+            amount_cents: 400,
+            target_seconds: 5,
+            video_billing_mode: "per_second",
+            title: "林奶奶 · 远行求学",
+            version: "test",
+          },
+          reference_package: {
+            source_assets: [],
+            image_references: [],
+            audio_references: [],
+          },
+          quality_review: {
+            shot_warnings: [],
+            identity_verification: "manual",
+          },
+          plan: null,
+          segments: [
+            {
+              index: 0,
+              scene_id: request.scene_id,
+              duration_seconds: 5,
+              narration: "十八岁那年，我第一次离开家乡去读书。",
+              visual_prompt: "旧火车站的远景",
+              provider_prompt: "远行求学：旧火车站的远景",
+              source_claim_ids: ["claim-2"],
+              reference_assets: [],
+            },
+          ],
+          warnings: [],
+        });
+      }
       return response([]);
     }) as unknown as typeof fetch,
   );
@@ -380,6 +432,16 @@ test("switches chapters and submits only the selected chapter", async () => {
   fireEvent.click(screen.getByRole("tab", { name: "视频预览" }));
   expect(screen.getByText(project.scenes[1].narration)).not.toBeVisible();
   fireEvent.click(screen.getByRole("button", { name: "生成影像" }));
+  expect(
+    await screen.findByRole("heading", { name: "确认本次影像生成" }),
+  ).toBeVisible();
+  expect(screen.getByRole("button", { name: "确认并生成" })).toBeDisabled();
+  fireEvent.click(
+    screen.getByRole("checkbox", {
+      name: "我已核对本次镜头、素材与报价，确认生成",
+    }),
+  );
+  fireEvent.click(screen.getByRole("button", { name: "确认并生成" }));
   await waitFor(() =>
     expect(fetch).toHaveBeenCalledWith(
       expect.stringContaining("/v1/production/runs"),
@@ -390,6 +452,7 @@ test("switches chapters and submits only the selected chapter", async () => {
           scene_id: "scene-2",
           audience: "family",
           quoted_amount_cents: 400,
+          preview_fingerprint: "a".repeat(64),
         }),
       }),
     ),
@@ -415,15 +478,40 @@ test("per-second pricing blocks generation below the full quote", async () => {
   ).toBeDisabled();
 });
 
-test("starts immediately without a confirmation dialog or quote notice", async () => {
+test("requires reviewing and confirming a plan before starting production", async () => {
   vi.mocked(window.confirm).mockReturnValue(false);
   renderPage(<StudioPage />, "/studio");
   fireEvent.click(await screen.findByRole("button", { name: "生成影像" }));
   expect(window.confirm).not.toHaveBeenCalled();
-  expect(screen.queryByText(/本次报价/)).not.toBeInTheDocument();
+  expect(
+    await screen.findByRole("heading", { name: "确认本次影像生成" }),
+  ).toBeVisible();
+  expect(screen.getByText("旧火车站的远景")).toBeVisible();
+  expect(screen.queryByRole("button", { name: "确认并生成" })).toBeDisabled();
+  expect(
+    vi
+      .mocked(fetch)
+      .mock.calls.some(
+        ([url, init]) =>
+          String(url).endsWith("/v1/production/runs") &&
+          init?.method === "POST",
+      ),
+  ).toBe(false);
+  fireEvent.click(
+    screen.getByRole("checkbox", {
+      name: "我已核对本次镜头、素材与报价，确认生成",
+    }),
+  );
+  fireEvent.click(screen.getByRole("button", { name: "确认并生成" }));
   await waitFor(() =>
     expect(
-      vi.mocked(fetch).mock.calls.some(([, init]) => init?.method === "POST"),
+      vi
+        .mocked(fetch)
+        .mock.calls.some(
+          ([url, init]) =>
+            String(url).endsWith("/v1/production/runs") &&
+            init?.method === "POST",
+        ),
     ).toBe(true),
   );
 });
@@ -458,12 +546,30 @@ test("a positive balance below the full hold still permits one video", async () 
           available_cents: 1,
           prices: { video_billing_mode: "tokens", video_reserve_cents: 2400 },
         })
-      : original(input, init),
+      : String(input).endsWith("/v1/production/preview")
+        ? response({
+            ...(await (await original(input, init)).json()),
+            billing_quote: {
+              amount_cents: 2400,
+              target_seconds: 5,
+              video_billing_mode: "tokens",
+              title: "林奶奶 · 远行求学",
+              version: "test",
+            },
+          })
+        : original(input, init),
   );
   renderPage(<StudioPage />, "/studio");
   const button = await screen.findByRole("button", { name: "生成影像" });
   expect(button).toBeEnabled();
   fireEvent.click(button);
+  await screen.findByRole("heading", { name: "确认本次影像生成" });
+  fireEvent.click(
+    screen.getByRole("checkbox", {
+      name: "我已核对本次镜头、素材与报价，确认生成",
+    }),
+  );
+  fireEvent.click(screen.getByRole("button", { name: "确认并生成" }));
   await waitFor(() =>
     expect(fetch).toHaveBeenCalledWith(
       expect.stringContaining("/v1/production/runs"),
@@ -474,6 +580,7 @@ test("a positive balance below the full hold still permits one video", async () 
           scene_id: "scene-1",
           audience: "family",
           quoted_amount_cents: 2400,
+          preview_fingerprint: "a".repeat(64),
         }),
       }),
     ),
@@ -913,6 +1020,13 @@ test.each([undefined, "color-redraw-v1", "ai-label-v2"])(
       screen.queryByRole("link", { name: "前往采访添加素材" }),
     ).not.toBeInTheDocument();
     fireEvent.click(button);
+    await screen.findByRole("heading", { name: "确认本次影像生成" });
+    fireEvent.click(
+      screen.getByRole("checkbox", {
+        name: "我已核对本次镜头、素材与报价，确认生成",
+      }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "确认并生成" }));
     await waitFor(() =>
       expect(fetch).toHaveBeenCalledWith(
         expect.stringContaining("/v1/production/runs"),

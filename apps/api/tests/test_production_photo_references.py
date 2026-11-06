@@ -7,13 +7,6 @@ from uuid import UUID, uuid4
 
 import httpx
 import pytest
-from sqlalchemy import select
-from test_segmented_production import setup_pipeline
-from test_video_plan_repair import example, fake_client
-from test_video_recovery import add_reference
-
-from lifereel_api.core.config import get_settings
-from lifereel_api.core.database import SessionLocal
 from lifereel_api.modules.evidence.models import SourceAsset
 from lifereel_api.modules.evidence.storage import private_storage
 from lifereel_api.modules.interview.models import Chapter
@@ -26,6 +19,13 @@ from lifereel_api.modules.production.providers import (
     VolcengineSeedanceProvider,
 )
 from lifereel_api.modules.script.models import ScriptScene
+from sqlalchemy import select
+from test_segmented_production import setup_pipeline
+from test_video_plan_repair import example, fake_client
+from test_video_recovery import add_reference
+
+from lifereel_api.core.config import get_settings
+from lifereel_api.core.database import SessionLocal
 
 
 @pytest.fixture
@@ -108,7 +108,7 @@ def test_selected_chapter_photo_reaches_http_request_then_official_tail_is_used(
     assert run["output_manifest"]["reference_package"]["character_reference"] == photo_id
     first = client.post(endpoint).json()
     assert first["status"] == "running", first
-    assert plans[0]["has_portrait"] is True
+    assert plans == []
     assert requests[0]["content"][1] == image_content(b"replacement", "reference_image")
     segment = first["output_manifest"]["segments"][0]
     assert segment["reference_asset_id"] == photo_id
@@ -213,7 +213,7 @@ def test_packages_without_photo_keep_text_generation(client, photo_pipeline, kin
         db.commit()
     _, endpoint = start(client, payload)
     assert client.post(endpoint).json()["status"] == "running"
-    assert plans[0]["has_portrait"] is False
+    assert plans == []
     assert len(requests[0]["content"]) == 1
 
 

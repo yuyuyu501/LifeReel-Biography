@@ -32,6 +32,71 @@ from lifereel_api.modules.production.recovery import (
 from lifereel_api.modules.production.references import initial_photo_reference
 
 
+def build_segment_prompt(
+    segment: dict,
+    index: int,
+    segment_count: int,
+    plan: dict,
+    config: dict,
+    *,
+    has_reference_images: bool = False,
+    has_reference_audio: bool = False,
+    has_reference_video: bool = False,
+) -> str:
+    prompt = (
+        "连续纪实镜头，家庭传记情景重现。"
+        f"这是本章第{index + 1}/{segment_count}段，"
+        f"时长{segment['duration_seconds']}秒。"
+        f"统一人物和视觉：{plan['continuity']}。"
+        "本章叙事骨架："
+        f"{json.dumps(segment.get('story_skeleton') or {}, ensure_ascii=False)}。"
+        "保持同一人物身份、性别、年龄、服装；参考帧存在时延续其场景和外貌。"
+        f"本段画面：{segment['visual_prompt']}。"
+        f"统一旁白声线：{plan['voice']}。"
+        "以下引号内是本段全部普通话口播（旁白与人物对话），按角色分配完整清晰读完，"
+        "未指定角色的使用旁白。不要念说明文字，不增删口播，不重复前段，不截断最后一句。"
+        f"口播全文：{json.dumps(segment['narration'], ensure_ascii=False)}。"
+        "无背景音乐，低音量自然环境声，口播优先。不添加字幕或片尾。"
+    )
+    if config.get("reference_prompt_version") == "color-redraw-v1":
+        prompt += (
+            "统一使用彩色二维手绘画面、清晰轮廓线、平涂色块和分层阴影。"
+            "参考图片用于人物与场景设计，不照搬照片质感，不改成黑白素描。"
+        )
+    elif config.get("reference_prompt_version") == "portrait-redraw-v3":
+        prompt += (
+            "沿用参考图中人物的头脸比例、五官相对位置、脸型、发际线及辨识细节，"
+            "同一章节内保持人物年龄感和外貌一致。人物相似度优先于风格化，"
+            "保持参考图已有的轻度手绘质感，不二次卡通化，不放大眼睛、缩小鼻子、"
+            "瘦脸、美颜磨皮或幼态化。动作和表情变化时仍保持原有面部结构；"
+            "续接片段不随镜头推进逐步简化五官或增强卡通程度。"
+        )
+    if has_reference_images:
+        prompt += (
+            "图片1为本章固定人物参考，同一人物的头脸比例、五官相对位置、发际线和辨识特征"
+            "在每段保持稳定；其他照片用于场景或物件。人物身份不随景别变化。"
+            "若有上一段原始尾帧，它只辅助动作衔接，不能取代固定人物参考。"
+            "镜头可切换环境、动作、物件和构图，不必始终是人物面对镜头口播。"
+            "服装和年龄仅依据本章明确资料；不得根据姓名或职业推断性别。"
+        )
+    if has_reference_audio:
+        prompt += "参考音频用于声音的语气、节奏和环境质感，口播内容仍严格使用本段剧本。"
+    if has_reference_video:
+        prompt = (
+            f"将视频1向后延长{segment['duration_seconds']}秒，"
+            "从视频1的结尾继续，只输出新增内容，不回放或重复原视频。"
+            "保持原视频的人物、场景、动作方向和旁白音色。" + prompt
+        )
+    if segment.get("dialogues"):
+        prompt += (
+            "本段口播角色分配如下，kind为narration的作为画外旁白，kind为dialogue的"
+            "由对应人物说出；角色标签是说明，不朗读。上文所列口播全文仅朗读一次，"
+            "以下分配不增加或重复台词，不克隆真人声音："
+            + json.dumps(segment["dialogues"], ensure_ascii=False)
+        )
+    return prompt
+
+
 def checkpoint(db: Session, run: ProductionRun, manifest: dict) -> None:
     run.output_manifest = copy.deepcopy(manifest)
     db.commit()
@@ -167,59 +232,16 @@ def advance(db: Session, run: ProductionRun) -> ProviderOutput | None:
                         )
                     if frame:
                         segment["reference_sha256"] = hashlib.sha256(frame).hexdigest()
-                    prompt = (
-                        "连续纪实镜头，家庭传记情景重现。"
-                        f"这是本章第{index + 1}/{len(segments)}段，"
-                        f"时长{segment['duration_seconds']}秒。"
-                        f"统一人物和视觉：{manifest['plan']['continuity']}。"
-                        "本章叙事骨架："
-                        f"{json.dumps(segment.get('story_skeleton') or {}, ensure_ascii=False)}。"
-                        "保持同一人物身份、性别、年龄、服装；参考帧存在时延续其场景和外貌。"
-                        f"本段画面：{segment['visual_prompt']}。"
-                        f"统一旁白声线：{manifest['plan']['voice']}。"
-                        "以下引号内是本段全部普通话口播（旁白与人物对话），按角色分配完整清晰读完，"
-                        "未指定角色的使用旁白。不要念说明文字，不增删口播，不重复前段，不截断最后一句。"
-                        f"口播全文：{json.dumps(segment['narration'], ensure_ascii=False)}。"
-                        "无背景音乐，低音量自然环境声，口播优先。不添加字幕或片尾。"
+                    prompt = segment.get("provider_prompt") or build_segment_prompt(
+                        segment,
+                        index,
+                        len(segments),
+                        manifest["plan"],
+                        config,
+                        has_reference_images=bool(reference_options.get("reference_images")),
+                        has_reference_audio=bool(reference_options.get("reference_audio")),
+                        has_reference_video=bool(reference_options.get("reference_video_url")),
                     )
-                    if config.get("reference_prompt_version") == "color-redraw-v1":
-                        prompt += (
-                            "统一使用彩色二维手绘画面、清晰轮廓线、平涂色块和分层阴影。"
-                            "参考图片用于人物与场景设计，不照搬照片质感，不改成黑白素描。"
-                        )
-                    elif config.get("reference_prompt_version") == "portrait-redraw-v3":
-                        prompt += (
-                            "沿用参考图中人物的头脸比例、五官相对位置、脸型、发际线及辨识细节，"
-                            "同一章节内保持人物年龄感和外貌一致。人物相似度优先于风格化，"
-                            "保持参考图已有的轻度手绘质感，不二次卡通化，不放大眼睛、缩小鼻子、"
-                            "瘦脸、美颜磨皮或幼态化。动作和表情变化时仍保持原有面部结构；"
-                            "续接片段不随镜头推进逐步简化五官或增强卡通程度。"
-                        )
-                    if reference_options.get("reference_images"):
-                        prompt += (
-                            "图片1为本章固定人物参考，同一人物的头脸比例、五官相对位置、发际线和辨识特征"
-                            "在每段保持稳定；其他照片用于场景或物件。人物身份不随景别变化。"
-                            "若有上一段原始尾帧，它只辅助动作衔接，不能取代固定人物参考。"
-                            "镜头可切换环境、动作、物件和构图，不必始终是人物面对镜头口播。"
-                            "服装和年龄仅依据本章明确资料；不得根据姓名或职业推断性别。"
-                        )
-                    if reference_options.get("reference_audio"):
-                        prompt += (
-                            "参考音频用于声音的语气、节奏和环境质感，口播内容仍严格使用本段剧本。"
-                        )
-                    if reference_options.get("reference_video_url"):
-                        prompt = (
-                            f"将视频1向后延长{segment['duration_seconds']}秒，"
-                            "从视频1的结尾继续，只输出新增内容，不回放或重复原视频。"
-                            "保持原视频的人物、场景、动作方向和旁白音色。" + prompt
-                        )
-                    if segment.get("dialogues"):
-                        prompt += (
-                            "本段口播角色分配如下，kind为narration的作为画外旁白，kind为dialogue的"
-                            "由对应人物说出；角色标签是说明，不朗读。上文所列口播全文仅朗读一次，"
-                            "以下分配不增加或重复台词，不克隆真人声音："
-                            + json.dumps(segment["dialogues"], ensure_ascii=False)
-                        )
                     segment["status"] = "submitting"
                     segment["prompt"] = prompt
                     checkpoint(db, run, manifest)

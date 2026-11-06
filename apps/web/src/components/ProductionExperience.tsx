@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type {
+  ProductionPlanPreview,
   ProductionRun,
   ScriptScene,
   ScriptShot,
@@ -45,6 +46,198 @@ export function ShotPreview({
       ))}
       {!shots.length && <p>分镜尚未生成。</p>}
     </section>
+  );
+}
+
+export function ProductionPlanReviewDialog({
+  preview,
+  open,
+  confirmed,
+  submitting,
+  error,
+  hasBalance,
+  onOpenChange,
+  onConfirmedChange,
+  onConfirm,
+}: {
+  preview: ProductionPlanPreview | null;
+  open: boolean;
+  confirmed: boolean;
+  submitting: boolean;
+  error: unknown;
+  hasBalance: boolean;
+  onOpenChange: (open: boolean) => void;
+  onConfirmedChange: (confirmed: boolean) => void;
+  onConfirm: () => void;
+}) {
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent
+        className="production-preview-dialog"
+        showCloseButton={!submitting}
+        aria-describedby="production-preview-description"
+      >
+        <DialogTitle>确认本次影像生成</DialogTitle>
+        <p id="production-preview-description">
+          核对实际分段、画面提示词、参考素材和本次报价。
+        </p>
+        {Boolean(error) && <ErrorNotice error={error} />}
+        {preview && (
+          <>
+            <dl className="production-preview-summary">
+              <div>
+                <dt>模型</dt>
+                <dd>
+                  {String(
+                    preview.provider_parameters.model ?? preview.provider,
+                  )}
+                </dd>
+              </div>
+              {"resolution" in preview.provider_parameters && (
+                <div>
+                  <dt>画质与画幅</dt>
+                  <dd>
+                    {String(preview.provider_parameters.resolution)} ·{" "}
+                    {String(
+                      preview.provider_parameters.ratio ??
+                        preview.provider_parameters.aspect_ratio,
+                    )}
+                  </dd>
+                </div>
+              )}
+              <div>
+                <dt>剧本版本</dt>
+                <dd>第 {preview.script_version} 版</dd>
+              </div>
+              <div>
+                <dt>处理方式</dt>
+                <dd>
+                  {preview.mode === "segmented"
+                    ? "按镜头分段"
+                    : preview.mode === "mock"
+                      ? "模拟预览"
+                      : "单段生成"}
+                </dd>
+              </div>
+              <div>
+                <dt>预计时长</dt>
+                <dd>{preview.billing_quote.target_seconds} 秒</dd>
+              </div>
+              <div>
+                <dt>预计费用</dt>
+                <dd>
+                  ¥{(preview.billing_quote.amount_cents / 100).toFixed(2)}
+                </dd>
+              </div>
+              <div>
+                <dt>参考素材</dt>
+                <dd>
+                  {preview.reference_package.image_references?.length ?? 0} 张图
+                  · {preview.reference_package.audio_references?.length ?? 0}{" "}
+                  段音频
+                  {preview.mode === "single_clip" &&
+                    preview.reference_package.source_assets?.length && (
+                      <span>（此模式不会向模型发送参考素材）</span>
+                    )}
+                </dd>
+              </div>
+            </dl>
+            {preview.plan && (
+              <section className="production-preview-continuity">
+                <h3>全片连续性与声音</h3>
+                <p>{preview.plan.continuity}</p>
+                <p>{preview.plan.voice}</p>
+              </section>
+            )}
+            {preview.warnings.length > 0 && (
+              <div className="production-preview-warning" role="status">
+                {preview.warnings.map((warning, index) => (
+                  <p key={`${warning.code}-${index}`}>
+                    {warning.code === "REFERENCES_NOT_SENT_IN_SINGLE_CLIP_MODE"
+                      ? "当前生成模式不会向模型发送已选参考素材。"
+                      : `第 ${(warning.shot_index ?? 0) + 1} 镜头与相邻画面相似，请核对。`}
+                  </p>
+                ))}
+              </div>
+            )}
+            <div className="production-preview-list" aria-label="实际生成片段">
+              {preview.segments.map((segment) => (
+                <article key={`${segment.scene_id ?? "all"}-${segment.index}`}>
+                  <h3>
+                    {preview.mode === "segmented"
+                      ? `第 ${segment.index + 1} 段`
+                      : "生成输入"}
+                    {" · "}
+                    {segment.duration_seconds} 秒
+                    {segment.shot_id &&
+                      ` · 镜头 ${segment.shot_part ?? segment.index + 1}`}
+                  </h3>
+                  <p className="production-preview-visual">
+                    {segment.visual_prompt}
+                  </p>
+                  <p className="production-preview-narration">
+                    {segment.narration}
+                  </p>
+                  <p className="studio-muted">
+                    来源 {segment.source_claim_ids.length} 项 · 参考素材{" "}
+                    {segment.reference_assets.length} 项
+                  </p>
+                  {segment.reference_assets.length > 0 && (
+                    <ul className="production-preview-references">
+                      {segment.reference_assets.map((reference, index) => (
+                        <li
+                          key={`${reference.asset_id ?? reference.role}-${index}`}
+                        >
+                          {reference.role}
+                          {reference.asset_id
+                            ? ` · ${reference.asset_id.slice(0, 8)}`
+                            : ""}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                  {segment.provider_prompt && (
+                    <details>
+                      <summary>查看提交给模型的提示词</summary>
+                      <pre>{segment.provider_prompt}</pre>
+                    </details>
+                  )}
+                </article>
+              ))}
+            </div>
+            <label className="production-preview-confirm">
+              <input
+                type="checkbox"
+                checked={confirmed}
+                disabled={submitting}
+                onChange={(event) => onConfirmedChange(event.target.checked)}
+              />
+              <span>我已核对本次镜头、素材与报价，确认生成</span>
+            </label>
+            {!hasBalance && (
+              <p className="notice error" role="alert">
+                当前余额不足以支付本次报价。
+              </p>
+            )}
+            <DialogFooter>
+              <Button
+                variant="outline"
+                disabled={submitting}
+                onClick={() => onOpenChange(false)}
+              >
+                返回修改
+              </Button>
+              <Button
+                disabled={!preview || !confirmed || !hasBalance || submitting}
+                onClick={onConfirm}
+              >
+                {submitting ? "正在提交…" : "确认并生成"}
+              </Button>
+            </DialogFooter>
+          </>
+        )}
+      </DialogContent>
+    </Dialog>
   );
 }
 

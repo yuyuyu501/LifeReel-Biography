@@ -202,6 +202,8 @@ export const ERROR_MESSAGES: Record<string, string> = {
     "请选择该家人名下已授权且不超过 10MB 的 JPEG、PNG 或 WebP 图片。",
   VIDEO_PLAN_FAILED: "分镜 AI 暂时不可用，请稍后重试。",
   VIDEO_PLAN_INVALID: "分镜结果未通过校验，暂未生成视频。",
+  VIDEO_PLAN_PREVIEW_REQUIRES_SHOTS:
+    "当前模型需要已保存的分镜才能安全预览，请先补齐剧本分镜。",
   VIDEO_PLAN_CONFIGURATION_INCOMPLETE: "请先配置分镜 AI 服务。",
   VIDEO_ASSEMBLY_UNAVAILABLE: "视频拼接工具不可用，请检查服务配置。",
   VIDEO_ASSEMBLY_FAILED: "视频拼接失败，已生成片段会保留，请重试。",
@@ -210,6 +212,8 @@ export const ERROR_MESSAGES: Record<string, string> = {
   VIDEO_SUBMISSION_UNCERTAIN:
     "提交结果不确定，已停止自动重发，请先核对云端任务。",
   PRODUCTION_SCRIPT_EMPTY: "剧本还没有可制作的章节，请先继续整理剧本。",
+  PRODUCTION_PREVIEW_STALE:
+    "剧本、参考素材或生成设置已变化，请重新预览并确认。",
   PRODUCTION_RUN_NOT_FOUND: "未找到该制作任务。",
   PRODUCTION_STATE_INVALID: "制作任务状态异常，请重新创建任务。",
   PRODUCTION_ASSET_NOT_FOUND: "未找到生成的视频文件。",

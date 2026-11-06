@@ -22,19 +22,147 @@ from lifereel_api.modules.jobs.models import Job
 from lifereel_api.modules.production import segmented
 from lifereel_api.modules.production.locking import execution_lock
 from lifereel_api.modules.production.models import GeneratedAsset, ProductionRun
-from lifereel_api.modules.production.planning import shot_segment_count
-from lifereel_api.modules.production.providers import VideoProviderError, get_video_provider
+from lifereel_api.modules.production.planning import (
+    PlanValidationError,
+    shot_aligned_plan,
+    shot_segment_count,
+)
+from lifereel_api.modules.production.providers import (
+    VideoProviderError,
+    VolcengineSeedanceProvider,
+    get_video_provider,
+)
 from lifereel_api.modules.production.quality import shot_review
 from lifereel_api.modules.production.reference_models import ChapterReferencePackage
 from lifereel_api.modules.production.references import build_reference_package
-from lifereel_api.modules.production.schemas import ProductionStart
+from lifereel_api.modules.production.schemas import ProductionPreviewRequest, ProductionStart
 from lifereel_api.modules.script.models import ScriptProject, ScriptScene, ScriptShot
 
 logger = logging.getLogger(__name__)
 
 
-def start_production(db: Session, tenant_id: UUID, payload: ProductionStart) -> ProductionRun:
-    billing.lock_wallet(db, tenant_id)
+def _generation_config(provider_name: str, settings) -> dict | None:
+    if provider_name not in {"volcengine-seedance", "volcengine-seedance-1.5"}:
+        return None
+    return {
+        "model": settings.volcengine_video_model,
+        "resolution": settings.volcengine_video_resolution,
+        "ratio": settings.volcengine_video_ratio,
+        "generate_audio": settings.volcengine_video_generate_audio,
+        "watermark": settings.volcengine_video_watermark,
+        "duration": settings.volcengine_video_duration,
+        "mode": (
+            "segmented"
+            if settings.volcengine_video_model.startswith("doubao-seedance-2-")
+            else "single_clip"
+        ),
+    }
+
+
+def _script_snapshot(db: Session, project: ScriptProject, scenes: list[ScriptScene]) -> list[dict]:
+    shot_rows = list(
+        db.scalars(
+            select(ScriptShot)
+            .where(ScriptShot.scene_id.in_([scene.id for scene in scenes]))
+            .order_by(ScriptShot.order_index)
+        )
+    )
+    return [
+        {
+            "id": str(scene.id),
+            "chapter_id": str(scene.chapter_id) if scene.chapter_id else None,
+            "order_index": scene.order_index,
+            "heading": scene.heading,
+            "plot": scene.plot,
+            "story_skeleton": scene.story_skeleton,
+            "dialogues": scene.dialogues,
+            "narration": scene.narration,
+            "visual_prompt": scene.visual_prompt,
+            "duration_seconds": scene.duration_seconds,
+            "source_claim_ids": scene.source_claim_ids,
+            "visual_constraints": scene.visual_constraints or {},
+            "shots": [
+                {
+                    "id": str(shot.id),
+                    "scene_id": str(shot.scene_id),
+                    "order_index": shot.order_index,
+                    "shot_type": shot.shot_type,
+                    "visual_prompt": shot.visual_prompt,
+                    "duration_seconds": shot.duration_seconds,
+                    "source_claim_ids": shot.source_claim_ids,
+                    "visual_constraints": shot.visual_constraints or {},
+                }
+                for shot in shot_rows
+                if shot.scene_id == scene.id
+            ],
+        }
+        for scene in scenes
+    ]
+
+
+def _provider_ready(provider_name: str) -> None:
+    provider = None
+    try:
+        provider = get_video_provider(provider_name)
+    except VideoProviderError as exc:
+        error_code = (
+            ErrorCode.VIDEO_PROVIDER_CONFIGURATION_INCOMPLETE
+            if exc.code == ErrorCode.VIDEO_PROVIDER_CONFIGURATION_INCOMPLETE.value
+            else ErrorCode.VIDEO_PROVIDER_INVALID
+        )
+        raise ApiError(status.HTTP_503_SERVICE_UNAVAILABLE, error_code) from exc
+    except ValueError as exc:
+        raise ApiError(
+            status.HTTP_422_UNPROCESSABLE_ENTITY, ErrorCode.VIDEO_PROVIDER_INVALID
+        ) from exc
+    finally:
+        client = getattr(provider, "client", None)
+        if client is not None:
+            client.close()
+
+
+def _reference_uses(reference_package: dict, index: int, segmented: bool) -> list[dict]:
+    if not segmented:
+        return []
+    package = reference_package or {}
+    images = package.get("image_references") or []
+    audio = package.get("audio_references") or []
+    if not images and index == 0 and package.get("character_reference_kind") == "photo":
+        images = [package["character_reference"]]
+    uses = [
+        {
+            "asset_id": asset_id,
+            "kind": "image",
+            "role": "fixed_character_and_scene_reference",
+            "sha256": (package.get("source_hashes") or {}).get(asset_id),
+        }
+        for asset_id in images
+    ]
+    uses.extend(
+        {
+            "asset_id": asset_id,
+            "kind": "audio",
+            "role": "voice_and_ambience_reference",
+            "sha256": (package.get("source_hashes") or {}).get(asset_id),
+        }
+        for asset_id in audio
+    )
+    if index and (not images or len(images) < 9):
+        uses.append(
+            {
+                "kind": "generated_frame",
+                "role": "previous_segment_tail_for_motion_continuity",
+                "source_segment_index": index - 1,
+            }
+        )
+    return uses
+
+
+def _production_preview_context(
+    db: Session,
+    tenant_id: UUID,
+    payload: ProductionPreviewRequest | ProductionStart,
+) -> dict:
     settings = get_settings()
     provider_name = payload.provider or settings.video_provider
     project = db.scalar(
@@ -78,78 +206,20 @@ def start_production(db: Session, tenant_id: UUID, payload: ProductionStart) -> 
         scenes = [scene for scene in scenes if scene.id == payload.scene_id]
     if not scenes:
         raise ApiError(status.HTTP_409_CONFLICT, ErrorCode.PRODUCTION_SCRIPT_EMPTY)
-    config = None
-    if provider_name in {"volcengine-seedance", "volcengine-seedance-1.5"}:
-        config = {
-            "model": settings.volcengine_video_model,
-            "resolution": settings.volcengine_video_resolution,
-            "ratio": settings.volcengine_video_ratio,
-            "generate_audio": settings.volcengine_video_generate_audio,
-            "watermark": settings.volcengine_video_watermark,
-            "duration": settings.volcengine_video_duration,
-            "mode": (
-                "segmented"
-                if settings.volcengine_video_model.startswith("doubao-seedance-2-")
-                else "single_clip"
-            ),
-        }
-    shot_rows = list(
-        db.scalars(
-            select(ScriptShot)
-            .where(ScriptShot.scene_id.in_([scene.id for scene in scenes]))
-            .order_by(ScriptShot.order_index)
-        )
-    )
-    snapshot = [
-        {
-            "id": str(scene.id),
-            "chapter_id": str(scene.chapter_id) if scene.chapter_id else None,
-            "order_index": scene.order_index,
-            "heading": scene.heading,
-            "plot": scene.plot,
-            "story_skeleton": scene.story_skeleton,
-            "dialogues": scene.dialogues,
-            "narration": scene.narration,
-            "visual_prompt": scene.visual_prompt,
-            "duration_seconds": scene.duration_seconds,
-            "source_claim_ids": scene.source_claim_ids,
-            "visual_constraints": scene.visual_constraints or {},
-            "shots": [
-                {
-                    "id": str(shot.id),
-                    "scene_id": str(shot.scene_id),
-                    "order_index": shot.order_index,
-                    "shot_type": shot.shot_type,
-                    "visual_prompt": shot.visual_prompt,
-                    "duration_seconds": shot.duration_seconds,
-                    "source_claim_ids": shot.source_claim_ids,
-                    "visual_constraints": shot.visual_constraints or {},
-                }
-                for shot in shot_rows
-                if shot.scene_id == scene.id
-            ],
-        }
-        for scene in scenes
-    ]
+    config = _generation_config(provider_name, settings)
+    snapshot = _script_snapshot(db, project, scenes)
     if config and config["mode"] == "segmented":
+        if any(not scene["shots"] for scene in snapshot):
+            raise ApiError(
+                status.HTTP_409_CONFLICT,
+                ErrorCode.VIDEO_PLAN_PREVIEW_REQUIRES_SHOTS,
+            )
         try:
             if not shot_segment_count(snapshot):
                 raise VideoProviderError("VIDEO_DURATION_UNSUPPORTED")
         except (VideoProviderError, ValueError) as exc:
             raise ApiError(422, ErrorCode.VIDEO_DURATION_UNSUPPORTED) from exc
-    try:
-        get_video_provider(provider_name)
-    except VideoProviderError as exc:
-        error_code = (
-            ErrorCode.VIDEO_PROVIDER_CONFIGURATION_INCOMPLETE
-            if exc.code == ErrorCode.VIDEO_PROVIDER_CONFIGURATION_INCOMPLETE.value
-            else ErrorCode.VIDEO_PROVIDER_INVALID
-        )
-        raise ApiError(status.HTTP_503_SERVICE_UNAVAILABLE, error_code) from exc
-    except ValueError as exc:
-        raise ApiError(
-            status.HTTP_422_UNPROCESSABLE_ENTITY, ErrorCode.VIDEO_PROVIDER_INVALID
-        ) from exc
+    _provider_ready(provider_name)
     reference_package = build_reference_package(
         db,
         tenant_id,
@@ -174,50 +244,6 @@ def start_production(db: Session, tenant_id: UUID, payload: ProductionStart) -> 
             validate_package(db, project, reference_package, config)
     if config and config["mode"] == "segmented":
         config["identity_lock_version"] = 1
-    idempotency_key = (
-        f"production:{project.id}:v{project.version_number}:{payload.audience}:{provider_name}"
-    )
-    if payload.scene_id:
-        idempotency_key += f":scene:{payload.scene_id}"
-    if config:
-        fingerprint_config = config
-        if reference_package.get("schema") == 2:
-            fingerprint_config = {**config, "references": reference_package}
-        elif (
-            config["mode"] == "segmented"
-            and reference_package.get("character_reference_kind") == "photo"
-        ):
-            fingerprint_config = {
-                **config,
-                "photo_reference": {
-                    "version": 1,
-                    "asset_id": reference_package["character_reference"],
-                },
-            }
-        fingerprint = hashlib.sha256(
-            json.dumps(fingerprint_config, sort_keys=True).encode()
-        ).hexdigest()[:16]
-        idempotency_key += f":{fingerprint}"
-    job, created = job_service.create_job(
-        db,
-        tenant_id,
-        "production.render",
-        {
-            "project_id": str(project.id),
-            "audience": payload.audience,
-            "provider": provider_name,
-        },
-        idempotency_key,
-    )
-    if not created:
-        existing = db.scalar(
-            select(ProductionRun).where(
-                ProductionRun.tenant_id == tenant_id,
-                ProductionRun.job_id == job.id,
-            )
-        )
-        if existing:
-            return existing
     subject = db.get(Person, project.subject_id)
     token_video = settings.billing_video_mode == "tokens" and provider_name != "mock"
     if token_video:
@@ -243,11 +269,258 @@ def start_production(db: Session, tenant_id: UUID, payload: ProductionStart) -> 
         "title": f"{subject.preferred_name or subject.display_name} · "
         + "、".join(scene.heading for scene in scenes),
     }
-    if (
-        payload.quoted_amount_cents is not None
-        and payload.quoted_amount_cents != quote["amount_cents"]
-    ):
+    plan = None
+    display_segments = []
+    manifest_segments = []
+    if config and config["mode"] == "segmented":
+        from lifereel_api.modules.production.segmented import build_segment_prompt
+
+        subject_details = {
+            "display_name": subject.display_name,
+            "preferred_name": subject.preferred_name,
+        }
+        try:
+            plan = shot_aligned_plan(snapshot, subject_details)
+        except (PlanValidationError, ValueError) as exc:
+            raise ApiError(422, ErrorCode.VIDEO_PLAN_INVALID) from exc
+        for index, segment in enumerate(plan["segments"]):
+            reference_uses = _reference_uses(reference_package, index, True)
+            has_images = any(item["kind"] == "image" for item in reference_uses)
+            has_audio = any(item["kind"] == "audio" for item in reference_uses)
+            provider_prompt = build_segment_prompt(
+                segment,
+                index,
+                len(plan["segments"]),
+                plan,
+                config,
+                has_reference_images=has_images,
+                has_reference_audio=has_audio,
+            )
+            display_segments.append(
+                {
+                    **segment,
+                    "index": index,
+                    "provider_prompt": provider_prompt,
+                    "reference_assets": reference_uses,
+                }
+            )
+            manifest_segment = {
+                **segment,
+                "status": "pending",
+                "provider_prompt": provider_prompt,
+                "reference_assets": reference_uses,
+            }
+            if (
+                index == 0
+                and reference_package.get("character_reference_kind") == "photo"
+            ):
+                manifest_segment["reference_asset_id"] = reference_package[
+                    "character_reference"
+                ]
+            manifest_segments.append(manifest_segment)
+    else:
+        scene_inputs = snapshot
+        title = snapshot[0]["heading"] if len(snapshot) == 1 else project.title
+        provider_prompt = None
+        if provider_name in VolcengineSeedanceProvider.aliases:
+            provider_prompt = VolcengineSeedanceProvider._build_prompt(title, scene_inputs)
+        display_segments.append(
+            {
+                "index": 0,
+                "scene_id": str(payload.scene_id) if payload.scene_id else None,
+                "duration_seconds": target_seconds,
+                "narration": "\n".join(scene["narration"] for scene in snapshot),
+                "visual_prompt": "\n".join(
+                    scene["visual_prompt"] for scene in snapshot if scene["visual_prompt"]
+                ),
+                "source_claim_ids": list(
+                    dict.fromkeys(
+                        claim_id
+                        for scene in snapshot
+                        for claim_id in scene["source_claim_ids"]
+                    )
+                ),
+                "provider_prompt": provider_prompt,
+                "reference_assets": [],
+            }
+        )
+
+    subject_snapshot = {
+        "display_name": subject.display_name,
+        "preferred_name": subject.preferred_name,
+        "birth_year": subject.birth_year,
+        "relation_to_owner": subject.relation_to_owner,
+    } if subject else {}
+    quality_review = shot_review(snapshot)
+    manifest = {
+        "billing_quote": quote,
+        "scene_id": str(payload.scene_id) if payload.scene_id else None,
+        "script_version": project.version_number,
+        "script_snapshot": snapshot,
+        "quality_review": quality_review,
+        "generation_config": config,
+        "reference_package": reference_package,
+        "subject": subject_snapshot,
+    }
+    if plan is not None:
+        manifest.update(
+            {
+                "plan": plan,
+                "segments": manifest_segments,
+                "target_duration_seconds": sum(
+                    segment["duration_seconds"] for segment in manifest_segments
+                ),
+                "stage": "generating",
+            }
+        )
+
+    preview_mode = (
+        "mock"
+        if provider_name == "mock"
+        else config["mode"]
+        if config
+        else "single_clip"
+    )
+    provider_parameters = (
+        {
+            "model": config["model"],
+            "resolution": config["resolution"],
+            "ratio": config["ratio"],
+            "duration_seconds": config["duration"],
+            "generate_audio": config["generate_audio"],
+            "watermark": config["watermark"],
+        }
+        if config
+        else {
+            "model": "local-ffmpeg-mock" if provider_name == "mock" else provider_name,
+            "aspect_ratio": None if provider_name == "mock" else "9:16",
+            "duration_seconds": target_seconds,
+        }
+    )
+    preview = {
+        "project_id": str(project.id),
+        "scene_id": str(payload.scene_id) if payload.scene_id else None,
+        "script_version": project.version_number,
+        "provider": provider_name,
+        "mode": preview_mode,
+        "generation_config": config,
+        "provider_parameters": provider_parameters,
+        "billing_quote": quote,
+        "reference_package": reference_package,
+        "quality_review": quality_review,
+        "plan": (
+            {"continuity": plan["continuity"], "voice": plan["voice"]}
+            if plan is not None
+            else None
+        ),
+        "segments": display_segments,
+        "warnings": [
+            *quality_review.get("shot_warnings", []),
+            *(
+                [{"code": "REFERENCES_NOT_SENT_IN_SINGLE_CLIP_MODE"}]
+                if preview_mode != "segmented" and reference_package.get("source_assets")
+                else []
+            ),
+        ],
+    }
+    fingerprint_data = {
+        "selection": {
+            "project_id": str(project.id),
+            "scene_id": str(payload.scene_id) if payload.scene_id else None,
+            "audience": payload.audience,
+            "provider": provider_name,
+        },
+        "script_version": project.version_number,
+        "snapshot": snapshot,
+        "generation_config": config,
+        "provider_parameters": provider_parameters,
+        "reference_package": reference_package,
+        "billing_quote": quote,
+        "plan": plan,
+        "segments": display_segments,
+    }
+    fingerprint = hashlib.sha256(
+        json.dumps(fingerprint_data, ensure_ascii=False, sort_keys=True).encode()
+    ).hexdigest()
+    preview["fingerprint"] = fingerprint
+    manifest["preview_fingerprint"] = fingerprint
+    return {
+        "preview": preview,
+        "manifest": manifest,
+        "project": project,
+        "scenes": scenes,
+        "provider": provider_name,
+        "config": config,
+        "reference_package": reference_package,
+        "quote": quote,
+    }
+
+
+def preview_production(
+    db: Session, tenant_id: UUID, payload: ProductionPreviewRequest
+) -> dict:
+    return _production_preview_context(db, tenant_id, payload)["preview"]
+
+
+def start_production(db: Session, tenant_id: UUID, payload: ProductionStart) -> ProductionRun:
+    context = _production_preview_context(db, tenant_id, payload)
+    preview = context["preview"]
+    if payload.quoted_amount_cents != preview["billing_quote"]["amount_cents"]:
         raise ApiError(409, ErrorCode.BILLING_QUOTE_CHANGED)
+    if payload.preview_fingerprint != preview["fingerprint"]:
+        raise ApiError(409, ErrorCode.PRODUCTION_PREVIEW_STALE)
+
+    project = context["project"]
+    scenes = context["scenes"]
+    provider_name = context["provider"]
+    config = context["config"]
+    reference_package = context["reference_package"]
+    billing.lock_wallet(db, tenant_id)
+    idempotency_key = (
+        f"production:{project.id}:v{project.version_number}:{payload.audience}:{provider_name}"
+    )
+    if payload.scene_id:
+        idempotency_key += f":scene:{payload.scene_id}"
+    if config:
+        fingerprint_config = config
+        if reference_package.get("schema") == 2:
+            fingerprint_config = {**config, "references": reference_package}
+        elif (
+            config["mode"] == "segmented"
+            and reference_package.get("character_reference_kind") == "photo"
+        ):
+            fingerprint_config = {
+                **config,
+                "photo_reference": {
+                    "version": 1,
+                    "asset_id": reference_package["character_reference"],
+                },
+            }
+        generation_fingerprint = hashlib.sha256(
+            json.dumps(fingerprint_config, sort_keys=True).encode()
+        ).hexdigest()[:16]
+        idempotency_key += f":{generation_fingerprint}"
+    job, created = job_service.create_job(
+        db,
+        tenant_id,
+        "production.render",
+        {
+            "project_id": str(project.id),
+            "audience": payload.audience,
+            "provider": provider_name,
+        },
+        idempotency_key,
+    )
+    if not created:
+        existing = db.scalar(
+            select(ProductionRun).where(
+                ProductionRun.tenant_id == tenant_id,
+                ProductionRun.job_id == job.id,
+            )
+        )
+        if existing:
+            return existing
+
     run = ProductionRun(
         tenant_id=tenant_id,
         project_id=project.id,
@@ -256,23 +529,7 @@ def start_production(db: Session, tenant_id: UUID, payload: ProductionStart) -> 
         provider=provider_name,
         audience=payload.audience,
         estimated_cost=0.0,
-        output_manifest={
-            "billing_quote": quote,
-            "scene_id": str(payload.scene_id) if payload.scene_id else None,
-            "script_version": project.version_number,
-            "script_snapshot": snapshot,
-            "quality_review": shot_review(snapshot),
-            "generation_config": config,
-            "reference_package": reference_package,
-            "subject": {
-                "display_name": subject.display_name,
-                "preferred_name": subject.preferred_name,
-                "birth_year": subject.birth_year,
-                "relation_to_owner": subject.relation_to_owner,
-            }
-            if subject
-            else {},
-        },
+        output_manifest=context["manifest"],
     )
     db.add(run)
     db.flush()

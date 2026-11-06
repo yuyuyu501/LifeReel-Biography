@@ -81,3 +81,16 @@ def test_long_script_is_split_only_for_provider_clip_limits():
     assert sum(item["duration_seconds"] for item in result["segments"]) == 600
     assert all(4 <= item["duration_seconds"] <= 15 for item in result["segments"])
     assert "".join(item["narration"] for item in result["segments"]) == material["narration"]
+
+
+def test_short_narration_can_span_more_segments_than_characters():
+    material = scene(durations=(600,))
+    material["narration"] = "短旁白。"
+    material["dialogues"] = [
+        {"kind": "narration", "speaker": "人物", "text": material["narration"]},
+    ]
+    result = planning.shot_aligned_plan([material], {"display_name": "人物"})
+
+    assert len(result["segments"]) == 40
+    assert "".join(item["narration"] for item in result["segments"]) == material["narration"]
+    assert all(len(item["narration"]) <= 1 for item in result["segments"])

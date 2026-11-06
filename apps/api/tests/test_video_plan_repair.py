@@ -4,13 +4,13 @@ from types import SimpleNamespace
 from uuid import UUID
 
 import pytest
+from lifereel_api.modules.production import planning, segmented
+from lifereel_api.modules.production.models import ProductionRun
+from lifereel_api.modules.production.providers import VideoProviderError
 from test_segmented_production import setup_pipeline
 
 from lifereel_api.core.config import get_settings
 from lifereel_api.core.database import SessionLocal
-from lifereel_api.modules.production import planning, segmented
-from lifereel_api.modules.production.models import ProductionRun
-from lifereel_api.modules.production.providers import VideoProviderError
 
 
 def example():
@@ -46,6 +46,18 @@ def fake_client(monkeypatch, responses):
 
     monkeypatch.setattr(planning, "OpenAICompatibleClient", Client)
     return requests
+
+
+def make_legacy_unplanned_run(client, payload):
+    run = client.post("/v1/production/runs", json=payload).json()
+    with SessionLocal() as db:
+        row = db.get(ProductionRun, UUID(run["id"]))
+        manifest = copy.deepcopy(row.output_manifest)
+        for key in ("plan", "segments", "target_duration_seconds", "stage"):
+            manifest.pop(key, None)
+        row.output_manifest = manifest
+        db.commit()
+    return run
 
 
 @pytest.mark.parametrize("duration,expected", [
@@ -141,7 +153,7 @@ def test_failure_checkpoint_survives_rollback_and_raw_stays_private(client, monk
         raise VideoProviderError("VIDEO_PLAN_INVALID")
 
     monkeypatch.setattr(segmented, "plan_video", invalid_plan)
-    run = client.post("/v1/production/runs", json=payload).json()
+    run = make_legacy_unplanned_run(client, payload)
     failed = client.post(f"/v1/production/runs/{run['id']}/execute").json()
     assert failed["error_message"] == "VIDEO_PLAN_INVALID"
     assert len(failed["output_manifest"]["planning_diagnostics"]) == 3
@@ -171,7 +183,7 @@ def test_diagnostic_storage_failure_stops_before_more_ai_calls(client, monkeypat
         pytest.fail("Must not continue without diagnostic persistence")
 
     monkeypatch.setattr(segmented, "plan_video", invalid_plan)
-    run = client.post("/v1/production/runs", json=payload).json()
+    run = make_legacy_unplanned_run(client, payload)
     failed = client.post(f"/v1/production/runs/{run['id']}/execute").json()
     assert failed["error_message"] == "VIDEO_PLAN_FAILED"
     assert "plan" not in failed["output_manifest"]

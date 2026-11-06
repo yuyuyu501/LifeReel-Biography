@@ -20,6 +20,7 @@ class Segment(BaseModel):
     visual_prompt: str = Field(min_length=1, max_length=1500)
     shot_id: str | None = None
     shot_part: int | None = None
+    source_claim_ids: list[str] = Field(default_factory=list)
     dialogues: list[dict] | None = None
     visual_constraints: dict | None = None
     story_skeleton: dict | None = None
@@ -238,6 +239,15 @@ def _narration_parts(narration: str, durations: list[int]) -> list[str]:
     if not narration.strip():
         raise PlanValidationError("PLAN_NARRATION_EMPTY", "narration")
     total = sum(durations)
+    if len(narration) < len(durations):
+        boundaries = [
+            round(len(narration) * sum(durations[:index]) / total)
+            for index in range(len(durations) + 1)
+        ]
+        return [
+            narration[start:end]
+            for start, end in zip(boundaries, boundaries[1:], strict=False)
+        ]
     boundaries = [0]
     for index, _duration in enumerate(durations[:-1]):
         target = round(len(narration) * (sum(durations[:index + 1]) / total))
@@ -312,6 +322,9 @@ def shot_aligned_plan(scenes: list[dict], subject: dict) -> dict:
                 "narration": narration,
                 "dialogues": dialogues,
                 "visual_prompt": prompt,
+                "source_claim_ids": list(dict.fromkeys(
+                    [*scene.get("source_claim_ids", []), *shot.get("source_claim_ids", [])]
+                )),
                 "visual_constraints": constraints,
                 "story_skeleton": scene.get("story_skeleton"),
             })

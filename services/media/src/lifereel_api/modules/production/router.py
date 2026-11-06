@@ -19,6 +19,7 @@ from lifereel_api.modules.production.recovery import details
 from lifereel_api.modules.production.references import build_reference_package
 from lifereel_api.modules.production.schemas import (
     GeneratedAssetRead,
+    ProductionPreviewRequest,
     ProductionRecovery,
     ProductionRunRead,
     ProductionStart,
@@ -72,6 +73,11 @@ def start(payload: ProductionStart, db: Db, tenant_id: Tenant) -> ProductionRunR
     run = service.start_production(db, tenant_id, payload)
     _, assets = service.get_run_payload(db, tenant_id, run.id)
     return to_read(run, assets)
+
+
+@router.post("/preview")
+def preview(payload: ProductionPreviewRequest, db: Db, tenant_id: Tenant) -> dict:
+    return service.preview_production(db, tenant_id, payload)
 
 
 @router.get("/reference-package")

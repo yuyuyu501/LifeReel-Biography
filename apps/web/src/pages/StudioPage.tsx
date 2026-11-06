@@ -1,5 +1,6 @@
 import { Button } from "../components/ui/button";
 import type {
+  ProductionPlanPreview,
   ProductionRun,
   ScriptProject,
   ScriptScene,
@@ -28,6 +29,7 @@ import { BookScriptGenerator } from "../components/BookScriptGenerator";
 import { ScriptPlanSummary } from "../components/ScriptPlanSummary";
 import { ProductionDetails } from "../components/ProductionDetails";
 import {
+  ProductionPlanReviewDialog,
   ProductionQuality,
   ProductionWait,
   ShotPreview,
@@ -67,6 +69,14 @@ export function StudioPage() {
   const queryClient = useQueryClient();
   const [searchParams, setSearchParams] = useSearchParams();
   const [sceneId, setSceneId] = useState("");
+  const [productionPreview, setProductionPreview] =
+    useState<ProductionPlanPreview | null>(null);
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const [previewConfirmed, setPreviewConfirmed] = useState(false);
+  const [previewSelection, setPreviewSelection] = useState<{
+    project: ScriptProject;
+    scene: ScriptScene;
+  } | null>(null);
   const [generatorOpen, setGeneratorOpen] = useState(false);
   const [view, setView] = useState<"video" | "script">("video");
   const [scriptEditing, setScriptEditing] = useState(false);
@@ -239,7 +249,7 @@ export function StudioPage() {
       : null;
   const refresh = () =>
     queryClient.invalidateQueries({ queryKey: ["production-runs"] });
-  const produce = useMutation({
+  const requestProductionPreview = useMutation({
     mutationFn: ({
       project,
       scene,
@@ -247,11 +257,34 @@ export function StudioPage() {
       project: ScriptProject;
       scene: ScriptScene;
     }) =>
+      api.previewProduction({
+        project_id: project.id,
+        scene_id: scene.id,
+        audience: "family",
+      }),
+    onSuccess: (preview, selection) => {
+      setProductionPreview(preview);
+      setPreviewSelection(selection);
+      setPreviewConfirmed(false);
+      setPreviewOpen(true);
+    },
+  });
+  const produce = useMutation({
+    mutationFn: ({
+      project,
+      scene,
+      preview,
+    }: {
+      project: ScriptProject;
+      scene: ScriptScene;
+      preview: ProductionPlanPreview;
+    }) =>
       api.startProduction({
         project_id: project.id,
         scene_id: scene.id,
         audience: "family",
-        quoted_amount_cents: quote,
+        quoted_amount_cents: preview.billing_quote.amount_cents,
+        preview_fingerprint: preview.fingerprint,
       }),
     onSuccess: async (run) => {
       queryClient.setQueryData<ProductionRun[]>(["production-runs"], (runs) => [
@@ -259,6 +292,9 @@ export function StudioPage() {
         ...(runs ?? []).filter((item) => item.id !== run.id),
       ]);
       setView("video");
+      setPreviewOpen(false);
+      setProductionPreview(null);
+      setPreviewSelection(null);
       await queryClient.invalidateQueries({ queryKey: ["wallet"] });
       await refresh();
     },
@@ -271,6 +307,13 @@ export function StudioPage() {
     },
   });
   const queries = [people, scripts, settings, productionRuns, wallet];
+  const previewHasBalance = Boolean(
+    productionPreview &&
+    (productionPreview.billing_quote.video_billing_mode === "tokens"
+      ? (wallet.data?.available_cents ?? 0) > 0
+      : (wallet.data?.available_cents ?? 0) >=
+        productionPreview.billing_quote.amount_cents),
+  );
 
   return (
     <div className="page film-studio-page">
@@ -299,7 +342,11 @@ export function StudioPage() {
         <QueryState queries={queries} loadingText="正在准备影像制作台……" />
       ) : (
         <>
-          <ErrorNotice error={produce.error || retry.error} />
+          <ErrorNotice
+            error={
+              requestProductionPreview.error || produce.error || retry.error
+            }
+          />
           {effectiveSubjectId && (
             <BookScriptGenerator
               key={effectiveSubjectId}
@@ -464,6 +511,7 @@ export function StudioPage() {
                           selected.project.source_stale ||
                           selected.project.source_type === "legacy" ||
                           scriptEditing ||
+                          requestProductionPreview.isPending ||
                           produce.isPending ||
                           retry.isPending ||
                           isGenerating ||
@@ -483,15 +531,17 @@ export function StudioPage() {
                         onClick={() => {
                           if (retryReference && activeRun?.job_id)
                             retry.mutate(activeRun.job_id);
-                          else produce.mutate(selected);
+                          else requestProductionPreview.mutate(selected);
                         }}
                       >
                         <Play size={16} aria-hidden="true" />{" "}
-                        {isGenerating || retry.isPending
-                          ? "正在生成"
-                          : activeRun?.status === "failed"
-                            ? "重新生成"
-                            : "生成影像"}
+                        {requestProductionPreview.isPending
+                          ? "正在准备预览"
+                          : isGenerating || retry.isPending
+                            ? "正在生成"
+                            : activeRun?.status === "failed"
+                              ? "重新生成"
+                              : "生成影像"}
                       </Button>
                     </div>
                   </div>
@@ -796,6 +846,31 @@ export function StudioPage() {
               )}
             </section>
           </div>
+          <ProductionPlanReviewDialog
+            preview={productionPreview}
+            open={previewOpen}
+            confirmed={previewConfirmed}
+            submitting={produce.isPending}
+            error={produce.error}
+            hasBalance={previewHasBalance}
+            onOpenChange={(open) => {
+              setPreviewOpen(open);
+              if (!open && !produce.isPending) {
+                setPreviewConfirmed(false);
+                setProductionPreview(null);
+                setPreviewSelection(null);
+              }
+            }}
+            onConfirmedChange={setPreviewConfirmed}
+            onConfirm={() => {
+              if (productionPreview && previewSelection && previewConfirmed) {
+                produce.mutate({
+                  ...previewSelection,
+                  preview: productionPreview,
+                });
+              }
+            }}
+          />
         </>
       )}
     </div>

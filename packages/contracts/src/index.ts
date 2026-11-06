@@ -589,6 +589,62 @@ export interface ProductionSettings {
   generate_audio: boolean | null;
 }
 
+export interface ProductionPreviewSegment {
+  index: number;
+  scene_id: UUID | null;
+  shot_id?: UUID | null;
+  shot_part?: number | null;
+  duration_seconds: number;
+  narration: string;
+  visual_prompt: string;
+  provider_prompt: string | null;
+  source_claim_ids: UUID[];
+  visual_constraints?: Record<string, unknown>;
+  reference_assets: Array<{
+    asset_id?: UUID;
+    kind: "image" | "audio" | "generated_frame";
+    role: string;
+    sha256?: string | null;
+    source_segment_index?: number;
+  }>;
+}
+
+export interface ProductionPlanPreview {
+  fingerprint: string;
+  project_id: UUID;
+  scene_id: UUID | null;
+  script_version: number;
+  provider: string;
+  mode: "mock" | "single_clip" | "segmented";
+  generation_config: Record<string, unknown> | null;
+  provider_parameters: Record<string, unknown>;
+  billing_quote: {
+    amount_cents: number;
+    target_seconds: number;
+    video_billing_mode: string;
+    title: string;
+    version: string;
+  };
+  reference_package: {
+    source_assets?: UUID[];
+    image_references?: UUID[];
+    audio_references?: UUID[];
+    selection_reason?: string;
+    consent_snapshot?: string;
+  };
+  quality_review: {
+    shot_warnings?: Array<{
+      scene_id?: UUID;
+      shot_index: number;
+      code: string;
+    }>;
+    identity_verification?: string;
+  };
+  plan: { continuity: string; voice: string } | null;
+  segments: ProductionPreviewSegment[];
+  warnings: Array<{ code: string; scene_id?: UUID; shot_index?: number }>;
+}
+
 export interface Publication {
   id: UUID;
   production_run_id: UUID;

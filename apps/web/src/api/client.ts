@@ -4,6 +4,7 @@ import type {
   WalletEntry,
   WalletPage,
   ProviderUsage,
+  ProductionPlanPreview,
   Chapter,
   InterviewSession,
   InterviewTurnWorkflow,
@@ -585,8 +586,19 @@ export const api = {
     }),
   productionSettings: () =>
     request<ProductionSettings>("/v1/production/settings"),
+  previewProduction: (payload: {
+    project_id: string;
+    scene_id?: string;
+    audience: "private" | "family" | "friends" | "public";
+    provider?: string;
+  }) =>
+    request<ProductionPlanPreview>("/v1/production/preview", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
   startProduction: (payload: {
-    quoted_amount_cents?: number;
+    quoted_amount_cents: number;
+    preview_fingerprint: string;
     project_id: string;
     scene_id?: string;
     audience: "private" | "family" | "friends" | "public";

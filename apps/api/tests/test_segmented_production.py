@@ -3,10 +3,6 @@ import subprocess
 from uuid import UUID
 
 import pytest
-from test_production_chapters import make_script
-
-from lifereel_api.core.config import get_settings
-from lifereel_api.core.database import SessionLocal
 from lifereel_api.modules.jobs import service as jobs
 from lifereel_api.modules.production import segmented
 from lifereel_api.modules.production.media import assemble_videos, probe_video
@@ -14,6 +10,10 @@ from lifereel_api.modules.production.models import ProductionRun
 from lifereel_api.modules.production.planning import segment_durations, validate_plan
 from lifereel_api.modules.production.providers import ProviderOutput, VideoProviderError
 from lifereel_api.modules.script.models import ScriptShot
+from test_production_chapters import make_script
+
+from lifereel_api.core.config import get_settings
+from lifereel_api.core.database import SessionLocal
 
 
 @pytest.mark.parametrize(
@@ -39,7 +39,9 @@ def test_plan_preserves_narration_and_duration():
             for phrase in ["第一句。", "第二句。"]
         ],
     }
-    assert validate_plan(plan, scenes)["segments"] == plan["segments"]
+    assert validate_plan(plan, scenes)["segments"] == [
+        {**segment, "source_claim_ids": []} for segment in plan["segments"]
+    ]
     for field, value in [("narration", "改写"), ("scene_id", "other"), ("duration_seconds", 14)]:
         invalid = copy.deepcopy(plan)
         invalid["segments"][0][field] = value
@@ -217,10 +219,9 @@ def test_real_ffmpeg_assembly_keeps_audio_and_order(tmp_path):
     from io import BytesIO
     from types import SimpleNamespace
 
-    from PIL import Image
-
     from lifereel_api.modules.evidence.storage import LocalPrivateStorage
     from lifereel_api.modules.production.quality import collect_review_frames
+    from PIL import Image
 
     store = LocalPrivateStorage()
     synthetic_run = SimpleNamespace(tenant_id="qa-frames", id=tmp_path.name)

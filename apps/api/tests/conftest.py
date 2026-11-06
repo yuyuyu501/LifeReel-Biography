@@ -47,6 +47,38 @@ from lifereel_api.core.database import Base, engine  # noqa: E402
 from lifereel_api.main import app  # noqa: E402
 
 
+class ConfirmedProductionClient:
+    def __init__(self, client: TestClient) -> None:
+        self._client = client
+
+    def post(self, url: str, *args, **kwargs):
+        body = kwargs.get("json")
+        if url == "/v1/production/runs" and isinstance(body, dict):
+            preview = self._client.post(
+                "/v1/production/preview",
+                json={
+                    key: body[key]
+                    for key in ("project_id", "scene_id", "audience", "provider")
+                    if key in body
+                },
+            )
+            if not preview.is_success:
+                return preview
+            data = preview.json()
+            body = {
+                **body,
+                "preview_fingerprint": data["fingerprint"],
+                "quoted_amount_cents": body.get(
+                    "quoted_amount_cents", data["billing_quote"]["amount_cents"]
+                ),
+            }
+            kwargs["json"] = body
+        return self._client.post(url, *args, **kwargs)
+
+    def __getattr__(self, name: str):
+        return getattr(self._client, name)
+
+
 @pytest.fixture(autouse=True)
 def legacy_pricing(monkeypatch):
     # Existing lifecycle regressions deliberately exercise the original tariff.
@@ -65,9 +97,14 @@ def clean_database() -> Generator[None, None, None]:
 
 
 @pytest.fixture
-def client() -> Generator[TestClient, None, None]:
+def raw_client() -> Generator[TestClient, None, None]:
     with TestClient(app) as test_client:
         yield test_client
+
+
+@pytest.fixture
+def client(raw_client: TestClient) -> ConfirmedProductionClient:
+    return ConfirmedProductionClient(raw_client)
 
 
 def pytest_sessionfinish() -> None:
