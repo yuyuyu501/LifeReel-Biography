@@ -129,6 +129,40 @@ test("whole-book adaptation sends the book without a fixed duration or chapter s
   assert.equal("book_revision_ids" in calls[0].data, false);
 });
 
+test("video generation forwards the internally previewed quote and fingerprint", async () => {
+  const selection = {
+    project_id: "script",
+    scene_id: "scene",
+    audience: "family",
+  };
+  const preview = {
+    fingerprint: "a".repeat(64),
+    billing_quote: { amount_cents: 960 },
+  };
+  const { api, calls } = setup([
+    { statusCode: 200, data: preview },
+    { statusCode: 200, data: { available_cents: 1000 } },
+    { statusCode: 201, data: { id: "run", status: "queued" } },
+  ]);
+  const planned = await api.previewProduction(selection);
+  const wallet = await api.wallet();
+  assert.ok(wallet.available_cents >= planned.billing_quote.amount_cents);
+  const run = await api.startProduction({
+    ...selection,
+    quoted_amount_cents: planned.billing_quote.amount_cents,
+    preview_fingerprint: planned.fingerprint,
+  });
+  assert.equal(run.status, "queued");
+  assert.equal(calls[0].url, "https://test.invalid/v1/production/preview");
+  assert.equal(calls[1].url, "https://test.invalid/v1/wallet");
+  assert.equal(calls[2].url, "https://test.invalid/v1/production/runs");
+  assert.deepEqual(calls[2].data, {
+    ...selection,
+    quoted_amount_cents: 960,
+    preview_fingerprint: "a".repeat(64),
+  });
+});
+
 test("preview profile labels match the canonical server template", () => {
   const root = path.resolve(__dirname, "../../..");
   const canonical = fs.readFileSync(

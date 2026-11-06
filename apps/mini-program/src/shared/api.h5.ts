@@ -541,7 +541,48 @@ export const miniApi: typeof nativeApi = {
     duration_seconds: null,
     generate_audio: false,
   }),
+  wallet: async () => ({
+    paid_cents: 0,
+    bonus_cents: 100000,
+    frozen_cents: 0,
+    available_cents: 100000,
+    prices: {
+      version: "offline-preview",
+      video_billing_mode: "per_second",
+      video_cents_per_second: 80,
+      script_chapter_cents: 40,
+      welcome_bonus_cents: 0,
+      payment_enabled: false,
+      script_billing_mode: "per_chapter",
+    },
+  }),
   productionRuns: async () => [...runs],
+  previewProduction: async (payload) => {
+    const project = requireItem(projects, payload.project_id);
+    const scene = requireItem(project.scenes, payload.scene_id || "");
+    return {
+      fingerprint: "offline-preview",
+      project_id: project.id,
+      scene_id: scene.id,
+      script_version: project.version_number,
+      provider: "local_preview",
+      mode: "mock",
+      generation_config: null,
+      provider_parameters: {},
+      billing_quote: {
+        amount_cents: scene.duration_seconds * 80,
+        target_seconds: scene.duration_seconds,
+        video_billing_mode: "per_second",
+        title: scene.heading,
+        version: "offline-preview",
+      },
+      reference_package: {},
+      quality_review: {},
+      plan: null,
+      segments: [],
+      warnings: [],
+    };
+  },
   startProduction: async (payload) => {
     requireItem(projects, payload.project_id);
     const run: ProductionRun = {

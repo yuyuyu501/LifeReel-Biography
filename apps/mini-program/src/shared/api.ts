@@ -15,7 +15,9 @@ import type {
   PersonCreate,
   PersonUpdate,
   ProductionRun,
+  ProductionPlanPreview,
   ProductionSettings,
+  WalletSummary,
   ScriptProject,
   SourceAsset,
   TimelineAnchor,
@@ -301,8 +303,21 @@ export const miniApi = {
     }),
   productionSettings: () =>
     request<ProductionSettings>("/v1/production/settings"),
+  wallet: () => request<WalletSummary>("/v1/wallet"),
   productionRuns: () => request<ProductionRun[]>("/v1/production/runs"),
+  previewProduction: (payload: {
+    project_id: string;
+    scene_id?: string;
+    audience?: string;
+    provider?: string;
+  }) =>
+    request<ProductionPlanPreview>("/v1/production/preview", {
+      method: "POST",
+      data: payload,
+    }),
   startProduction: (payload: {
+    quoted_amount_cents: number;
+    preview_fingerprint: string;
     project_id: string;
     scene_id?: string;
     audience?: string;

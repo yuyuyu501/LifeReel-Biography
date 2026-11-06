@@ -29,7 +29,6 @@ import { BookScriptGenerator } from "../components/BookScriptGenerator";
 import { ScriptPlanSummary } from "../components/ScriptPlanSummary";
 import { ProductionDetails } from "../components/ProductionDetails";
 import {
-  ProductionPlanReviewDialog,
   ProductionQuality,
   ProductionWait,
   ShotPreview,
@@ -65,18 +64,22 @@ function seconds(value: unknown) {
     : "未提供";
 }
 
+function money(cents: number) {
+  return `¥${(cents / 100).toFixed(2)}`;
+}
+
 export function StudioPage() {
   const queryClient = useQueryClient();
   const [searchParams, setSearchParams] = useSearchParams();
   const [sceneId, setSceneId] = useState("");
-  const [productionPreview, setProductionPreview] =
-    useState<ProductionPlanPreview | null>(null);
-  const [previewOpen, setPreviewOpen] = useState(false);
-  const [previewConfirmed, setPreviewConfirmed] = useState(false);
-  const [previewSelection, setPreviewSelection] = useState<{
-    project: ScriptProject;
-    scene: ScriptScene;
+  const [quoteOverride, setQuoteOverride] = useState<{
+    projectId: string;
+    sceneId: string;
+    scriptVersion: number;
+    priceVersion?: string;
+    amountCents: number;
   } | null>(null);
+  const [generationNotice, setGenerationNotice] = useState("");
   const [generatorOpen, setGeneratorOpen] = useState(false);
   const [view, setView] = useState<"video" | "script">("video");
   const [scriptEditing, setScriptEditing] = useState(false);
@@ -219,17 +222,32 @@ export function StudioPage() {
   const actualMedia = media?.id === activeAsset?.id ? media : null;
   const parameters = activeAsset?.generation_parameters;
   const segmented = settings.data?.mode === "segmented";
-  const quote =
-    wallet.data?.prices && selected
-      ? wallet.data.prices.video_billing_mode === "tokens" &&
-        settings.data?.provider !== "mock"
-        ? wallet.data.prices.video_reserve_cents
-        : (segmented
-            ? selected.scene.duration_seconds
-            : (settings.data?.duration_seconds ??
-              selected.scene.duration_seconds)) *
-          wallet.data.prices.video_cents_per_second
-      : undefined;
+  const estimateQuoteFor = (scene: ScriptScene) => {
+    const prices = wallet.data?.prices;
+    if (!prices) return undefined;
+    if (
+      prices.video_billing_mode === "tokens" &&
+      settings.data?.provider !== "mock"
+    )
+      return prices.video_reserve_cents;
+    const duration = segmented
+      ? scene.duration_seconds
+      : (settings.data?.duration_seconds ?? scene.duration_seconds);
+    return duration * prices.video_cents_per_second;
+  };
+  const quoteFor = (project: ScriptProject, scene: ScriptScene) => {
+    if (
+      quoteOverride?.projectId === project.id &&
+      quoteOverride.sceneId === scene.id &&
+      quoteOverride.scriptVersion === project.version_number &&
+      quoteOverride.priceVersion === wallet.data?.prices.version
+    )
+      return quoteOverride.amountCents;
+    return estimateQuoteFor(scene);
+  };
+  const quote = selected
+    ? quoteFor(selected.project, selected.scene)
+    : undefined;
   const hasBalance =
     wallet.data?.prices.video_billing_mode === "tokens"
       ? (wallet.data?.available_cents ?? 0) > 0
@@ -249,26 +267,6 @@ export function StudioPage() {
       : null;
   const refresh = () =>
     queryClient.invalidateQueries({ queryKey: ["production-runs"] });
-  const requestProductionPreview = useMutation({
-    mutationFn: ({
-      project,
-      scene,
-    }: {
-      project: ScriptProject;
-      scene: ScriptScene;
-    }) =>
-      api.previewProduction({
-        project_id: project.id,
-        scene_id: scene.id,
-        audience: "family",
-      }),
-    onSuccess: (preview, selection) => {
-      setProductionPreview(preview);
-      setPreviewSelection(selection);
-      setPreviewConfirmed(false);
-      setPreviewOpen(true);
-    },
-  });
   const produce = useMutation({
     mutationFn: ({
       project,
@@ -292,11 +290,61 @@ export function StudioPage() {
         ...(runs ?? []).filter((item) => item.id !== run.id),
       ]);
       setView("video");
-      setPreviewOpen(false);
-      setProductionPreview(null);
-      setPreviewSelection(null);
+      setGenerationNotice("");
       await queryClient.invalidateQueries({ queryKey: ["wallet"] });
       await refresh();
+    },
+    onError: () => {
+      void queryClient.invalidateQueries({ queryKey: ["wallet"] });
+    },
+  });
+  const requestProductionPreview = useMutation({
+    mutationFn: ({
+      project,
+      scene,
+    }: {
+      project: ScriptProject;
+      scene: ScriptScene;
+      expectedQuote: number;
+    }) =>
+      api.previewProduction({
+        project_id: project.id,
+        scene_id: scene.id,
+        audience: "family",
+      }),
+    onSuccess: (preview, selection) => {
+      const expectedQuote = selection.expectedQuote;
+      const actualQuote = preview.billing_quote.amount_cents;
+      if (expectedQuote !== undefined && actualQuote !== expectedQuote) {
+        setQuoteOverride({
+          projectId: selection.project.id,
+          sceneId: selection.scene.id,
+          scriptVersion: selection.project.version_number,
+          priceVersion: wallet.data?.prices.version,
+          amountCents: actualQuote,
+        });
+        setGenerationNotice(
+          `本次费用从 ${money(expectedQuote)} 更新为 ${money(actualQuote)}，尚未提交生成。请确认新报价后再次点击。`,
+        );
+        void queryClient.invalidateQueries({ queryKey: ["wallet"] });
+        return;
+      }
+      const available =
+        queryClient.getQueryData<typeof wallet.data>(["wallet"])
+          ?.available_cents ?? 0;
+      const hasPreviewBalance =
+        preview.billing_quote.video_billing_mode === "tokens"
+          ? available > 0
+          : available >= actualQuote;
+      if (!hasPreviewBalance) {
+        setGenerationNotice(
+          "可用余额不足以支付本次报价，尚未提交生成。请先充值。",
+        );
+        void queryClient.invalidateQueries({ queryKey: ["wallet"] });
+        return;
+      }
+      setGenerationNotice("");
+      produce.mutate({ ...selection, preview });
     },
   });
   const retry = useMutation({
@@ -307,14 +355,6 @@ export function StudioPage() {
     },
   });
   const queries = [people, scripts, settings, productionRuns, wallet];
-  const previewHasBalance = Boolean(
-    productionPreview &&
-    (productionPreview.billing_quote.video_billing_mode === "tokens"
-      ? (wallet.data?.available_cents ?? 0) > 0
-      : (wallet.data?.available_cents ?? 0) >=
-        productionPreview.billing_quote.amount_cents),
-  );
-
   return (
     <div className="page film-studio-page">
       <header className="page-title-row studio-title">
@@ -351,7 +391,11 @@ export function StudioPage() {
             <BookScriptGenerator
               key={effectiveSubjectId}
               subjectId={effectiveSubjectId}
-              disabled={scriptEditing}
+              disabled={
+                scriptEditing ||
+                requestProductionPreview.isPending ||
+                produce.isPending
+              }
               open={generatorOpen}
               onOpenChange={setGeneratorOpen}
               onGenerated={(projectId) => {
@@ -371,7 +415,11 @@ export function StudioPage() {
                   <UserRound size={15} aria-hidden="true" /> 制作对象
                 </span>
                 <select
-                  disabled={scriptEditing}
+                  disabled={
+                    scriptEditing ||
+                    requestProductionPreview.isPending ||
+                    produce.isPending
+                  }
                   value={effectiveSubjectId}
                   onChange={(event) => {
                     setSubjectId(event.target.value);
@@ -411,7 +459,11 @@ export function StudioPage() {
                   return (
                     <button
                       key={scene.id}
-                      disabled={scriptEditing}
+                      disabled={
+                        scriptEditing ||
+                        requestProductionPreview.isPending ||
+                        produce.isPending
+                      }
                       aria-current={
                         selected?.scene.id === scene.id ? "true" : undefined
                       }
@@ -502,7 +554,10 @@ export function StudioPage() {
                     </dl>
                     <div className="studio-generate-row">
                       <span className="studio-muted">
-                        剧本预估 {seconds(selected.scene.duration_seconds)}
+                        剧本预估 {seconds(selected.scene.duration_seconds)} ·{" "}
+                        {quote === undefined
+                          ? "正在读取费用"
+                          : `${wallet.data?.prices.video_billing_mode === "tokens" && settings.data?.provider !== "mock" ? "预计预留" : "预计费用"} ${money(quote)}`}
                       </span>
                       <Button
                         variant="default"
@@ -529,14 +584,19 @@ export function StudioPage() {
                                 : undefined
                         }
                         onClick={() => {
+                          setGenerationNotice("");
                           if (retryReference && activeRun?.job_id)
                             retry.mutate(activeRun.job_id);
-                          else requestProductionPreview.mutate(selected);
+                          else if (quote !== undefined)
+                            requestProductionPreview.mutate({
+                              ...selected,
+                              expectedQuote: quote,
+                            });
                         }}
                       >
                         <Play size={16} aria-hidden="true" />{" "}
-                        {requestProductionPreview.isPending
-                          ? "正在准备预览"
+                        {requestProductionPreview.isPending || produce.isPending
+                          ? "正在开始生成"
                           : isGenerating || retry.isPending
                             ? "正在生成"
                             : activeRun?.status === "failed"
@@ -544,6 +604,11 @@ export function StudioPage() {
                               : "生成影像"}
                       </Button>
                     </div>
+                    {generationNotice && (
+                      <p className="notice error" role="alert">
+                        {generationNotice}
+                      </p>
+                    )}
                   </div>
                   <div className="studio-preview-toolbar">
                     <div
@@ -762,7 +827,11 @@ export function StudioPage() {
                         key={selected.scene.id}
                         scene={selected.scene}
                         project={selected.project}
-                        disabled={isGenerating}
+                        disabled={
+                          isGenerating ||
+                          requestProductionPreview.isPending ||
+                          produce.isPending
+                        }
                         onEditingChange={setScriptEditing}
                       />
                     </article>
@@ -846,31 +915,6 @@ export function StudioPage() {
               )}
             </section>
           </div>
-          <ProductionPlanReviewDialog
-            preview={productionPreview}
-            open={previewOpen}
-            confirmed={previewConfirmed}
-            submitting={produce.isPending}
-            error={produce.error}
-            hasBalance={previewHasBalance}
-            onOpenChange={(open) => {
-              setPreviewOpen(open);
-              if (!open && !produce.isPending) {
-                setPreviewConfirmed(false);
-                setProductionPreview(null);
-                setPreviewSelection(null);
-              }
-            }}
-            onConfirmedChange={setPreviewConfirmed}
-            onConfirm={() => {
-              if (productionPreview && previewSelection && previewConfirmed) {
-                produce.mutate({
-                  ...previewSelection,
-                  preview: productionPreview,
-                });
-              }
-            }}
-          />
         </>
       )}
     </div>

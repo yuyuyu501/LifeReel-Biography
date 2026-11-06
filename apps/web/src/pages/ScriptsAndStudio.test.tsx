@@ -432,16 +432,6 @@ test("switches chapters and submits only the selected chapter", async () => {
   fireEvent.click(screen.getByRole("tab", { name: "视频预览" }));
   expect(screen.getByText(project.scenes[1].narration)).not.toBeVisible();
   fireEvent.click(screen.getByRole("button", { name: "生成影像" }));
-  expect(
-    await screen.findByRole("heading", { name: "确认本次影像生成" }),
-  ).toBeVisible();
-  expect(screen.getByRole("button", { name: "确认并生成" })).toBeDisabled();
-  fireEvent.click(
-    screen.getByRole("checkbox", {
-      name: "我已核对本次镜头、素材与报价，确认生成",
-    }),
-  );
-  fireEvent.click(screen.getByRole("button", { name: "确认并生成" }));
   await waitFor(() =>
     expect(fetch).toHaveBeenCalledWith(
       expect.stringContaining("/v1/production/runs"),
@@ -457,6 +447,16 @@ test("switches chapters and submits only the selected chapter", async () => {
       }),
     ),
   );
+  expect(
+    vi
+      .mocked(fetch)
+      .mock.calls.some(([url]) =>
+        String(url).endsWith("/v1/production/preview"),
+      ),
+  ).toBe(true);
+  expect(
+    screen.queryByRole("heading", { name: "确认本次影像生成" }),
+  ).not.toBeInTheDocument();
 });
 
 test("per-second pricing blocks generation below the full quote", async () => {
@@ -478,31 +478,9 @@ test("per-second pricing blocks generation below the full quote", async () => {
   ).toBeDisabled();
 });
 
-test("requires reviewing and confirming a plan before starting production", async () => {
-  vi.mocked(window.confirm).mockReturnValue(false);
+test("one generation click previews internally and starts production", async () => {
   renderPage(<StudioPage />, "/studio");
   fireEvent.click(await screen.findByRole("button", { name: "生成影像" }));
-  expect(window.confirm).not.toHaveBeenCalled();
-  expect(
-    await screen.findByRole("heading", { name: "确认本次影像生成" }),
-  ).toBeVisible();
-  expect(screen.getByText("旧火车站的远景")).toBeVisible();
-  expect(screen.queryByRole("button", { name: "确认并生成" })).toBeDisabled();
-  expect(
-    vi
-      .mocked(fetch)
-      .mock.calls.some(
-        ([url, init]) =>
-          String(url).endsWith("/v1/production/runs") &&
-          init?.method === "POST",
-      ),
-  ).toBe(false);
-  fireEvent.click(
-    screen.getByRole("checkbox", {
-      name: "我已核对本次镜头、素材与报价，确认生成",
-    }),
-  );
-  fireEvent.click(screen.getByRole("button", { name: "确认并生成" }));
   await waitFor(() =>
     expect(
       vi
@@ -514,6 +492,10 @@ test("requires reviewing and confirming a plan before starting production", asyn
         ),
     ).toBe(true),
   );
+  expect(screen.getByText(/预计费用 ¥4\.00/)).toBeVisible();
+  expect(
+    screen.queryByRole("heading", { name: "确认本次影像生成" }),
+  ).not.toBeInTheDocument();
 });
 
 test.each([0, -400])(
@@ -563,13 +545,6 @@ test("a positive balance below the full hold still permits one video", async () 
   const button = await screen.findByRole("button", { name: "生成影像" });
   expect(button).toBeEnabled();
   fireEvent.click(button);
-  await screen.findByRole("heading", { name: "确认本次影像生成" });
-  fireEvent.click(
-    screen.getByRole("checkbox", {
-      name: "我已核对本次镜头、素材与报价，确认生成",
-    }),
-  );
-  fireEvent.click(screen.getByRole("button", { name: "确认并生成" }));
   await waitFor(() =>
     expect(fetch).toHaveBeenCalledWith(
       expect.stringContaining("/v1/production/runs"),
@@ -586,6 +561,89 @@ test("a positive balance below the full hold still permits one video", async () 
     ),
   );
   expect(window.confirm).not.toHaveBeenCalled();
+});
+
+test("stops when the preview quote changes and shows the updated amount", async () => {
+  const original = vi.mocked(fetch).getMockImplementation()!;
+  vi.mocked(fetch).mockImplementation(async (input, init) => {
+    if (String(input).endsWith("/v1/production/preview")) {
+      const preview = await (await original(input, init)).json();
+      return response({
+        ...preview,
+        billing_quote: { ...preview.billing_quote, amount_cents: 500 },
+      });
+    }
+    return original(input, init);
+  });
+  renderPage(<StudioPage />, "/studio");
+  fireEvent.click(await screen.findByRole("button", { name: "生成影像" }));
+  expect(await screen.findByRole("alert")).toHaveTextContent(
+    "本次费用从 ¥4.00 更新为 ¥5.00",
+  );
+  expect(screen.getByText(/预计费用 ¥5\.00/)).toBeVisible();
+  expect(
+    vi
+      .mocked(fetch)
+      .mock.calls.some(
+        ([url, init]) =>
+          String(url).endsWith("/v1/production/runs") &&
+          init?.method === "POST",
+      ),
+  ).toBe(false);
+
+  fireEvent.click(screen.getByRole("button", { name: "生成影像" }));
+  await waitFor(() =>
+    expect(
+      vi
+        .mocked(fetch)
+        .mock.calls.some(
+          ([url, init]) =>
+            String(url).endsWith("/v1/production/runs") &&
+            init?.method === "POST",
+        ),
+    ).toBe(true),
+  );
+});
+
+test("does not create a run when the preview-time balance is insufficient", async () => {
+  const original = vi.mocked(fetch).getMockImplementation()!;
+  let resolvePreview: (value: Response) => void;
+  vi.mocked(fetch).mockImplementation(async (input, init) => {
+    if (String(input).endsWith("/v1/production/preview"))
+      return new Promise<Response>((resolve) => {
+        resolvePreview = resolve;
+      });
+    return original(input, init);
+  });
+  const { queryClient } = renderPage(<StudioPage />, "/studio");
+  fireEvent.click(await screen.findByRole("button", { name: "生成影像" }));
+  await waitFor(() => expect(resolvePreview).toBeTypeOf("function"));
+  act(() =>
+    queryClient.setQueryData(["wallet"], {
+      available_cents: 399,
+      prices: { video_billing_mode: "per_second", video_cents_per_second: 80 },
+    }),
+  );
+  const preview = await (
+    await original("/v1/production/preview", {
+      method: "POST",
+      body: JSON.stringify({ scene_id: "scene-1" }),
+    })
+  ).json();
+  await act(async () => resolvePreview!(response(preview)));
+
+  expect(await screen.findByRole("alert")).toHaveTextContent(
+    "可用余额不足以支付本次报价",
+  );
+  expect(
+    vi
+      .mocked(fetch)
+      .mock.calls.some(
+        ([url, init]) =>
+          String(url).endsWith("/v1/production/runs") &&
+          init?.method === "POST",
+      ),
+  ).toBe(false);
 });
 
 test("script retry reuses its update ID and the next success uses a new ID", async () => {
@@ -996,6 +1054,17 @@ test.each([undefined, "color-redraw-v1", "ai-label-v2"])(
           status: "queued",
           recovery: null,
         });
+      if (String(input).endsWith("/v1/production/preview")) {
+        const preview = await (await original(input, init)).json();
+        return response({
+          ...preview,
+          billing_quote: {
+            ...preview.billing_quote,
+            amount_cents: 960,
+            target_seconds: 12,
+          },
+        });
+      }
       if (String(input).endsWith("/v1/production/runs") && previousVersion)
         return response([
           {
@@ -1020,13 +1089,6 @@ test.each([undefined, "color-redraw-v1", "ai-label-v2"])(
       screen.queryByRole("link", { name: "前往采访添加素材" }),
     ).not.toBeInTheDocument();
     fireEvent.click(button);
-    await screen.findByRole("heading", { name: "确认本次影像生成" });
-    fireEvent.click(
-      screen.getByRole("checkbox", {
-        name: "我已核对本次镜头、素材与报价，确认生成",
-      }),
-    );
-    fireEvent.click(screen.getByRole("button", { name: "确认并生成" }));
     await waitFor(() =>
       expect(fetch).toHaveBeenCalledWith(
         expect.stringContaining("/v1/production/runs"),

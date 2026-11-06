@@ -8,7 +8,13 @@ import {
   View,
 } from "@tarojs/components";
 import Taro, { getCurrentInstance } from "@tarojs/taro";
-import type { Book, ProductionRun, ScriptProject } from "@lifereel/contracts";
+import type {
+  Book,
+  ProductionRun,
+  ProductionSettings,
+  ScriptProject,
+  WalletSummary,
+} from "@lifereel/contracts";
 import { miniApi } from "../../shared/api";
 import { newRequestId } from "../../shared/uuid";
 import { PageFrame } from "../../shared/PageFrame";
@@ -30,6 +36,12 @@ export default function ProductionPage() {
   const [runs, setRuns] = useState<ProductionRun[]>([]);
   const [projects, setProjects] = useState<ScriptProject[]>([]);
   const [books, setBooks] = useState<Book[]>([]);
+  const [settings, setSettings] = useState<ProductionSettings | null>(null);
+  const [wallet, setWallet] = useState<WalletSummary | null>(null);
+  const [updatedQuote, setUpdatedQuote] = useState<{
+    key: string;
+    amount: number;
+  } | null>(null);
   const [selected, setSelected] = useState<ScriptProject | null>(null);
   const [sceneIndex, setSceneIndex] = useState(0);
   const [bookId, setBookId] = useState("");
@@ -39,12 +51,41 @@ export default function ProductionPage() {
   const [ready, setReady] = useState(false);
   const [error, setError] = useState("");
   const adaptationKey = useRef("");
+  const starting = useRef(false);
   const book = books.find((item) => item.id === bookId);
   const scene = selected?.scenes[sceneIndex];
   const savedChapters =
     book?.chapters.filter((ch) => ch.current?.body.trim()) || [];
   const stale = savedChapters.some((ch) => ch.stale);
-  const seconds = scene?.duration_seconds || 0;
+  const seconds = scene
+    ? settings?.mode === "segmented"
+      ? scene.duration_seconds
+      : (settings?.duration_seconds ?? scene.duration_seconds)
+    : 0;
+  const tokenBilling =
+    wallet?.prices.video_billing_mode === "tokens" &&
+    settings?.provider !== "mock";
+  const quoteKey = `${selected?.id}:${selected?.version_number}:${scene?.id}:${wallet?.prices.version}`;
+  const quote =
+    updatedQuote?.key === quoteKey
+      ? updatedQuote.amount
+      : tokenBilling
+        ? wallet?.prices.video_reserve_cents
+        : wallet
+          ? seconds * wallet.prices.video_cents_per_second
+          : undefined;
+  const hasBalance =
+    wallet && quote !== undefined
+      ? tokenBilling
+        ? wallet.available_cents > 0
+        : wallet.available_cents >= quote
+      : false;
+  const sceneBusy = runs.some(
+    (run) =>
+      run.project_id === selected?.id &&
+      run.output_manifest?.scene_id === scene?.id &&
+      ["queued", "running"].includes(run.status),
+  );
   const visibleRuns = runs.filter((run) =>
     projects.some((project) => project.id === run.project_id),
   );
@@ -55,8 +96,14 @@ export default function ProductionPage() {
   }
   useEffect(() => {
     let active = true;
-    Promise.all([miniApi.productionRuns(), miniApi.scripts(), miniApi.books()])
-      .then(([items, scripts, manuscripts]) => {
+    Promise.all([
+      miniApi.productionRuns(),
+      miniApi.scripts(),
+      miniApi.books(),
+      miniApi.productionSettings(),
+      miniApi.wallet(),
+    ])
+      .then(([items, scripts, manuscripts, productionSettings, balance]) => {
         if (!active) return;
         const ownScripts = scripts.filter(
           (s) => !subjectId || s.subject_id === subjectId,
@@ -67,6 +114,8 @@ export default function ProductionPage() {
         setRuns(items);
         setProjects(ownScripts);
         setBooks(ownBooks);
+        setSettings(productionSettings);
+        setWallet(balance);
         setBookId(ownBooks[0]?.id || "");
         if (ownScripts[0]) choose(ownScripts[0]);
         setReady(true);
@@ -116,27 +165,53 @@ export default function ProductionPage() {
       !scene ||
       selected.source_stale ||
       selected.source_type !== "book" ||
-      loading
+      loading ||
+      starting.current ||
+      sceneBusy ||
+      quote === undefined ||
+      !hasBalance
     )
       return;
-    const confirmation = await Taro.showModal({
-      title: "生成人生影像",
-      content: `“${scene.heading}”预计 ${seconds} 秒，按 0.80 元/秒计算约 ${(seconds * 0.8).toFixed(2)} 元。是否开始？`,
-      confirmText: "开始生成",
-    });
-    if (!confirmation.confirm) return;
+    starting.current = true;
     setLoading(true);
     setError("");
     try {
-      const run = await miniApi.startProduction({
+      const selection = {
         project_id: selected.id,
         scene_id: scene.id,
         audience: "family",
+      };
+      const preview = await miniApi.previewProduction(selection);
+      const balance = await miniApi.wallet();
+      setWallet(balance);
+      if (preview.billing_quote.amount_cents !== quote) {
+        setUpdatedQuote({
+          key: `${selected.id}:${selected.version_number}:${scene.id}:${balance.prices.version}`,
+          amount: preview.billing_quote.amount_cents,
+        });
+        setError(
+          `费用已更新为 ¥${(preview.billing_quote.amount_cents / 100).toFixed(2)}，尚未提交生成。请确认新报价后再次点击。`,
+        );
+        return;
+      }
+      if (
+        preview.billing_quote.video_billing_mode === "tokens"
+          ? balance.available_cents <= 0
+          : balance.available_cents < preview.billing_quote.amount_cents
+      ) {
+        setError("可用余额不足以支付本次报价，尚未提交生成。请先充值。");
+        return;
+      }
+      const run = await miniApi.startProduction({
+        ...selection,
+        quoted_amount_cents: preview.billing_quote.amount_cents,
+        preview_fingerprint: preview.fingerprint,
       });
-      setRuns((p) => [run, ...p]);
+      setRuns((p) => [run, ...p.filter((item) => item.id !== run.id)]);
     } catch (e) {
       setError(e instanceof Error ? e.message : "视频任务创建失败");
     } finally {
+      starting.current = false;
       setLoading(false);
     }
   }
@@ -171,9 +246,9 @@ export default function ProductionPage() {
           },
           {
             target: "#guide-video-start",
-            title: "确认后才会开始生成视频",
+            title: "一键开始生成视频",
             description:
-              "点这里会先显示预计时长与费用，视频按 0.80 元/秒计算。确认开始生成后才会提交任务。",
+              "预计时长和费用显示在按钮旁。点击后自动准备镜头并提交任务，费用变化或余额不足时会停止。",
           },
           {
             target: "#guide-video-refresh",
@@ -407,13 +482,19 @@ export default function ProductionPage() {
               {selected && (
                 <View className="section">
                   <Text className="hint">
-                    当前场景 · 预计 {seconds} 秒 · 0.80 元/秒
+                    当前场景 · 预计 {seconds} 秒 ·{" "}
+                    {quote === undefined
+                      ? "费用未就绪"
+                      : `${tokenBilling ? "预计预留" : "预计费用"} ¥${(quote / 100).toFixed(2)}`}
                   </Text>
                   <Button
                     id="guide-video-start"
                     className="primary-button"
                     disabled={
                       loading ||
+                      sceneBusy ||
+                      !hasBalance ||
+                      !settings ||
                       !seconds ||
                       selected.source_stale ||
                       selected.source_type !== "book"
@@ -422,8 +503,13 @@ export default function ProductionPage() {
                     onClick={start}
                   >
                     <Icon name="film" tone="white" />
-                    生成当前场景影像
+                    {sceneBusy ? "正在生成" : "生成当前场景影像"}
                   </Button>
+                  {quote !== undefined && !hasBalance && (
+                    <Text className="error">
+                      余额不足，请先在网页钱包充值。
+                    </Text>
+                  )}
                   {selected.source_type !== "book" && (
                     <Text className="hint">
                       该剧本来自早期资料，请从已保存书稿重新改编。
