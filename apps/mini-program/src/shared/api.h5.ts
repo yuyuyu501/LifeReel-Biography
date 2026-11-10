@@ -356,6 +356,11 @@ export const miniApi: typeof nativeApi = {
     Object.assign(requireItem(people, personId), payload, {
       updated_at: stamp(),
     }),
+  deletePerson: async (personId) => {
+    const index = people.findIndex((person) => person.id === personId);
+    if (index < 0) throw new Error("人物不存在");
+    people.splice(index, 1);
+  },
   chapters: async () => [...chapters],
   interviews: async () => [...sessions],
   startInterview: async (payload) => {

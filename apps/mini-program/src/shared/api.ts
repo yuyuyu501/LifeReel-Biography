@@ -215,6 +215,8 @@ export const miniApi = {
     request<Person>("/v1/persons", { method: "POST", data: payload }),
   updatePerson: (id: string, payload: PersonUpdate) =>
     request<Person>(`/v1/persons/${id}`, { method: "PATCH", data: payload }),
+  deletePerson: (id: string) =>
+    request<void>(`/v1/persons/${id}`, { method: "DELETE" }),
   chapters: () => request<Chapter[]>("/v1/chapters"),
   interviews: () => request<InterviewSession[]>("/v1/interviews"),
   startInterview: (payload: {

@@ -41,6 +41,11 @@ const entries: {
 export default function HomePage() {
   const [persons, setPersons] = useState<Person[]>([]);
   const [newPersonName, setNewPersonName] = useState("");
+  const [editingId, setEditingId] = useState("");
+  const [editingName, setEditingName] = useState("");
+  const [editingPreferredName, setEditingPreferredName] = useState("");
+  const [editingBirthYear, setEditingBirthYear] = useState("");
+  const [editingBirthplace, setEditingBirthplace] = useState("");
   const [selectedPersonId, setSelectedPersonId] = useState("");
   const [adding, setAdding] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -85,6 +90,65 @@ export default function HomePage() {
       setAdding(false);
     } catch (e) {
       setError(e instanceof Error ? e.message : "家人创建失败");
+    } finally {
+      setBusy(false);
+    }
+  }
+  function startEditing(person: Person) {
+    setEditingId(person.id);
+    setEditingName(person.display_name);
+    setEditingPreferredName(person.preferred_name || "");
+    setEditingBirthYear(person.birth_year ? String(person.birth_year) : "");
+    setEditingBirthplace(person.birthplace || "");
+    setError("");
+  }
+  function cancelEditing() {
+    setEditingId("");
+    setEditingName("");
+    setEditingPreferredName("");
+    setEditingBirthYear("");
+    setEditingBirthplace("");
+  }
+  async function savePerson() {
+    if (!editingId || !editingName.trim() || busy) return;
+    setBusy(true);
+    setError("");
+    try {
+      const updated = await miniApi.updatePerson(editingId, {
+        display_name: editingName.trim(),
+        preferred_name: editingPreferredName.trim() || null,
+        birth_year: editingBirthYear ? Number(editingBirthYear) : null,
+        birthplace: editingBirthplace.trim() || null,
+      });
+      setPersons((items) =>
+        items.map((item) => (item.id === updated.id ? updated : item)),
+      );
+      cancelEditing();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "人物保存失败");
+    } finally {
+      setBusy(false);
+    }
+  }
+  async function removePerson(person: Person) {
+    const result = await Taro.showModal({
+      title: "确认删除家人",
+      content: `确定删除「${person.preferred_name || person.display_name}」吗？人物档案、采访记录、书稿和影像记录都会删除。`,
+      confirmText: "确认删除",
+      confirmColor: "#b54d3c",
+    });
+    if (!result.confirm || busy) return;
+    setBusy(true);
+    setError("");
+    try {
+      await miniApi.deletePerson(person.id);
+      const remaining = persons.filter((item) => item.id !== person.id);
+      setPersons(remaining);
+      if (selectedPersonId === person.id)
+        setSelectedPersonId(remaining[0]?.id || "");
+      if (editingId === person.id) cancelEditing();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "人物删除失败");
     } finally {
       setBusy(false);
     }
@@ -198,12 +262,67 @@ export default function HomePage() {
           </View>
         </View>
       )}
+      {editingId && (
+        <View className="surface person-form">
+          <Text className="section-title">编辑人物档案</Text>
+          <Text className="label">姓名</Text>
+          <Input
+            className="input"
+            maxlength={80}
+            value={editingName}
+            onInput={(e) => setEditingName(e.detail.value)}
+          />
+          <Text className="label">希望怎样称呼</Text>
+          <Input
+            className="input"
+            maxlength={80}
+            value={editingPreferredName}
+            onInput={(e) => setEditingPreferredName(e.detail.value)}
+          />
+          <View className="form-grid">
+            <View>
+              <Text className="label">出生年份</Text>
+              <Input
+                className="input"
+                type="number"
+                value={editingBirthYear}
+                onInput={(e) => setEditingBirthYear(e.detail.value)}
+              />
+            </View>
+            <View>
+              <Text className="label">出生地</Text>
+              <Input
+                className="input"
+                value={editingBirthplace}
+                onInput={(e) => setEditingBirthplace(e.detail.value)}
+              />
+            </View>
+          </View>
+          <View className="action-row">
+            <Button
+              className="primary-button"
+              loading={busy}
+              disabled={busy || !editingName.trim()}
+              onClick={savePerson}
+            >
+              保存人物
+            </Button>
+            <Button
+              className="secondary-button"
+              disabled={busy}
+              onClick={cancelEditing}
+            >
+              取消
+            </Button>
+          </View>
+        </View>
+      )}
       {loading ? (
         <Text className="empty">正在读取家人档案……</Text>
       ) : persons.length ? (
         <View className="person-list">
           {persons.map((person) => (
-            <Button
+            <View
               className={`person-row ${person.id === selectedPersonId ? "is-selected" : ""}`}
               id={
                 person.id === selectedPersonId ? "guide-home-person" : undefined
@@ -237,7 +356,29 @@ export default function HomePage() {
                   <Icon name="check" tone="white" />
                 )}
               </View>
-            </Button>
+              <View className="person-actions">
+                <Button
+                  className="person-action edit-action"
+                  aria-label={`编辑${person.display_name}`}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    startEditing(person);
+                  }}
+                >
+                  编辑
+                </Button>
+                <Button
+                  className="person-action delete-action"
+                  aria-label={`删除${person.display_name}`}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    void removePerson(person);
+                  }}
+                >
+                  删除
+                </Button>
+              </View>
+            </View>
           ))}
         </View>
       ) : (

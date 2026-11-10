@@ -499,11 +499,38 @@ page {
 }
 .page .person-row {
   display: flex;
+  position: relative;
+  align-items: center;
   gap: 20px;
   width: 100%;
   padding: 26px;
   text-align: left;
   background: #fff;
+}
+.person-actions {
+  position: absolute;
+  right: 18px;
+  bottom: 12px;
+  display: flex;
+  gap: 8px;
+}
+.page .person-action {
+  min-height: 30px;
+  padding: 4px 10px;
+  border: 1px solid #d6e1de;
+  border-radius: 6px;
+  background: #fff;
+  color: #176e62;
+  font-size: 12px;
+  line-height: 1.4;
+}
+.page .person-action.delete-action {
+  color: #b54d3c;
+}
+.person-form .form-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
 }
 .page .person-row.is-selected {
   border-color: #176e62;
