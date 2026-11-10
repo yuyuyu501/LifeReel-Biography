@@ -349,13 +349,6 @@ export default function HomePage() {
                     .join(" · ")}
                 </Text>
               </View>
-              <View
-                className={`selection-mark ${person.id === selectedPersonId ? "is-selected" : ""}`}
-              >
-                {person.id === selectedPersonId && (
-                  <Icon name="check" tone="white" />
-                )}
-              </View>
               <View className="person-actions">
                 <Button
                   className="person-action edit-action"

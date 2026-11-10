@@ -556,25 +556,6 @@ page {
   margin-top: 6px;
   font-size: 12px;
 }
-.selection-mark {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  width: 36px;
-  height: 36px;
-  border: 1px solid #d6e1de;
-  border-radius: 50%;
-}
-.selection-mark.is-selected {
-  background: #176e62;
-  border-color: #176e62;
-}
-.selection-mark .ui-icon {
-  width: 26px;
-  height: 26px;
-  flex-basis: 26px;
-}
 .next-interview {
   position: relative;
   display: flex;
