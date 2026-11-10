@@ -664,12 +664,44 @@ page {
   height: 100%;
   background: #6e9f8e;
 }
-.conversation {
+.interview-chat.page {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  height: 100dvh;
+  min-height: 0;
+  padding-bottom: 0;
+  overflow: hidden;
+}
+.interview-chat > :not(.conversation) {
+  flex-shrink: 0;
+}
+.interview-chat .page-heading {
+  padding: 16px 0;
+}
+.interview-chat .description {
+  margin-top: 4px;
+}
+.interview-chat .section {
+  margin: 0;
   padding: 12px 0;
+}
+.interview-chat .bottom-navigation {
+  position: static;
+  width: calc(100% + 64px);
+  margin: 0 -32px;
+}
+.interview-chat .conversation {
+  flex: 1;
+  height: 0;
+  min-height: 0;
+}
+.conversation {
+  padding: 18px 4px 10px;
 }
 .conversation-empty {
   text-align: center;
-  padding: 16px 0;
+  padding: 12px 0 22px;
 }
 .conversation-empty .empty-illustration {
   width: 240px;
@@ -677,13 +709,16 @@ page {
   margin-bottom: 0;
 }
 .message {
-  margin: 26px 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  margin: 18px 0;
 }
 .message-author {
   display: flex;
   align-items: center;
   gap: 12px;
-  margin-bottom: 14px;
+  margin: 0 0 8px 4px;
   font-size: 12px;
   color: #71837e;
 }
@@ -693,32 +728,59 @@ page {
   flex-basis: 30px;
 }
 .question {
+  position: relative;
+  max-width: 84%;
   display: block;
-  padding: 26px;
+  padding: 13px 16px;
   background: #fff;
   border: 1px solid #e1e8e5;
-  border-radius: 12px;
-  font-size: 16px;
-  line-height: 1.75;
+  border-radius: 4px 14px 14px 14px;
+  font-size: 15px;
+  line-height: 1.65;
+  box-shadow: 0 2px 8px rgba(37, 77, 67, 0.04);
 }
 .answer-message {
-  margin-left: 32px;
+  align-items: flex-end;
+  margin-left: 0;
 }
 .answer-message .message-author {
   justify-content: flex-end;
+  margin-right: 4px;
 }
 .answer-message .question {
   background: #e7f1eb;
   border-color: #e0eae3;
+  border-radius: 14px 4px 14px 14px;
 }
 .composer {
-  margin-top: 28px;
-  padding: 24px 0;
+  margin-top: 12px;
+  padding: 14px 0;
   border-top: 1px solid #dce5e1;
+  background: #f5f8f7;
 }
 .composer .textarea {
-  min-height: 105px;
-  margin: 0 0 20px;
+  flex: 1;
+  width: 0;
+  min-height: 44px;
+  max-height: 120px;
+  margin: 0;
+  padding: 14px 16px;
+  border-radius: 14px;
+}
+.chat-input-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+}
+.interview-chat .composer .record-button {
+  flex: 0 0 80px;
+  min-height: 44px;
+  padding: 12px;
+}
+.interview-chat .composer .send-button {
+  flex: 0 0 100px;
+  min-height: 44px;
+  padding: 12px;
 }
 .composer .action-row {
   margin: 0;

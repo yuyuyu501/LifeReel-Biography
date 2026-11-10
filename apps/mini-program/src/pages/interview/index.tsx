@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Button, Image, Text, Textarea, View } from "@tarojs/components";
+import { Button, ScrollView, Text, Textarea, View } from "@tarojs/components";
 import Taro, { getCurrentInstance } from "@tarojs/taro";
 import type { InterviewWorkspace } from "@lifereel/contracts";
 import { miniApi } from "../../shared/api";
@@ -118,6 +118,7 @@ export default function InterviewPage() {
       title="人生采访"
       subtitle="慢慢说，那些值得留下的事。"
       active="interview"
+      className="interview-chat"
       subjectId={subjectId}
       locked={busy || recording || !!answer.trim() || !!assetId}
       tutorial={{
@@ -189,15 +190,22 @@ export default function InterviewPage() {
               </View>
             </View>
           )}
-          <View className="conversation">
+          <ScrollView
+            className="conversation"
+            scrollY
+            scrollIntoView={`chat-end-${workspace.session.rounds.length}-${workspace.latest_workflow?.status || "idle"}`}
+          >
             {!workspace.session.rounds.length && (
               <View className="conversation-empty">
-                <Image
-                  src={require("../../assets/interview.png")}
-                  className="empty-illustration"
-                  mode="aspectFit"
-                />
-                <Text className="hint">还没有保存的讲述</Text>
+                <View className="message">
+                  <View className="message-author">
+                    <Icon name="mic" />
+                    采访助手
+                  </View>
+                  <Text className="question">
+                    我们从一段最想留下的回忆开始。你可以慢慢说，我会认真听。
+                  </Text>
+                </View>
               </View>
             )}
             {workspace.session.rounds.map((round) => (
@@ -236,30 +244,43 @@ export default function InterviewPage() {
                   </Text>
                 </View>
               )}
-          </View>
-          {running && <View className="status-box">正在整理这次讲述……</View>}
-          <View className="composer">
-            <Textarea
-              id="guide-interview-answer"
-              className="textarea"
-              value={answer}
-              maxlength={16000}
-              placeholder="继续讲述或更正资料"
-              onInput={(e) => setAnswer(e.detail.value)}
-              disabled={busy || recording}
+            {running && (
+              <View className="message">
+                <Text className="message-author">采访助手</Text>
+                <Text className="question">正在整理这次讲述……</Text>
+              </View>
+            )}
+            <View
+              id={`chat-end-${workspace.session.rounds.length}-${workspace.latest_workflow?.status || "idle"}`}
             />
-            <View className="action-row">
+          </ScrollView>
+          <View className="composer">
+            <View className="chat-input-row">
               <Button
                 id="guide-interview-record"
                 className="record-button"
-                disabled={busy || running}
+                aria-label={recording ? "结束录音" : "开始语音讲述"}
+                disabled={busy || running || !workspace}
                 onClick={
                   recording ? () => recorder.current?.stop() : startRecording
                 }
               >
                 <Icon name={recording ? "stop" : "mic"} />
-                {recording ? "结束录音" : "语音讲述"}
               </Button>
+              <Textarea
+                id="guide-interview-answer"
+                className="textarea"
+                value={answer}
+                maxlength={16000}
+                placeholder={
+                  recording ? "正在录音，点左侧结束" : "说说你的故事……"
+                }
+                aria-label="讲述内容"
+                autoHeight
+                cursorSpacing={20}
+                onInput={(e) => setAnswer(e.detail.value)}
+                disabled={busy || running || recording}
+              />
               <Button
                 id="guide-interview-send"
                 className="primary-button send-button"
@@ -269,7 +290,6 @@ export default function InterviewPage() {
                 }
                 onClick={submit}
               >
-                <Icon name="send" tone="white" />
                 发送
               </Button>
             </View>
