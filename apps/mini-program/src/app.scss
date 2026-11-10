@@ -901,16 +901,14 @@ page {
 .adapter-body {
   padding: 24px 0;
 }
-.production-page .adapter-panel {
-  padding: 0 24px;
+.production-page .adapter-heading {
+  padding: 24px;
+  border: 0;
   background: #fff;
   border-radius: 8px;
 }
-.production-page .adapter-heading {
-  border: 0;
-}
 .production-page .adapter-body {
-  padding: 0 0 28px;
+  padding: 24px 0 28px;
 }
 .production-page .adapter-body .select-row {
   margin-top: 0;
