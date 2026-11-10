@@ -221,6 +221,7 @@ export default function ProductionPage() {
       title="人生影像"
       subtitle="让书里的故事，有了画面。"
       active="production"
+      className="production-page"
       subjectId={subjectId || selected?.subject_id || book?.subject_id}
       locked={loading || !!instructions.trim()}
       tutorial={{

@@ -901,6 +901,33 @@ page {
 .adapter-body {
   padding: 24px 0;
 }
+.production-page .adapter-heading {
+  border-top: 1px solid #b9cec6;
+  border-bottom-color: #b9cec6;
+}
+.production-page .adapter-body {
+  padding: 24px 0 28px;
+  border-bottom: 1px solid #b9cec6;
+}
+.production-page .adapter-body .select-row {
+  margin-top: 0;
+}
+.production-page .segmented-control {
+  margin-top: 36px;
+  border-color: #b9cec6;
+}
+.production-page .section {
+  padding: 28px 0;
+  border-top: 1px solid #b9cec6;
+  border-bottom: 1px solid #b9cec6;
+}
+.production-page .section-heading {
+  padding-top: 24px;
+  border-top: 1px solid #b9cec6;
+}
+.production-page .list-card {
+  border-bottom-color: #b9cec6;
+}
 .segmented-control {
   display: flex;
   gap: 8px;
