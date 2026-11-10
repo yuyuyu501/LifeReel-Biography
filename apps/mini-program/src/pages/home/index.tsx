@@ -308,17 +308,6 @@ export default function HomePage() {
           <Icon name="lock" tone="muted" />
           <Text>仅在家庭空间内保存</Text>
         </View>
-        <Button
-          className="text-button"
-          disabled={adding || busy}
-          onClick={() => {
-            miniApi.clearAuth();
-            void Taro.reLaunch({ url: "/pages/login/index" });
-          }}
-        >
-          <Icon name="logout" tone="muted" />
-          退出
-        </Button>
       </View>
     </PageFrame>
   );
