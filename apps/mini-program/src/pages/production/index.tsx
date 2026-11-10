@@ -261,103 +261,105 @@ export default function ProductionPage() {
       }}
     >
       {error && <Text className="error">{error}</Text>}
-      <View className="adapter-heading">
-        <Icon name="book" />
-        <Text className="section-title">从书稿生成剧本与分镜</Text>
-        <Button
-          id="guide-adapt-toggle"
-          className="icon-button"
-          aria-label={adapterOpen ? "收起改编选项" : "展开改编选项"}
-          disabled={loading}
-          onClick={() => setAdapterOpen(!adapterOpen)}
-        >
-          <Icon name={adapterOpen ? "back" : "down"} />
-        </Button>
-      </View>
-      {adapterOpen && (
-        <View className="adapter-body">
-          {books.length ? (
-            <>
-              <Picker
-                range={books.map((b) => b.title)}
-                value={Math.max(
-                  0,
-                  books.findIndex((b) => b.id === bookId),
-                )}
-                disabled={loading}
-                onChange={(e) => {
-                  setBookId(books[Number(e.detail.value)].id);
-                  adaptationKey.current = "";
-                }}
-              >
-                <View className="select-row">
-                  <Text>{book?.title || "选择书稿"}</Text>
-                  <Icon name="down" />
-                </View>
-              </Picker>
-              <Text className="hint">
-                整书改编 · {savedChapters.length} 章已成稿
-                {book && book.chapters.length > savedChapters.length
-                  ? ` · ${book.chapters.length - savedChapters.length} 章尚未成稿`
-                  : ""}
-              </Text>
-              {stale && (
-                <Text className="error">
-                  书稿来源有更正，请更新正文后再改编。
-                </Text>
-              )}
-              {!savedChapters.length && (
-                <Text className="empty">这本书还没有已保存的正文</Text>
-              )}
-              <Textarea
-                className="textarea"
-                placeholder="改编偏好（可选）"
-                value={instructions}
-                disabled={loading}
-                maxlength={4000}
-                onInput={(e) => {
-                  setInstructions(e.detail.value);
-                  adaptationKey.current = "";
-                }}
-              />
-              <Button
-                className="primary-button"
-                disabled={loading || !savedChapters.length || stale}
-                loading={loading}
-                onClick={adapt}
-              >
-                <Icon name="film" tone="white" />
-                生成整书剧本与分镜
-              </Button>
-              <Button
-                className="text-button"
-                disabled={loading}
-                onClick={() => {
-                  setInstructions("");
-                  setAdapterOpen(false);
-                  adaptationKey.current = "";
-                }}
-              >
-                取消
-              </Button>
-            </>
-          ) : (
-            <Text className="empty">还没有书稿</Text>
-          )}
+      <View className="adapter-panel">
+        <View className="adapter-heading">
+          <Icon name="book" />
+          <Text className="section-title">从书稿生成剧本与分镜</Text>
           <Button
-            className="text-button"
-            disabled={loading || !!instructions.trim() || !subjectId}
-            onClick={() =>
-              Taro.navigateTo({
-                url: `/pages/books/index?subjectId=${encodeURIComponent(subjectId)}`,
-              })
-            }
+            id="guide-adapt-toggle"
+            className="icon-button"
+            aria-label={adapterOpen ? "收起改编选项" : "展开改编选项"}
+            disabled={loading}
+            onClick={() => setAdapterOpen(!adapterOpen)}
           >
-            前往写书
-            <Icon name="arrow" />
+            <Icon name={adapterOpen ? "back" : "down"} />
           </Button>
         </View>
-      )}
+        {adapterOpen && (
+          <View className="adapter-body">
+            {books.length ? (
+              <>
+                <Picker
+                  range={books.map((b) => b.title)}
+                  value={Math.max(
+                    0,
+                    books.findIndex((b) => b.id === bookId),
+                  )}
+                  disabled={loading}
+                  onChange={(e) => {
+                    setBookId(books[Number(e.detail.value)].id);
+                    adaptationKey.current = "";
+                  }}
+                >
+                  <View className="select-row">
+                    <Text>{book?.title || "选择书稿"}</Text>
+                    <Icon name="down" />
+                  </View>
+                </Picker>
+                <Text className="hint">
+                  整书改编 · {savedChapters.length} 章已成稿
+                  {book && book.chapters.length > savedChapters.length
+                    ? ` · ${book.chapters.length - savedChapters.length} 章尚未成稿`
+                    : ""}
+                </Text>
+                {stale && (
+                  <Text className="error">
+                    书稿来源有更正，请更新正文后再改编。
+                  </Text>
+                )}
+                {!savedChapters.length && (
+                  <Text className="empty">这本书还没有已保存的正文</Text>
+                )}
+                <Textarea
+                  className="textarea"
+                  placeholder="改编偏好（可选）"
+                  value={instructions}
+                  disabled={loading}
+                  maxlength={4000}
+                  onInput={(e) => {
+                    setInstructions(e.detail.value);
+                    adaptationKey.current = "";
+                  }}
+                />
+                <Button
+                  className="primary-button"
+                  disabled={loading || !savedChapters.length || stale}
+                  loading={loading}
+                  onClick={adapt}
+                >
+                  <Icon name="film" tone="white" />
+                  生成整书剧本与分镜
+                </Button>
+                <Button
+                  className="text-button"
+                  disabled={loading}
+                  onClick={() => {
+                    setInstructions("");
+                    setAdapterOpen(false);
+                    adaptationKey.current = "";
+                  }}
+                >
+                  取消
+                </Button>
+              </>
+            ) : (
+              <Text className="empty">还没有书稿</Text>
+            )}
+            <Button
+              className="text-button"
+              disabled={loading || !!instructions.trim() || !subjectId}
+              onClick={() =>
+                Taro.navigateTo({
+                  url: `/pages/books/index?subjectId=${encodeURIComponent(subjectId)}`,
+                })
+              }
+            >
+              前往写书
+              <Icon name="arrow" />
+            </Button>
+          </View>
+        )}
+      </View>
       <View className="segmented-control" id="guide-production-tabs">
         <Button
           className={`segment-button ${tab === "video" ? "is-active" : ""}`}
