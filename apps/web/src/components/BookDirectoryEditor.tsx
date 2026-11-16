@@ -26,8 +26,8 @@ export function BookDirectoryEditor({
   } | null>(null);
   const profile = useQuery({
     queryKey: ["life-profile", book.subject_id],
-    queryFn: () => profilesApi.subject(book.subject_id),
-    enabled: !!draft,
+    queryFn: () => profilesApi.subject(book.subject_id!),
+    enabled: !!draft && !!book.subject_id,
   });
   const save = useMutation({
     mutationFn: () => booksApi.directory(book.id, draft!),
@@ -71,7 +71,7 @@ export function BookDirectoryEditor({
         }}
       >
         <PencilLine size={17} aria-hidden="true" />
-        编辑目录与选材
+        {book.subject_id ? "编辑目录与选材" : "编辑目录"}
       </Button>
     );
   return (
@@ -83,11 +83,13 @@ export function BookDirectoryEditor({
         save.mutate();
       }}
     >
-      <h2>书籍目录与选材</h2>
-      <p>
-        默认目录会汇集同主题下允许用于作品的资料。保存本次编辑后，将以您选择的条目为准。
-        请按章节选择相关经历和细节；移除章节会保留历史稿件。
-      </p>
+      <h2>{book.subject_id ? "书籍目录与选材" : "书籍目录"}</h2>
+      {book.subject_id && (
+        <p>
+          默认目录会汇集同主题下允许用于作品的资料。保存本次编辑后，将以您选择的条目为准。
+          请按章节选择相关经历和细节；移除章节会保留历史稿件。
+        </p>
+      )}
       <label>
         书名
         <Input
@@ -96,7 +98,7 @@ export function BookDirectoryEditor({
           required
         />
       </label>
-      <QueryState queries={[profile]} />
+      {book.subject_id && <QueryState queries={[profile]} />}
       {draft.chapters.map((chapter, index) => (
         <section key={chapter.id || index}>
           <label>
@@ -145,50 +147,52 @@ export function BookDirectoryEditor({
               移出目录
             </Button>
           </div>
-          <details>
-            <summary>
-              本章资料 · 已选择 {chapter.source_entry_ids.length} 条
-            </summary>
-            {available.map((entry) => {
-              const label = profile.data?.fields.find(
-                (f) => f.key === entry.field_key,
-              )?.label;
-              const text =
-                typeof entry.value === "string"
-                  ? entry.value
-                  : String(
-                      (entry.value as Record<string, unknown>).title ||
-                        (entry.value as Record<string, unknown>).what ||
-                        label ||
-                        "资料",
-                    );
-              return (
-                <label key={entry.id}>
-                  <input
-                    type="checkbox"
-                    checked={chapter.source_entry_ids.includes(entry.id)}
-                    onChange={(e) => {
-                      const ids = e.target.checked
-                        ? [...chapter.source_entry_ids, entry.id]
-                        : chapter.source_entry_ids.filter(
-                            (id) => id !== entry.id,
-                          );
-                      setDraft({
-                        ...draft,
-                        chapters: draft.chapters.map((ch, i) =>
-                          i === index ? { ...ch, source_entry_ids: ids } : ch,
-                        ),
-                      });
-                    }}
-                  />
-                  {label} · {text.slice(0, 100)}
-                </label>
-              );
-            })}
-            {!available.length && (
-              <p>还没有可用于作品的资料，请先填写资料表或继续采访。</p>
-            )}
-          </details>
+          {book.subject_id && (
+            <details>
+              <summary>
+                本章资料 · 已选择 {chapter.source_entry_ids.length} 条
+              </summary>
+              {available.map((entry) => {
+                const label = profile.data?.fields.find(
+                  (f) => f.key === entry.field_key,
+                )?.label;
+                const text =
+                  typeof entry.value === "string"
+                    ? entry.value
+                    : String(
+                        (entry.value as Record<string, unknown>).title ||
+                          (entry.value as Record<string, unknown>).what ||
+                          label ||
+                          "资料",
+                      );
+                return (
+                  <label key={entry.id}>
+                    <input
+                      type="checkbox"
+                      checked={chapter.source_entry_ids.includes(entry.id)}
+                      onChange={(e) => {
+                        const ids = e.target.checked
+                          ? [...chapter.source_entry_ids, entry.id]
+                          : chapter.source_entry_ids.filter(
+                              (id) => id !== entry.id,
+                            );
+                        setDraft({
+                          ...draft,
+                          chapters: draft.chapters.map((ch, i) =>
+                            i === index ? { ...ch, source_entry_ids: ids } : ch,
+                          ),
+                        });
+                      }}
+                    />
+                    {label} · {text.slice(0, 100)}
+                  </label>
+                );
+              })}
+              {!available.length && (
+                <p>还没有可用于作品的资料，请先填写资料表或继续采访。</p>
+              )}
+            </details>
+          )}
         </section>
       ))}
       {!!book.archived_chapters?.length && (

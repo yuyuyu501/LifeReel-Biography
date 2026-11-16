@@ -140,7 +140,9 @@ export function BooksPage() {
             disabled={create.isPending || importBook.isPending}
             onChange={(e) => setTitle(e.target.value)}
             maxLength={180}
-            placeholder="留空时使用人物姓名"
+            placeholder={
+              personId ? "留空时使用人物姓名" : "留空时使用文件内书名"
+            }
           />
         </label>
         <div className="writing-create-actions">
@@ -159,7 +161,7 @@ export function BooksPage() {
             onChange={(event) => {
               const file = event.target.files?.[0];
               event.target.value = "";
-              if (!file || !personId) return;
+              if (!file) return;
               setImportError("");
               importBook.reset();
               if (!/\.(txt|md|markdown)$/i.test(file.name) || !file.size) {
@@ -171,7 +173,7 @@ export function BooksPage() {
                 return;
               }
               importBook.mutate({
-                subject_id: personId,
+                subject_id: personId || undefined,
                 title: title.trim() || undefined,
                 file,
               });
@@ -179,7 +181,7 @@ export function BooksPage() {
           />
           <Button
             type="button"
-            disabled={!personId || create.isPending || importBook.isPending}
+            disabled={create.isPending || importBook.isPending}
             onClick={() => fileInput.current?.click()}
           >
             {importBook.isPending ? (
@@ -448,7 +450,7 @@ export function BookWritingPage() {
         </div>
       </header>
       <section className="writing-actions" aria-label="书稿操作">
-        {!data.profile_id && (
+        {!data.profile_id && data.subject_id && (
           <p className="writing-warning">
             这是以前的采访书稿。请先在资料表确认历史素材，再通过“编辑目录与选材”选择当前资料，之后可以继续写作和改编。
           </p>
@@ -814,8 +816,8 @@ function ChapterBody({
   const [confirmSources, setConfirmSources] = useState(false);
   const profile = useQuery({
     queryKey: ["life-profile", book.subject_id],
-    queryFn: () => profilesApi.subject(book.subject_id),
-    enabled: editing && !!book.profile_id,
+    queryFn: () => profilesApi.subject(book.subject_id!),
+    enabled: editing && !!book.profile_id && !!book.subject_id,
   });
   const [version, setVersion] = useState(0);
   const history = useQuery({

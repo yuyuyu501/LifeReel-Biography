@@ -108,6 +108,14 @@ def source(db, book, chapter_id):
         from lifereel_api.modules.book.profile_sources import source as profile_source
 
         return profile_source(db, book, chapter_id)
+    if book.subject_id is None:
+        _, chapter = get_chapter(db, book.tenant_id, book.id, chapter_id)
+        return {
+            "subject_name": "讲述者",
+            "chapter": chapter.title,
+            "target_words": book.target_words,
+            "claims": [],
+        }
     person = db.scalar(
         select(Person).where(
             Person.id == book.subject_id,
@@ -497,6 +505,8 @@ def edit(db, tenant, book_id, chapter_id, payload):
             previous.source_claim_ids if previous else [c["id"] for c in snapshot["claims"]]
         )
         if payload.confirm_profile_version is not None:
+            if book.profile_id is None:
+                raise ApiError(409, ErrorCode.BOOK_SOURCE_CHANGED)
             from lifereel_api.modules.book.profile_sources import profile_read
 
             current_profile = profile_read(db, tenant, profile_id=book.profile_id)
@@ -566,7 +576,7 @@ def retry(db, job):
 
 
 def require_profile_sources(db, book):
-    if book.profile_id is None:
+    if book.profile_id is None and book.subject_id is not None:
         from lifereel_api.modules.interview.profile_models import LifeProfile
 
         if db.scalar(

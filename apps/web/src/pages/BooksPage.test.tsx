@@ -278,9 +278,7 @@ it("imports a manuscript for the selected person and opens it", async () => {
     url === "/v1/books/import" ? reply(book, 201) : originalFetch(url, init),
   );
   setup("/books");
-  expect(
-    await screen.findByRole("button", { name: "导入书籍" }),
-  ).toBeDisabled();
+  expect(await screen.findByRole("button", { name: "导入书籍" })).toBeEnabled();
   fireEvent.change(screen.getByLabelText("选择人物"), {
     target: { value: "person-1" },
   });
@@ -298,6 +296,49 @@ it("imports a manuscript for the selected person and opens it", async () => {
   expect(form.get("subject_id")).toBe("person-1");
   expect((form.get("file") as File).name).toBe("回忆.md");
   expect(call[1]!.headers).not.toHaveProperty("Content-Type");
+});
+
+it("imports without a person or family archive and opens the saved manuscript", async () => {
+  book.subject_id = null;
+  book.profile_id = null;
+  const originalFetch = vi.mocked(fetch).getMockImplementation()!;
+  vi.mocked(fetch).mockImplementation(async (url, init) =>
+    url === "/v1/books/import"
+      ? reply(book, 201)
+      : url === "/v1/persons"
+        ? reply([])
+        : originalFetch(url, init),
+  );
+  setup("/books");
+  const button = await screen.findByRole("button", { name: "导入书籍" });
+  expect(button).toBeEnabled();
+  expect(screen.getByRole("button", { name: /创建或打开书籍/ })).toBeDisabled();
+  const input = screen.getByLabelText("选择要导入的书籍") as HTMLInputElement;
+  const click = vi.spyOn(input, "click");
+  fireEvent.click(button);
+  expect(click).toHaveBeenCalledOnce();
+  fireEvent.change(input, {
+    target: { files: [new File(["导出书稿"], "book.txt")] },
+  });
+  expect(await screen.findByText("第一段真实回忆。")).toBeInTheDocument();
+  const call = vi
+    .mocked(fetch)
+    .mock.calls.find(([url]) => url === "/v1/books/import")!;
+  const form = call[1]!.body as FormData;
+  expect(form.has("subject_id")).toBe(false);
+  expect((form.get("file") as File).name).toBe("book.txt");
+  expect(screen.queryByText(/这是以前的采访书稿/)).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "编辑目录" }));
+  expect(
+    await screen.findByRole("form", { name: "编辑书籍目录" }),
+  ).toBeInTheDocument();
+  expect(
+    vi
+      .mocked(fetch)
+      .mock.calls.some(([url]) =>
+        String(url).includes("/life-profiles/subjects/"),
+      ),
+  ).toBe(false);
 });
 
 it("rejects empty and unsupported manuscript files before uploading", async () => {

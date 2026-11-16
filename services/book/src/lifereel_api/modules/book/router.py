@@ -47,8 +47,8 @@ def create(payload: BookCreate, db: Db, tenant: Tenant):
 def import_book(
     db: Db,
     tenant: Tenant,
-    subject_id: Annotated[UUID, Form()],
     file: Annotated[UploadFile, File()],
+    subject_id: Annotated[UUID | None, Form()] = None,
     title: Annotated[str | None, Form(min_length=1, max_length=180)] = None,
 ):
     from lifereel_api.modules.book import importing

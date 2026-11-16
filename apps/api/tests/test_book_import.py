@@ -24,10 +24,10 @@ def person(client):
     return client.post("/v1/persons", json={"display_name": "导入合成人物"}).json()["id"]
 
 
-def upload(client, subject_id, text=TEXT, filename="book.txt", **fields):
+def upload(client, subject_id=None, text=TEXT, filename="book.txt", **fields):
     return client.post(
         "/v1/books/import",
-        data={"subject_id": subject_id, **fields},
+        data={**({"subject_id": subject_id} if subject_id is not None else {}), **fields},
         files={"file": (filename, text.encode() if isinstance(text, str) else text, "text/plain")},
     )
 
@@ -73,6 +73,96 @@ def test_override_title_and_markdown_revision_title(client):
     assert result.status_code == 201, result.text
     assert result.json()["title"] == "新书名"
     assert result.json()["chapters"][2]["current"]["title"] == "工作回忆"
+
+
+def test_import_without_person_is_editable_and_exportable(client):
+    from lifereel_api.modules.book.fact_check import _input_snapshot
+
+    response = upload(client)
+    assert response.status_code == 201, response.text
+    book = response.json()
+    assert book["subject_id"] is None and book["profile_id"] is None
+    assert book["title"] == "人生书"
+    assert client.get("/v1/persons").json() == []
+    assert client.get("/v1/books").json() == [book]
+    with SessionLocal() as db:
+        snapshot = _input_snapshot(db, db.get(Book, UUID(book["id"])))
+        assert len(snapshot["chapters"]) == 2
+        assert all(chapter["claims"] == [] for chapter in snapshot["chapters"])
+    chapter = book["chapters"][0]
+    result = client.patch(
+        f"/v1/books/{book['id']}/chapters/{chapter['chapter_id']}",
+        json={"expected_version": 1, "title": "童年回忆", "body": "修改后的正文。"},
+    )
+    assert result.status_code == 200, result.text
+    history = client.get(f"/v1/books/{book['id']}/chapters/{chapter['chapter_id']}/versions")
+    assert [row["version_number"] for row in history.json()] == [2, 1]
+    for format in ("txt", "md"):
+        exported = client.get(f"/v1/books/{book['id']}/export?format={format}")
+        assert exported.status_code == 200, exported.text
+        restored = upload(client, text=exported.content, filename=f"again.{format}")
+        assert restored.status_code == 201, restored.text
+        assert restored.json()["chapters"][0]["current"]["body"] == "修改后的正文。"
+    with SessionLocal() as db:
+        assert db.scalar(select(func.count()).select_from(Job)) == 0
+
+
+def test_multiple_standalone_books_do_not_conflict_with_person_book(client):
+    subject_id = person(client)
+    attached = upload(client, subject_id).json()
+    first = upload(client)
+    second = upload(client, title="另一本书")
+    assert first.status_code == second.status_code == 201
+    assert first.json()["id"] != second.json()["id"]
+    assert second.json()["title"] == "另一本书"
+    assert upload(client, subject_id).status_code == 409
+    assert client.get(f"/v1/books/{attached['id']}").json() == attached
+    assert len(client.get("/v1/persons").json()) == 1
+    assert len(client.get("/v1/books").json()) == 3
+
+
+def test_standalone_directory_edit_and_tenant_isolation(client):
+    book = upload(client).json()
+    payload = {
+        "expected_version": 2, "title": "新书名",
+        "chapters": [
+            {"id": row["id"], "title": row["title"], "source_entry_ids": []}
+            for row in reversed(book["chapters"])
+        ],
+    }
+    result = client.patch(f"/v1/books/{book['id']}/directory", json=payload)
+    assert result.status_code == 200, result.text
+    assert result.json()["title"] == "新书名"
+    assert result.json()["chapters"][0]["title"] == "工作"
+    payload["expected_version"] = 3
+    payload["chapters"][0]["source_entry_ids"] = [str(uuid4())]
+    assert client.patch(f"/v1/books/{book['id']}/directory", json=payload).status_code == 404
+    assert client.get(f"/v1/books/{book['id']}").json() == result.json()
+    with SessionLocal() as db:
+        tenant = Tenant(name="Other standalone tenant", slug=uuid4().hex)
+        db.add(tenant)
+        db.commit()
+        other_id = str(tenant.id)
+    for suffix in ("", "/export", f"/chapters/{book['chapters'][0]['chapter_id']}/versions"):
+        assert client.get(
+            f"/v1/books/{book['id']}{suffix}", headers={"X-Tenant-ID": other_id},
+        ).status_code == 404
+    assert client.patch(
+        f"/v1/books/{book['id']}/directory", json=payload, headers={"X-Tenant-ID": other_id},
+    ).status_code == 404
+
+
+def test_standalone_import_failure_rolls_back(client, monkeypatch):
+    def fail(_body):
+        raise ValueError("Synthetic standalone failure")
+
+    monkeypatch.setattr(importing.writing, "word_count", fail)
+    with SessionLocal() as db, pytest.raises(ValueError, match="Synthetic standalone"):
+        importing.import_book(
+            db, get_settings().default_tenant_id, None, None, TEXT.encode(), "b.txt",
+        )
+    assert client.get("/v1/books").json() == []
+    assert client.get("/v1/persons").json() == []
 
 
 def test_legacy_txt_with_different_prose_titles(client):
@@ -219,9 +309,10 @@ def test_read_only_role_cannot_import(client):
         uuid4(), get_settings().default_tenant_id, "viewer"
     )
     try:
-        response = upload(client, subject_id)
-        assert response.status_code == 403
-        assert response.json()["error"]["code"] == "AUTH_READ_ONLY"
+        for target in (subject_id, None):
+            response = upload(client, target)
+            assert response.status_code == 403
+            assert response.json()["error"]["code"] == "AUTH_READ_ONLY"
     finally:
         app.dependency_overrides.pop(auth_context)
     assert client.get("/v1/books").json() == []

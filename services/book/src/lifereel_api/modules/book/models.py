@@ -16,8 +16,8 @@ class Book(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     tenant_id: Mapped[UUID] = mapped_column(
         Uuid, ForeignKey("identity.tenants.id", ondelete="CASCADE"), index=True
     )
-    subject_id: Mapped[UUID] = mapped_column(
-        Uuid, ForeignKey("identity.persons.id", ondelete="CASCADE"), index=True
+    subject_id: Mapped[UUID | None] = mapped_column(
+        Uuid, ForeignKey("identity.persons.id", ondelete="CASCADE"), index=True, nullable=True
     )
     title: Mapped[str] = mapped_column(String(180))
     target_words: Mapped[int] = mapped_column(Integer, default=1000, server_default="1000")

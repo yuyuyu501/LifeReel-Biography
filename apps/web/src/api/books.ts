@@ -31,7 +31,7 @@ export type Book = {
   profile_id?: string | null;
   directory_version?: number;
   id: string;
-  subject_id: string;
+  subject_id: string | null;
   title: string;
   target_words: number;
   chapters: BookChapter[];
@@ -85,9 +85,9 @@ export type BookFactCheck = {
   updated_at: string;
 };
 export const booksApi = {
-  import: (data: { subject_id: string; title?: string; file: File }) => {
+  import: (data: { subject_id?: string; title?: string; file: File }) => {
     const form = new FormData();
-    form.append("subject_id", data.subject_id);
+    if (data.subject_id) form.append("subject_id", data.subject_id);
     if (data.title) form.append("title", data.title);
     form.append("file", data.file);
     return request<Book>("/v1/books/import", { method: "POST", body: form });

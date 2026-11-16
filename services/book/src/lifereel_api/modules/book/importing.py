@@ -1,6 +1,7 @@
 """Import exported manuscripts as user-authored revisions, without model calls."""
 
 import re
+from contextlib import nullcontext
 from pathlib import PurePath
 from uuid import UUID
 
@@ -141,23 +142,27 @@ def parse(content: bytes, filename: str):
 
 
 def import_book(db, tenant, subject_id, title, content, filename):
-    person = db.scalar(select(Person).where(Person.id == subject_id, Person.tenant_id == tenant))
-    if person is None:
+    person = (
+        db.scalar(select(Person).where(Person.id == subject_id, Person.tenant_id == tenant))
+        if subject_id is not None else None
+    )
+    if subject_id is not None and person is None:
         raise ApiError(404, ErrorCode.SUBJECT_NOT_FOUND)
     parsed_title, chapters = parse(content, filename)
-    with execution_lock(db, person.id) as acquired:
+    with execution_lock(db, person.id) if person else nullcontext(True) as acquired:
         if not acquired:
             raise ApiError(409, ErrorCode.BOOK_GENERATION_BUSY)
-        if db.scalar(select(Book.id).where(
+        if person and db.scalar(select(Book.id).where(
             Book.tenant_id == tenant, Book.subject_id == person.id,
         )):
             raise ApiError(409, ErrorCode.BOOK_ALREADY_EXISTS)
         # Fetch the profile before acquiring FK locks, matching normal book creation.
-        profile = profile_sources.profile_read(db, tenant, subject_id=person.id)
+        profile = profile_sources.profile_read(db, tenant, subject_id=person.id) if person else None
         try:
             book = Book(
-                tenant_id=tenant, subject_id=person.id, title=title or parsed_title,
-                profile_id=UUID(profile["id"]), directory_version=2,
+                tenant_id=tenant, subject_id=person.id if person else None,
+                title=title or parsed_title,
+                profile_id=UUID(profile["id"]) if profile else None, directory_version=2,
             )
             db.add(book)
             db.flush()
@@ -170,7 +175,10 @@ def import_book(db, tenant, subject_id, title, content, filename):
                 db.flush()
                 if item["body"] is None:
                     continue
-                snapshot = profile_sources.source(db, book, row.id, profile=profile)
+                snapshot = (
+                    profile_sources.source(db, book, row.id, profile=profile)
+                    if profile else service.source(db, book, row.id)
+                )
                 row.version_number = 1
                 db.add(BookRevision(
                     tenant_id=tenant, book_chapter_id=row.id, version_number=1,
@@ -185,7 +193,7 @@ def import_book(db, tenant, subject_id, title, content, filename):
             return result
         except IntegrityError:
             db.rollback()
-            if db.scalar(select(Book.id).where(
+            if person and db.scalar(select(Book.id).where(
                 Book.tenant_id == tenant, Book.subject_id == person.id,
             )):
                 raise ApiError(409, ErrorCode.BOOK_ALREADY_EXISTS) from None

@@ -171,9 +171,10 @@ def edit_directory(db, tenant, book_id, payload):
         db.refresh(book)
         if book.directory_version != payload.expected_version:
             raise ApiError(409, ErrorCode.BOOK_VERSION_CONFLICT)
-        profile = profile_read(db, tenant, subject_id=book.subject_id)
-        book.profile_id = UUID(profile["id"])
-        known_ids = {e["id"] for e in profile["entries"]}
+        profile = profile_read(db, tenant, subject_id=book.subject_id) if book.subject_id else None
+        if profile:
+            book.profile_id = UUID(profile["id"])
+        known_ids = {e["id"] for e in profile["entries"]} if profile else set()
         rows = list(
             db.scalars(
                 select(BookChapter).where(

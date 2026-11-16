@@ -109,7 +109,7 @@ export default function ProductionPage() {
           (s) => !subjectId || s.subject_id === subjectId,
         );
         const ownBooks = manuscripts.filter(
-          (b) => !subjectId || b.subject_id === subjectId,
+          (b) => !!b.subject_id && (!subjectId || b.subject_id === subjectId),
         );
         setRuns(items);
         setProjects(ownScripts);
@@ -132,7 +132,7 @@ export default function ProductionPage() {
   }, [subjectId]);
 
   async function adapt() {
-    if (!book || !savedChapters.length || stale || loading) return;
+    if (!book?.subject_id || !savedChapters.length || stale || loading) return;
     setLoading(true);
     setError("");
     adaptationKey.current ||= newRequestId();
@@ -222,7 +222,9 @@ export default function ProductionPage() {
       subtitle="让书里的故事，有了画面。"
       active="production"
       className="production-page"
-      subjectId={subjectId || selected?.subject_id || book?.subject_id}
+      subjectId={
+        subjectId || selected?.subject_id || book?.subject_id || undefined
+      }
       locked={loading || !!instructions.trim()}
       tutorial={{
         ready,

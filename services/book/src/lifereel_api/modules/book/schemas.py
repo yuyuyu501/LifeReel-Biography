@@ -69,7 +69,7 @@ class ChapterRead(BaseModel):
 class BookRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: UUID
-    subject_id: UUID
+    subject_id: UUID | None
     title: str
     target_words: int  # Legacy response metadata; not a writing or validation requirement.
     chapters: list[ChapterRead]

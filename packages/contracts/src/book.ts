@@ -10,7 +10,7 @@ export interface BookRevision {
   created_at: string;
 }
 export interface BookImportFields {
-  subject_id: string;
+  subject_id?: string;
   title?: string;
 }
 export const BOOK_IMPORT_MAX_BYTES = 2 * 1024 * 1024;
@@ -33,7 +33,7 @@ export interface BookChapter {
 }
 export interface Book {
   id: string;
-  subject_id: string;
+  subject_id: string | null;
   title: string;
   target_words: number;
   chapters: BookChapter[];
