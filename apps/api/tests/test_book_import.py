@@ -75,6 +75,55 @@ def test_override_title_and_markdown_revision_title(client):
     assert result.json()["chapters"][2]["current"]["title"] == "工作回忆"
 
 
+def test_legacy_txt_with_different_prose_titles(client):
+    text = TEXT.replace("\n\n童年\n", "\n\n老屋里的家风\n").replace(
+        "\n\n工作\n", "\n\n靠手艺，过日子\n",
+    )
+    response = upload(client, person(client), text)
+    assert response.status_code == 201, response.text
+    chapters = response.json()["chapters"]
+    assert [chapter["title"] for chapter in chapters] == ["童年", "求学", "工作"]
+    assert chapters[0]["current"]["title"] == "老屋里的家风"
+    assert chapters[0]["current"]["body"] == "第一段。\n\n第二段。"
+    assert chapters[2]["current"]["title"] == "靠手艺，过日子"
+    assert chapters[2]["current"]["body"] == "工作经历。"
+
+
+@pytest.mark.parametrize("format", ["txt", "md"])
+def test_export_reimport_preserves_distinct_titles_and_heading_like_body(client, format):
+    imported = upload(client, person(client)).json()
+    chapter = imported["chapters"][2]
+    body = "修家具的经历。\n\n工作\n\n这是正文中的同名段落。\n\n另一个短段落"
+    response = client.patch(
+        f"/v1/books/{imported['id']}/chapters/{chapter['chapter_id']}",
+        json={"expected_version": 1, "title": "靠手艺，过日子", "body": body},
+    )
+    assert response.status_code == 200, response.text
+    exported = client.get(f"/v1/books/{imported['id']}/export?format={format}")
+    assert exported.status_code == 200, exported.text
+    if format == "txt":
+        assert "【第3章】靠手艺，过日子" in exported.text
+    restored = upload(client, person(client), exported.content, f"again.{format}")
+    assert restored.status_code == 201, restored.text
+    current = restored.json()["chapters"][2]["current"]
+    assert current["title"] == "靠手艺，过日子"
+    assert current["body"] == body
+    assert restored.json()["chapters"][1]["current"] is None
+
+
+@pytest.mark.parametrize("text", [
+    TEXT.replace("\n\n工作\n", "\n\n新工作标题\n") + "\n\n正文短段落\n\n内容。",
+    TEXT.replace("\n\n工作\n", "\n\n【第2章】工作\n").replace(
+        "\n\n童年\n", "\n\n【第1章】童年\n",
+    ),
+])
+def test_ambiguous_legacy_or_invalid_numbered_chapters_are_rejected(client, text):
+    response = upload(client, person(client), text)
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "BOOK_IMPORT_FORMAT_INVALID"
+    assert client.get("/v1/books").json() == []
+
+
 def test_existing_book_conflicts_without_overwriting(client):
     subject_id = person(client)
     existing = client.post("/v1/books", json={"subject_id": subject_id}).json()

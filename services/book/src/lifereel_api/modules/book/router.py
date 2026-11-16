@@ -163,8 +163,12 @@ def export(book_id: UUID, db: Db, tenant: Tenant, format: Literal["txt", "md"] =
         lines.append(f"{ch.order_index}. {ch.title}{suffix}")
     for ch in book.chapters:
         if ch.current:
+            heading = (
+                "## " + ch.current.title if format == "md"
+                else f"【第{ch.order_index}章】{ch.current.title}"
+            )
             lines.extend(
-                ["", ("## " if format == "md" else "") + ch.current.title, "", ch.current.body]
+                ["", heading, "", ch.current.body]
             )
     return Response(
         "\n".join(lines),

@@ -21,6 +21,52 @@ def invalid():
     return ApiError(422, ErrorCode.BOOK_IMPORT_FORMAT_INVALID)
 
 
+def txt_sections(prose, chapters):
+    isolated = [
+        index for index, line in enumerate(prose)
+        if line.strip() and (index == 0 or not prose[index - 1].strip())
+        and index + 1 < len(prose) and not prose[index + 1].strip()
+    ]
+    marker = re.compile(r"【第([1-9]\d*)章】(.+)")
+    if marker.fullmatch(prose[0]):
+        marked = [
+            (index, match) for index in isolated
+            if (match := marker.fullmatch(prose[index]))
+        ]
+        if [int(match[1]) for _, match in marked] != [ch["order"] for ch in chapters]:
+            raise invalid()
+        return [index for index, _ in marked], [match[2] for _, match in marked]
+
+    starts = [0]
+    for chapter in chapters[1:]:
+        candidates = [index for index in isolated if prose[index] == chapter["title"]]
+        if len(candidates) > 1:
+            raise invalid()
+        if not candidates or candidates[0] <= starts[-1]:
+            break
+        starts.append(candidates[0])
+    if len(starts) == len(chapters):
+        return starts, [prose[index] for index in starts]
+
+    # Older TXT exports have no chapter markers and can use different prose titles.
+    # Accept only a complete, unambiguous set of standalone heading-like paragraphs.
+    titles = {chapter["title"] for chapter in chapters}
+    starts = [
+        index for index in isolated
+        if 1 <= len(prose[index].strip()) <= 180
+        and (prose[index] in titles or not re.search(r"[。！？；.!?;]", prose[index]))
+    ]
+    if len(starts) != len(chapters) or starts[0] != 0:
+        raise invalid()
+    headings = [prose[index] for index in starts]
+    if any(
+        heading in titles and heading != chapter["title"]
+        for heading, chapter in zip(headings, chapters, strict=True)
+    ):
+        raise invalid()
+    return starts, headings
+
+
 def parse(content: bytes, filename: str):
     extension = PurePath(filename).suffix.lower()
     if extension not in EXTENSIONS:
@@ -61,7 +107,10 @@ def parse(content: bytes, filename: str):
                 break
         if not 1 <= len(heading.strip()) <= 180 or len(chapters) >= 40:
             raise invalid()
-        chapters.append({"title": heading, "body": None, "revision_title": heading})
+        chapters.append({
+            "title": heading, "body": None, "revision_title": heading,
+            "order": len(chapters) + 1,
+        })
         chapters[-1]["empty"] = empty
         cursor += 1
     while cursor < len(lines) and not lines[cursor].strip():
@@ -74,19 +123,12 @@ def parse(content: bytes, filename: str):
         starts = [index for index, line in enumerate(prose) if line.startswith("## ")]
         if len(starts) != len(populated) or starts[0] != 0:
             raise invalid()
+        headings = [prose[index][3:] for index in starts]
     else:
-        starts = [0]
-        for chapter in populated[1:]:
-            candidates = [
-                index for index in range(starts[-1] + 2, len(prose) - 1)
-                if prose[index] == chapter["title"]
-                and not prose[index - 1].strip() and not prose[index + 1].strip()
-            ]
-            if len(candidates) != 1:
-                raise invalid()
-            starts.append(candidates[0])
-    for chapter, start, end in zip(populated, starts, [*starts[1:], len(prose)], strict=True):
-        heading = prose[start][3:] if markdown else prose[start]
+        starts, headings = txt_sections(prose, populated)
+    for chapter, start, end, heading in zip(
+        populated, starts, [*starts[1:], len(prose)], headings, strict=True,
+    ):
         if not 1 <= len(heading.strip()) <= 180:
             raise invalid()
         if start + 1 >= end or prose[start + 1].strip():
