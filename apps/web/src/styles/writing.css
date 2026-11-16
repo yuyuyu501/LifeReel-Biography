@@ -193,14 +193,19 @@
   border-color: var(--green);
   box-shadow: 0 0 0 3px rgba(18, 107, 93, 0.12);
 }
-.writing-library-page .writing-create > [data-slot="button"] {
+.writing-create-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.writing-library-page .writing-create-actions > [data-slot="button"] {
   min-width: 196px;
   min-height: 50px;
   border-radius: 8px;
   background: var(--green);
   font-weight: 700;
 }
-.writing-library-page .writing-create > [data-slot="button"]:hover {
+.writing-library-page .writing-create-actions > [data-slot="button"]:hover {
   background: var(--green-dark);
 }
 .writing-library-page .writing-create > p {
@@ -1000,9 +1005,12 @@
   .writing-library-page .writing-create {
     grid-template-columns: 1fr 1fr;
   }
-  .writing-library-page .writing-create > [data-slot="button"] {
+  .writing-library-page .writing-create-actions {
     grid-column: 1 / -1;
     width: 100%;
+  }
+  .writing-library-page .writing-create-actions > [data-slot="button"] {
+    flex: 1;
   }
   .writing-library-page .writing-shelf {
     grid-template-columns: 1fr;
@@ -1041,7 +1049,7 @@
     grid-template-columns: 1fr;
     gap: 15px;
   }
-  .writing-library-page .writing-create > [data-slot="button"] {
+  .writing-library-page .writing-create-actions {
     grid-column: 1;
   }
   .writing-book-card {

@@ -19,7 +19,6 @@ const tabs: { key: string; label: string; icon: IconName; path: string }[] = [
   { key: "home", label: "家人", icon: "users", path: "home" },
   { key: "interview", label: "采访", icon: "mic", path: "interview" },
   { key: "books", label: "写书", icon: "book", path: "books" },
-  { key: "production", label: "影像", icon: "film", path: "production" },
 ];
 
 export function PageFrame({

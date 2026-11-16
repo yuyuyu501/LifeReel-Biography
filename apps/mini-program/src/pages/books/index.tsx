@@ -146,14 +146,7 @@ export default function BooksPage() {
           {
             target: ".guide-book-edit",
             title: "核对并保存正文",
-            description:
-              "点编辑正文可以手动修改。保存后，这一版书稿才会用于后续改编。",
-          },
-          {
-            target: "#guide-book-adapt",
-            title: "书稿满意后，再改编影像",
-            description:
-              "从这里前往影像页，用已保存的整本书稿生成剧本与分镜，先核对内容再制作视频。",
+            description: "点编辑正文可以手动修改，确认内容后保存这一版书稿。",
           },
         ],
       }}
@@ -197,17 +190,6 @@ export default function BooksPage() {
               }
             >
               资料表
-            </Button>
-            <Button
-              id="guide-book-adapt"
-              disabled={busy || !!draft || !!directory}
-              onClick={() =>
-                Taro.navigateTo({
-                  url: `/pages/production/index?subjectId=${subjectId}&tab=script`,
-                })
-              }
-            >
-              书稿改编影像
             </Button>
           </View>
           {directory && (

@@ -23,6 +23,7 @@ import {
   LoaderCircle,
   RotateCcw,
   UserRound,
+  Upload,
 } from "lucide-react";
 import { api, API_BASE_URL } from "../api/client";
 import {
@@ -65,6 +66,15 @@ export function BooksPage() {
   const books = useQuery({ queryKey: ["books"], queryFn: booksApi.list });
   const [personId, setPersonId] = useState(searchParams.get("subject") || "");
   const [title, setTitle] = useState("");
+  const fileInput = useRef<HTMLInputElement>(null);
+  const [importError, setImportError] = useState("");
+  const importBook = useMutation({
+    mutationFn: booksApi.import,
+    onSuccess: async (book) => {
+      await cache.invalidateQueries({ queryKey: ["books"] });
+      navigate("/books/" + book.id);
+    },
+  });
   const create = useMutation({
     mutationFn: booksApi.create,
     onSuccess: async (book) => {
@@ -94,7 +104,7 @@ export function BooksPage() {
         className="writing-create"
         onSubmit={(event) => {
           event.preventDefault();
-          if (personId && !create.isPending)
+          if (personId && !create.isPending && !importBook.isPending)
             create.mutate({
               subject_id: personId,
               title: title.trim() || undefined,
@@ -108,6 +118,7 @@ export function BooksPage() {
           </span>
           <select
             value={personId}
+            disabled={create.isPending || importBook.isPending}
             onChange={(e) => setPersonId(e.target.value)}
             required
           >
@@ -126,16 +137,62 @@ export function BooksPage() {
           </span>
           <Input
             value={title}
+            disabled={create.isPending || importBook.isPending}
             onChange={(e) => setTitle(e.target.value)}
             maxLength={180}
             placeholder="留空时使用人物姓名"
           />
         </label>
-        <Button disabled={!personId || create.isPending}>
-          <BookOpenText size={17} />
-          {create.isPending ? "正在打开……" : "创建或打开书籍"}
-        </Button>
+        <div className="writing-create-actions">
+          <Button
+            disabled={!personId || create.isPending || importBook.isPending}
+          >
+            <BookOpenText size={17} />
+            {create.isPending ? "正在打开……" : "创建或打开书籍"}
+          </Button>
+          <input
+            ref={fileInput}
+            type="file"
+            accept=".txt,.md,.markdown"
+            aria-label="选择要导入的书籍"
+            hidden
+            onChange={(event) => {
+              const file = event.target.files?.[0];
+              event.target.value = "";
+              if (!file || !personId) return;
+              setImportError("");
+              importBook.reset();
+              if (!/\.(txt|md|markdown)$/i.test(file.name) || !file.size) {
+                setImportError("请选择非空的 TXT 或 Markdown 书稿。");
+                return;
+              }
+              if (file.size > 2 * 1024 * 1024) {
+                setImportError("书稿文件不能超过 2 MiB。");
+                return;
+              }
+              importBook.mutate({
+                subject_id: personId,
+                title: title.trim() || undefined,
+                file,
+              });
+            }}
+          />
+          <Button
+            type="button"
+            disabled={!personId || create.isPending || importBook.isPending}
+            onClick={() => fileInput.current?.click()}
+          >
+            {importBook.isPending ? (
+              <LoaderCircle size={17} className="animate-spin" />
+            ) : (
+              <Upload size={17} />
+            )}
+            {importBook.isPending ? "正在导入……" : "导入书籍"}
+          </Button>
+        </div>
         <p>每位人物一本书。创建书籍免费；点击生成后按现有文字模型规则计费。</p>
+        {importError && <p role="alert">{importError}</p>}
+        <ErrorNotice error={importBook.error} />
         <ErrorNotice error={create.error} />
       </form>
       <section

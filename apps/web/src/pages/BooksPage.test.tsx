@@ -272,6 +272,73 @@ it("creates or opens a selected person's book", async () => {
   expect(await screen.findByText("第一段真实回忆。")).toBeInTheDocument();
 });
 
+it("imports a manuscript for the selected person and opens it", async () => {
+  const originalFetch = vi.mocked(fetch).getMockImplementation()!;
+  vi.mocked(fetch).mockImplementation(async (url, init) =>
+    url === "/v1/books/import" ? reply(book, 201) : originalFetch(url, init),
+  );
+  setup("/books");
+  expect(
+    await screen.findByRole("button", { name: "导入书籍" }),
+  ).toBeDisabled();
+  fireEvent.change(screen.getByLabelText("选择人物"), {
+    target: { value: "person-1" },
+  });
+  const file = new File(["# 回忆\n\n## 童年\n\n正文"], "回忆.md", {
+    type: "text/markdown",
+  });
+  fireEvent.change(screen.getByLabelText("选择要导入的书籍"), {
+    target: { files: [file] },
+  });
+  expect(await screen.findByText("第一段真实回忆。")).toBeInTheDocument();
+  const call = vi
+    .mocked(fetch)
+    .mock.calls.find(([url]) => url === "/v1/books/import")!;
+  const form = call[1]!.body as FormData;
+  expect(form.get("subject_id")).toBe("person-1");
+  expect((form.get("file") as File).name).toBe("回忆.md");
+  expect(call[1]!.headers).not.toHaveProperty("Content-Type");
+});
+
+it("rejects empty and unsupported manuscript files before uploading", async () => {
+  setup("/books");
+  fireEvent.change(await screen.findByLabelText("选择人物"), {
+    target: { value: "person-1" },
+  });
+  for (const file of [new File([], "empty.txt"), new File(["x"], "book.pdf")]) {
+    fireEvent.change(screen.getByLabelText("选择要导入的书籍"), {
+      target: { files: [file] },
+    });
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "请选择非空的 TXT 或 Markdown 书稿。",
+    );
+  }
+  expect(
+    vi.mocked(fetch).mock.calls.some(([url]) => url === "/v1/books/import"),
+  ).toBe(false);
+});
+
+it("keeps the library open and explains an existing-book conflict", async () => {
+  const originalFetch = vi.mocked(fetch).getMockImplementation()!;
+  vi.mocked(fetch).mockImplementation(async (url, init) =>
+    url === "/v1/books/import"
+      ? reply({ error: { code: "BOOK_ALREADY_EXISTS" } }, 409)
+      : originalFetch(url, init),
+  );
+  setup("/books");
+  fireEvent.change(await screen.findByLabelText("选择人物"), {
+    target: { value: "person-1" },
+  });
+  fireEvent.change(screen.getByLabelText("选择要导入的书籍"), {
+    target: { files: [new File(["正文"], "book.txt")] },
+  });
+  expect(await screen.findByRole("alert")).toHaveTextContent(
+    "这位人物已有书籍",
+  );
+  expect(screen.getByRole("heading", { name: "人生书架" })).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "导入书籍" })).toBeEnabled();
+});
+
 it("queues a chapter with an idempotency key and expected revision", async () => {
   setup();
   fireEvent.click(await screen.findByRole("button", { name: "重新生成本章" }));

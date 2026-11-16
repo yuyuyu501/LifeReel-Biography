@@ -1,4 +1,11 @@
 export const ERROR_MESSAGES: Record<string, string> = {
+  BOOK_ALREADY_EXISTS:
+    "这位人物已有书籍，请打开原书稿编辑，或选择其他人物导入。",
+  BOOK_IMPORT_TOO_LARGE: "书稿文件不能超过 2 MiB。",
+  BOOK_IMPORT_EMPTY: "书稿文件没有正文，请选择包含正文的文件。",
+  BOOK_IMPORT_ENCODING_INVALID: "书稿不是 UTF-8 编码，请转换编码后重新导入。",
+  BOOK_IMPORT_FORMAT_INVALID:
+    "书稿格式无法识别，请选择本系统导出的 TXT 或 Markdown 书稿，保留书名、目录和章节结构。",
   EVIDENCE_ASSET_IN_USE:
     "该文件已用于采访、分析、任务或作品，暂不能直接删除；普通素材条目的关联会随删除自动移除。",
   PROFILE_NOT_FOUND: "未找到这份资料或条目，请刷新确认。",

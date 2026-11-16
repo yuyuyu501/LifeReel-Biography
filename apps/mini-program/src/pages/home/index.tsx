@@ -25,12 +25,6 @@ const entries: {
     icon: "book",
   },
   {
-    page: "production",
-    title: "人生影像",
-    detail: "剧本、分镜与视频",
-    icon: "film",
-  },
-  {
     page: "memory",
     title: "记忆档案",
     detail: "事实与时间线",
@@ -175,7 +169,7 @@ export default function HomePage() {
                   target: "#guide-home-person",
                   title: "选择这次要记录的人",
                   description:
-                    "点选家人后，采访、资料、书稿和影像都会归到这位家人的档案里。",
+                    "点选家人后，采访、资料和书稿都会归到这位家人的档案里。",
                 },
                 {
                   target: "#guide-home-interview",
@@ -195,12 +189,6 @@ export default function HomePage() {
                   description:
                     "资料确认后进入写书，调整目录与选材，再生成或手动编辑正文。",
                 },
-                {
-                  target: "#guide-home-production",
-                  title: "最后，把书稿变成影像",
-                  description:
-                    "先用已保存的书稿生成剧本与分镜，核对后再创建视频任务。",
-                },
               ]
             : []),
           {
@@ -208,7 +196,7 @@ export default function HomePage() {
             title: "随时回来查看引导",
             description: selected
               ? "每个主要页面都有这个问号按钮。完成或跳过后，引导不会在该页面反复弹出。"
-              : "先添加家人，再开始采访、核对资料、写书和制作影像。需要时点这个问号，重新查看当前页面的步骤。",
+              : "先添加家人，再开始采访、核对资料和写书。需要时点这个问号，重新查看当前页面的步骤。",
           },
         ],
       }}

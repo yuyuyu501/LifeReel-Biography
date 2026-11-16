@@ -6,8 +6,6 @@ export default defineAppConfig({
     "pages/profile/index",
     "pages/books/index",
     "pages/memory/index",
-    "pages/scripts/index",
-    "pages/production/index",
   ],
   window: {
     navigationBarTitleText: "岁忆影传",
