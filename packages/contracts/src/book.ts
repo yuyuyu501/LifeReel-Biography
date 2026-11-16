@@ -9,6 +9,12 @@ export interface BookRevision {
   generation_model: string | null;
   created_at: string;
 }
+export interface BookImportFields {
+  subject_id: string;
+  title?: string;
+}
+export const BOOK_IMPORT_MAX_BYTES = 2 * 1024 * 1024;
+export const BOOK_IMPORT_EXTENSIONS = [".txt", ".md", ".markdown"] as const;
 export interface BookChapter {
   id: string;
   chapter_id: string;

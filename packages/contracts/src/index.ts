@@ -142,7 +142,8 @@ export interface Job {
 }
 
 import type { LifeProfile, LifeReadiness } from "./life-profile";
-export type { Book, BookChapter, BookRevision } from "./book";
+export type { Book, BookChapter, BookRevision, BookImportFields } from "./book";
+export { BOOK_IMPORT_MAX_BYTES, BOOK_IMPORT_EXTENSIONS } from "./book";
 export { lifeProfileTemplate } from "./life-profile-template";
 export type {
   LifeProfile,

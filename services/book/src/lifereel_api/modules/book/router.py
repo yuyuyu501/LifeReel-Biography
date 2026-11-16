@@ -1,7 +1,7 @@
 from typing import Annotated, Literal
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Response
+from fastapi import APIRouter, Depends, File, Form, Response, UploadFile
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -41,6 +41,27 @@ def list_books(db: Db, tenant: Tenant):
 @router.post("", response_model=BookRead, status_code=201)
 def create(payload: BookCreate, db: Db, tenant: Tenant):
     return service.create(db, tenant, payload)
+
+
+@router.post("/import", response_model=BookRead, status_code=201)
+def import_book(
+    db: Db,
+    tenant: Tenant,
+    subject_id: Annotated[UUID, Form()],
+    file: Annotated[UploadFile, File()],
+    title: Annotated[str | None, Form(min_length=1, max_length=180)] = None,
+):
+    from lifereel_api.modules.book import importing
+
+    if title is not None:
+        title = title.strip()
+        if not title or "\n" in title or "\r" in title:
+            raise ApiError(422, ErrorCode.REQUEST_VALIDATION_FAILED)
+    try:
+        content = file.file.read(importing.MAX_BYTES + 1)
+        return importing.import_book(db, tenant, subject_id, title, content, file.filename or "")
+    finally:
+        file.file.close()
 
 
 @router.get("/{book_id}", response_model=BookRead)
