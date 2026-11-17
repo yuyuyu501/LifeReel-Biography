@@ -141,6 +141,13 @@ test.each([
 
 test("shows only the QR, one hint and close control without crediting", async () => {
   mount();
+  expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  expect(
+    screen.queryByRole("img", { name: /支付宝收款码/ }),
+  ).not.toBeInTheDocument();
+  expect(screen.getByRole("group", { name: "支付方式" })).toHaveTextContent(
+    /^支付方式支付宝$/,
+  );
   fireEvent.click(screen.getByRole("button", { name: "其它金额" }));
   const submit = screen.getByRole("button", { name: "确认支付" });
   expect(submit).toBeDisabled();
@@ -163,8 +170,8 @@ test("shows only the QR, one hint and close control without crediting", async ()
   expect(dialog).toHaveTextContent("测试收款企业");
   expect(dialog).toHaveTextContent("test-recipient");
   expect(
-    screen.getByRole("button", { name: "微信支付（暂未开通）", hidden: true }),
-  ).toBeDisabled();
+    screen.queryByRole("button", { name: /微信支付/, hidden: true }),
+  ).not.toBeInTheDocument();
   expect(dialog).toHaveTextContent(
     "请使用支付宝扫码，填写金额 ¥0.01，人工核实后到账，请勿重复付款。",
   );
@@ -178,8 +185,8 @@ test.each(["disabled", "manual_wechat"] as const)(
     mount({ ...wallet, recharge: { ...wallet.recharge!, mode } });
     expect(screen.getByRole("button", { name: "确认支付" })).toBeDisabled();
     expect(
-      screen.getByRole("button", { name: "微信支付（暂未开通）" }),
-    ).toBeDisabled();
+      screen.queryByRole("button", { name: /微信支付/ }),
+    ).not.toBeInTheDocument();
     expect(api.createRecharge).not.toHaveBeenCalled();
   },
 );

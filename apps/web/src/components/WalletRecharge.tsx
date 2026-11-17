@@ -165,9 +165,6 @@ export function WalletRecharge({ wallet }: { wallet: WalletSummary }) {
           <legend>支付方式</legend>
           <div className="wallet-pay-methods">
             <div className={enabled ? "selected" : ""}>支付宝</div>
-            <button type="button" disabled>
-              微信支付（暂未开通）
-            </button>
           </div>
         </fieldset>
         <div className="wallet-actions">
