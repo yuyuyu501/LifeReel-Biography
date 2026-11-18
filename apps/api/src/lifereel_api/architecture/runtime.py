@@ -37,13 +37,19 @@ def create_app(name: str) -> FastAPI:
                         from lifereel_api.modules.jobs.outbox import dispatch_batch
 
                         await run_in_threadpool(dispatch_batch)
+                    elif name == "billing":
+                        from lifereel_api.modules.billing.alipay import reconcile_pending
+
+                        await run_in_threadpool(reconcile_pending)
                 except Exception as exc:
                     logging.getLogger(__name__).warning(
                         "maintenance.%s.%s", name, type(exc).__name__
                     )
                 await asyncio.sleep(2 if name == "tasks" else 15)
 
-        task = asyncio.create_task(maintain()) if name in {"interview", "tasks"} else None
+        task = (
+            asyncio.create_task(maintain()) if name in {"interview", "tasks", "billing"} else None
+        )
         try:
             yield
         finally:

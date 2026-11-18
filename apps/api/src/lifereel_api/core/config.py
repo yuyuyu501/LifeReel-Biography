@@ -84,6 +84,13 @@ class Settings(BaseSettings):
     manual_alipay_qr_path: str = "/data/payments/alipay-qr.png"
     manual_alipay_recipient_name: str = ""
     manual_alipay_recipient_account: str = ""
+    alipay_enabled: bool = False
+    alipay_app_id: str = ""
+    alipay_private_key_path: str = "/data/alipay/application-private.pem"
+    alipay_public_key_path: str = "/data/alipay/alipay-public.pem"
+    alipay_seller_id: str = ""
+    alipay_notify_url: str = "https://bianjiaigc.com/v1/wallet/alipay/notify"
+    alipay_return_url: str = "https://bianjiaigc.com/wallet"
     max_evidence_image_bytes: int = 20 * 1024 * 1024
     max_evidence_document_bytes: int = 50 * 1024 * 1024
     max_evidence_audio_bytes: int = 500 * 1024 * 1024

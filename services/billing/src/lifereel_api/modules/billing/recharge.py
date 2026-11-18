@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 from lifereel_api.core.config import get_settings
 from lifereel_api.core.errors import ApiError, ErrorCode
 from lifereel_api.core.models import utcnow
-from lifereel_api.modules.billing import service
+from lifereel_api.modules.billing import alipay, service
 from lifereel_api.modules.billing.models import LedgerEntry, RechargeOrder
 
 
@@ -29,6 +29,8 @@ class PaymentReport(BaseModel):
 
 def enabled(payment_method: str = "alipay") -> bool:
     settings = get_settings()
+    if settings.alipay_enabled:
+        return payment_method == "alipay" and alipay.configured()
     # WeChat is a placeholder only, even if a legacy environment flag is still set.
     return (
         payment_method == "alipay"
@@ -48,13 +50,22 @@ def configuration() -> dict:
     settings = get_settings()
     available = enabled()
     return {
-        "mode": "manual_alipay" if available else "disabled",
+        "mode": (
+            "alipay_page"
+            if available and settings.alipay_enabled
+            else "manual_alipay"
+            if available
+            else "disabled"
+        ),
         "min_cents": 1,
         "max_cents": 20000,
         "recipient_name": settings.manual_alipay_recipient_name if available else None,
         "recipient_account": settings.manual_alipay_recipient_account if available else None,
         "channels": {
-            "alipay": {"enabled": available, "settlement": "manual_review"},
+            "alipay": {
+                "enabled": available,
+                "settlement": "automatic" if settings.alipay_enabled else "manual_review",
+            },
             "wechat": {"enabled": False},
         },
         "mini_program_payments": {"wechat": False, "douyin": False},
@@ -63,17 +74,29 @@ def configuration() -> dict:
 
 def serialize(order: RechargeOrder) -> dict:
     return {
-        key: getattr(order, key)
-        for key in (
-            "id",
-            "payment_method",
-            "amount_cents",
-            "status",
-            "payer_reference",
-            "review_note",
-            "created_at",
-            "reviewed_at",
-        )
+        "settlement": order.settlement,
+        "checkout_url": (
+            alipay.checkout_url(order)
+            if order.settlement == alipay.SETTLEMENT
+            and order.status == "pending"
+            and get_settings().alipay_enabled
+            and alipay.configured()
+            and order.alipay_app_id == get_settings().alipay_app_id
+            else None
+        ),
+        **{
+            key: getattr(order, key)
+            for key in (
+                "id",
+                "payment_method",
+                "amount_cents",
+                "status",
+                "payer_reference",
+                "review_note",
+                "created_at",
+                "reviewed_at",
+            )
+        },
     }
 
 
@@ -115,8 +138,12 @@ def create(db: Session, tenant_id: UUID, payload: CreateRecharge) -> RechargeOrd
     if recent_count >= 10:
         raise ApiError(429, ErrorCode.RECHARGE_LIMIT_REACHED)
     row = RechargeOrder(
-        tenant_id=tenant_id, request_id=payload.request_id, amount_cents=payload.amount_cents,
+        tenant_id=tenant_id,
+        request_id=payload.request_id,
+        amount_cents=payload.amount_cents,
         payment_method=payload.payment_method,
+        settlement=alipay.SETTLEMENT if get_settings().alipay_enabled else "manual_review",
+        alipay_app_id=get_settings().alipay_app_id if get_settings().alipay_enabled else None,
     )
     db.add(row)
     db.flush()
@@ -127,6 +154,8 @@ def report(db: Session, tenant_id: UUID, order_id: UUID, payload: PaymentReport)
     # Keep accepting reports when new payments are disabled: money may already have been sent.
     service.lock_wallet(db, tenant_id)
     row = get_order(db, tenant_id, order_id)
+    if row.settlement != "manual_review":
+        raise ApiError(409, ErrorCode.RECHARGE_STATE_INVALID)
     if row.status == "submitted" and row.payer_reference == payload.payer_reference:
         return row
     if row.status != "pending":
@@ -140,6 +169,8 @@ def report(db: Session, tenant_id: UUID, order_id: UUID, payload: PaymentReport)
 def cancel(db: Session, tenant_id: UUID, order_id: UUID) -> RechargeOrder:
     service.lock_wallet(db, tenant_id)
     row = get_order(db, tenant_id, order_id)
+    if row.settlement != "manual_review":
+        raise ApiError(409, ErrorCode.RECHARGE_STATE_INVALID)
     if row.status == "cancelled":
         return row
     if row.status != "pending":
@@ -177,6 +208,8 @@ def review(
         raise ApiError(404, ErrorCode.RECHARGE_NOT_FOUND)
     wallet = service.lock_wallet(db, tenant_id)
     row = get_order(db, tenant_id, order_id)
+    if row.settlement != "manual_review":
+        raise ApiError(409, ErrorCode.RECHARGE_STATE_INVALID)
     if (
         not rejection
         and row.status == "credited"
@@ -204,7 +237,8 @@ def review(
                 event="recharge",
                 title=(
                     "支付宝充值（人工核实）"
-                    if row.payment_method == "alipay" else "微信充值（人工核实）"
+                    if row.payment_method == "alipay"
+                    else "微信充值（人工核实）"
                 ),
                 amount_cents=row.amount_cents,
                 paid_delta=row.amount_cents,

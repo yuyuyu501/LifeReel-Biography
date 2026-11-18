@@ -212,6 +212,10 @@ services:
     environment:
       <<: *backend-env
       LIFEREEL_SERVICE: billing
+    volumes:
+      - private-data:/data/private
+      - ./data/payments:/data/payments:ro
+      - ./data/alipay:/data/alipay:ro
     mem_limit: 256m
 
   tasks:

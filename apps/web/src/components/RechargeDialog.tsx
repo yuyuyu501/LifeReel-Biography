@@ -6,9 +6,11 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "./ui/dialog";
 export function RechargeDialog({
   children,
   onClose,
+  title = "支付宝扫码支付",
 }: {
   children: ReactNode;
   onClose: () => void;
+  title?: string;
 }) {
   const [previousFocus] = useState(() => document.activeElement);
   return (
@@ -27,7 +29,7 @@ export function RechargeDialog({
         }}
       >
         <DialogHeader className="flex-row items-center justify-between text-left">
-          <DialogTitle>支付宝扫码支付</DialogTitle>
+          <DialogTitle>{title}</DialogTitle>
           <Button
             type="button"
             variant="ghost"

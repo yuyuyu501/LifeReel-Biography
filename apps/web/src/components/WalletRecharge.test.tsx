@@ -50,6 +50,7 @@ const pending = (): RechargeOrder => ({
 });
 
 beforeEach(() => {
+  sessionStorage.clear();
   Object.defineProperties(HTMLDialogElement.prototype, {
     showModal: {
       configurable: true,
@@ -101,6 +102,85 @@ beforeEach(() => {
     rows = [{ ...rows[0], status: "cancelled" }];
     return rows[0];
   });
+});
+
+test("automatic checkout opens Alipay and never displays the static collection QR", async () => {
+  const replace = vi.fn();
+  const close = vi.fn();
+  vi.spyOn(window, "open").mockReturnValue({
+    opener: null,
+    location: { replace },
+    close,
+  } as unknown as Window);
+  vi.mocked(api.createRecharge).mockImplementationOnce(
+    async ({ amount_cents }) => {
+      const row = {
+        ...pending(),
+        amount_cents,
+        settlement: "alipay_page" as const,
+        checkout_url: "https://openapi.alipay.com/gateway.do?synthetic=test",
+      };
+      rows = [row];
+      return row;
+    },
+  );
+  const client = mount({
+    ...wallet,
+    recharge: { ...wallet.recharge!, mode: "alipay_page" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "确认支付" }));
+  const dialog = await screen.findByRole("dialog", { name: "支付宝在线支付" });
+  expect(
+    await within(dialog).findByRole("link", { name: "打开支付宝收银台" }),
+  ).toHaveAttribute(
+    "href",
+    "https://openapi.alipay.com/gateway.do?synthetic=test",
+  );
+  expect(replace).toHaveBeenCalledWith(
+    "https://openapi.alipay.com/gateway.do?synthetic=test",
+  );
+  expect(within(dialog).queryByRole("img")).not.toBeInTheDocument();
+  expect(dialog).not.toHaveTextContent("人工核实");
+  expect(screen.getByTestId("available-balance")).toHaveTextContent("2000");
+  expect(sessionStorage.getItem("lifereel-alipay-order")).toBe(rows[0].id);
+  await act(async () => {
+    rows = [{ ...rows[0], status: "credited" }];
+    await client.invalidateQueries({ queryKey: ["recharge-order"] });
+  });
+  await waitFor(() =>
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument(),
+  );
+  expect(sessionStorage.getItem("lifereel-alipay-order")).toBeNull();
+  expect(close).not.toHaveBeenCalled();
+});
+
+test("blocked payment popup leaves a usable Alipay checkout link", async () => {
+  vi.spyOn(window, "open").mockReturnValue(null);
+  vi.mocked(api.createRecharge).mockImplementationOnce(async () => {
+    const row = {
+      ...pending(),
+      settlement: "alipay_page" as const,
+      checkout_url: "https://openapi.alipay.com/gateway.do?synthetic=blocked",
+    };
+    rows = [row];
+    return row;
+  });
+  mount({ ...wallet, recharge: { ...wallet.recharge!, mode: "alipay_page" } });
+  fireEvent.click(screen.getByRole("button", { name: "确认支付" }));
+  expect(
+    await screen.findByRole("link", { name: "打开支付宝收银台" }),
+  ).toHaveAttribute("target", "_blank");
+  expect(screen.getByTestId("available-balance")).toHaveTextContent("2000");
+});
+
+test("returning to the wallet resumes a pending automatic payment", async () => {
+  rows = [{ ...pending(), settlement: "alipay_page" }];
+  sessionStorage.setItem("lifereel-alipay-order", rows[0].id);
+  mount({ ...wallet, recharge: { ...wallet.recharge!, mode: "alipay_page" } });
+  await waitFor(() =>
+    expect(api.rechargeOrder).toHaveBeenCalledWith(rows[0].id),
+  );
+  expect(api.createRecharge).not.toHaveBeenCalled();
 });
 afterEach(() => vi.restoreAllMocks());
 

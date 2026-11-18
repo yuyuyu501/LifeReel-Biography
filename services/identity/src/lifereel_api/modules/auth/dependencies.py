@@ -16,6 +16,7 @@ from lifereel_api.modules.auth.models import TenantMembership, UserAccount
 from lifereel_api.modules.auth.security import decode_token
 
 PUBLIC_AUTH_PATHS = {
+    "/v1/wallet/alipay/notify",
     "/v1/auth/login",
     "/v1/auth/logout",
     "/v1/auth/register",

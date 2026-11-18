@@ -2,7 +2,13 @@ import { Input } from "./ui/input";
 import { Button } from "./ui/button";
 import type { RechargeOrder, WalletSummary } from "@lifereel/contracts";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, ArrowRight, CreditCard, RefreshCw } from "lucide-react";
+import {
+  ArrowLeft,
+  ArrowRight,
+  CreditCard,
+  ExternalLink,
+  RefreshCw,
+} from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { api, API_BASE_URL } from "../api/client";
 import { ErrorNotice, QueryState } from "./QueryState";
@@ -21,7 +27,8 @@ export function parseRechargeAmount(value: string): number | null {
 
 export function WalletRecharge({ wallet }: { wallet: WalletSummary }) {
   const client = useQueryClient();
-  const enabled = wallet.recharge?.mode === "manual_alipay";
+  const automatic = wallet.recharge?.mode === "alipay_page";
+  const enabled = automatic || wallet.recharge?.mode === "manual_alipay";
   const [amount, setAmount] = useState(10);
   const [customAmount, setCustomAmount] = useState("");
   const [page, setPage] = useState(1);
@@ -31,15 +38,20 @@ export function WalletRecharge({ wallet }: { wallet: WalletSummary }) {
   const [modalOpen, setModalOpen] = useState(false);
   const [success, setSuccess] = useState("");
   const request = useRef<{ amount: number; id: string } | null>(null);
+  const paymentWindow = useRef<Window | null>(null);
+  const [resumeId, setResumeId] = useState<string | null>(() =>
+    sessionStorage.getItem("lifereel-alipay-order"),
+  );
+  const orderId = selected?.id ?? resumeId;
   const orders = useQuery({
     queryKey: ["recharge-orders", page],
     queryFn: () => api.rechargeOrders(page),
     refetchInterval: 10000,
   });
   const detail = useQuery({
-    queryKey: ["recharge-order", selected?.id],
-    queryFn: () => api.rechargeOrder(selected!.id),
-    enabled: !!selected,
+    queryKey: ["recharge-order", orderId],
+    queryFn: () => api.rechargeOrder(orderId!),
+    enabled: !!orderId,
     refetchInterval: (query) =>
       ["credited", "rejected", "cancelled"].includes(
         query.state.data?.status ?? "",
@@ -74,6 +86,8 @@ export function WalletRecharge({ wallet }: { wallet: WalletSummary }) {
       setSuccess(`充值成功，${money(order.amount_cents)} 已入账。`);
       setModalOpen(false);
       setSelected(null);
+      setResumeId(null);
+      sessionStorage.removeItem("lifereel-alipay-order");
     }
   }, [client, order?.id, order?.status, order?.amount_cents]);
 
@@ -83,7 +97,16 @@ export function WalletRecharge({ wallet }: { wallet: WalletSummary }) {
       request.current = null;
       setSelected(row);
       client.setQueryData(["recharge-order", row.id], row);
+      if (row.settlement === "alipay_page") {
+        sessionStorage.setItem("lifereel-alipay-order", row.id);
+        setResumeId(row.id);
+        if (
+          row.checkout_url?.startsWith("https://openapi.alipay.com/gateway.do?")
+        )
+          paymentWindow.current?.location.replace(row.checkout_url);
+      }
     },
+    onError: () => paymentWindow.current?.close(),
   });
 
   function openPayment() {
@@ -91,15 +114,26 @@ export function WalletRecharge({ wallet }: { wallet: WalletSummary }) {
     setSuccess("");
     setImageFailed(false);
     setModalOpen(true);
+    if (automatic) {
+      paymentWindow.current = window.open("about:blank", "_blank");
+      if (paymentWindow.current) paymentWindow.current.opener = null;
+    }
     if (
       order?.status === "pending" &&
       order.payment_method === "alipay" &&
-      order.amount_cents === cents
+      order.amount_cents === cents &&
+      (order.settlement === "alipay_page") === automatic
     ) {
+      if (
+        automatic &&
+        order.checkout_url?.startsWith("https://openapi.alipay.com/gateway.do?")
+      )
+        paymentWindow.current?.location.replace(order.checkout_url);
       void detail.refetch();
       return;
     }
     setSelected(null);
+    setResumeId(null);
     if (request.current?.amount !== cents)
       request.current = { amount: cents, id: crypto.randomUUID() };
     create.mutate({
@@ -115,9 +149,11 @@ export function WalletRecharge({ wallet }: { wallet: WalletSummary }) {
         <div>
           <h2 id="recharge-title">在线充值</h2>
           <p className="wallet-note">
-            {enabled
-              ? "支付宝扫码收款 · 人工核实后入账，非即时到账，单笔 0.01–200 元。"
-              : "充值暂未开通，请勿付款。"}
+            {automatic
+              ? "支付宝在线支付 · 支付确认后自动入账，单笔 0.01–200 元。"
+              : enabled
+                ? "支付宝扫码收款 · 人工核实后入账，非即时到账，单笔 0.01–200 元。"
+                : "充值暂未开通，请勿付款。"}
           </p>
         </div>
         <fieldset disabled={create.isPending}>
@@ -186,7 +222,10 @@ export function WalletRecharge({ wallet }: { wallet: WalletSummary }) {
       </section>
 
       {modalOpen && (
-        <RechargeDialog onClose={() => setModalOpen(false)}>
+        <RechargeDialog
+          title={automatic ? "支付宝在线支付" : undefined}
+          onClose={() => setModalOpen(false)}
+        >
           {create.isPending && (
             <p className="recharge-progress" role="status">
               正在准备支付…
@@ -208,6 +247,29 @@ export function WalletRecharge({ wallet }: { wallet: WalletSummary }) {
           {order && (
             <div className="recharge-checkout">
               {order.status === "pending" &&
+                order.settlement === "alipay_page" && (
+                  <div className="recharge-payment-hint">
+                    <p>支付金额 {money(order.amount_cents)}</p>
+                    <p>请在支付宝收银台完成付款，正在等待支付结果。</p>
+                    {order.checkout_url?.startsWith(
+                      "https://openapi.alipay.com/gateway.do?",
+                    ) && (
+                      <Button asChild>
+                        <a
+                          href={order.checkout_url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                        >
+                          <ExternalLink size={17} />
+                          打开支付宝收银台
+                        </a>
+                      </Button>
+                    )}
+                    <p>付款后自动入账，请勿重复付款。</p>
+                  </div>
+                )}
+              {order.status === "pending" &&
+                order.settlement !== "alipay_page" &&
                 enabled &&
                 order.payment_method === "alipay" && (
                   <>

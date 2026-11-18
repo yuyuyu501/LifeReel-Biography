@@ -98,6 +98,9 @@ export const ERROR_MESSAGES: Record<string, string> = {
   BILLING_BUSY: "当前章节正在生成，请稍后重试。",
   BILLING_QUOTE_CHANGED: "价格已更新，请刷新页面后重新确认。",
   PAYMENT_NOT_ENABLED: "充值暂未开通，请勿向任何收款码付款。",
+  PAYMENT_QUERY_FAILED:
+    "暂时无法查询支付宝支付状态，请稍后重试，请勿重复付款。",
+  PAYMENT_VERIFICATION_FAILED: "支付结果校验未通过，请联系管理员核对。",
   RECHARGE_NOT_FOUND: "没有找到这笔充值订单。",
   RECHARGE_STATE_INVALID: "订单状态已更新，请刷新充值记录。",
   RECHARGE_LIMIT_REACHED: "充值操作过于频繁，请稍后再试。",

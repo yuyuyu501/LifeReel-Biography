@@ -666,13 +666,13 @@ export interface Publication {
 }
 export interface WalletSummary {
   recharge?: {
-    mode: "disabled" | "manual_wechat" | "manual_alipay";
+    mode: "disabled" | "manual_wechat" | "manual_alipay" | "alipay_page";
     min_cents: number;
     max_cents: number;
     recipient_name?: string | null;
     recipient_account?: string | null;
     channels?: {
-      alipay: { enabled: boolean; settlement: "manual_review" };
+      alipay: { enabled: boolean; settlement: "manual_review" | "automatic" };
       wechat: { enabled: false };
     };
     mini_program_payments?: { wechat: false; douyin: false };
@@ -727,6 +727,8 @@ export interface WalletPage<T> {
   items: T[];
 }
 export interface RechargeOrder {
+  settlement?: "manual_review" | "alipay_page";
+  checkout_url?: string | null;
   id: string;
   payment_method: "alipay" | "wechat";
   amount_cents: number;

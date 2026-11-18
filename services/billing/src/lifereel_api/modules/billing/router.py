@@ -1,17 +1,18 @@
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query
-from fastapi.responses import FileResponse
+from fastapi import APIRouter, Depends, Query, Request
+from fastapi.responses import FileResponse, PlainTextResponse
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
+from starlette.concurrency import run_in_threadpool
 
 from lifereel_api.core.config import get_settings
 from lifereel_api.core.database import get_db
 from lifereel_api.core.errors import ApiError, ErrorCode
 from lifereel_api.core.tenant import get_tenant_id
+from lifereel_api.modules.billing import alipay, service
 from lifereel_api.modules.billing import recharge as payments
-from lifereel_api.modules.billing import service
 from lifereel_api.modules.billing.models import LedgerEntry, RechargeOrder, UsageEvent
 
 router = APIRouter(prefix="/wallet", tags=["wallet"])
@@ -118,13 +119,39 @@ def recharge(db: Db, tenant_id: Tenant, payload: payments.CreateRecharge | None 
 def recharge_qr(db: Db, tenant_id: Tenant, order_id: UUID):
     row = payments.get_order(db, tenant_id, order_id)
     payments.require_enabled(row.payment_method)
-    if row.status != "pending":
+    if row.status != "pending" or row.settlement != "manual_review":
         raise ApiError(409, ErrorCode.RECHARGE_STATE_INVALID)
     return FileResponse(
         get_settings().manual_alipay_qr_path,
         media_type="image/png",
         headers={"Cache-Control": "no-store"},
     )
+
+
+@router.post("/alipay/notify", response_class=PlainTextResponse)
+async def alipay_notify(request: Request, db: Db):
+    if request.headers.get("content-type", "").split(";")[0] != (
+        "application/x-www-form-urlencoded"
+    ):
+        return PlainTextResponse("failure", status_code=400)
+    # Stream with a hard limit; do not buffer an arbitrary unauthenticated body.
+    body = bytearray()
+    async for chunk in request.stream():
+        body.extend(chunk)
+        if len(body) > 65536:
+            return PlainTextResponse("failure", status_code=413)
+    from urllib.parse import parse_qsl
+
+    try:
+        pairs = parse_qsl(body.decode("utf-8"), keep_blank_values=True, max_num_fields=100)
+        params = dict(pairs)
+        if len(params) != len(pairs):
+            return PlainTextResponse("failure", status_code=400)
+        await run_in_threadpool(alipay.notify, db, params)
+    except (ApiError, ValueError, UnicodeError):
+        db.rollback()
+        return PlainTextResponse("failure", status_code=400)
+    return PlainTextResponse("success", headers={"Cache-Control": "no-store"})
 
 
 @router.get("/recharge/orders")
@@ -155,7 +182,9 @@ def report_recharge(db: Db, tenant_id: Tenant, order_id: UUID, payload: payments
 
 @router.get("/recharge/{order_id}")
 def recharge_order(db: Db, tenant_id: Tenant, order_id: UUID):
-    return payments.serialize(payments.get_order(db, tenant_id, order_id))
+    row = payments.get_order(db, tenant_id, order_id)
+    db.commit()  # Release the row lock before an upstream request and wallet locking.
+    return payments.serialize(alipay.reconcile(db, row))
 
 
 @router.post("/recharge/{order_id}/cancel")

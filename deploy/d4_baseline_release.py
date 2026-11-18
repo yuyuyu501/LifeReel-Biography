@@ -25,6 +25,16 @@ POOLS = {
     "script": ",".join((PRIMARY, PRO, LITE)),
 }
 MODULES = {
+    **{
+        f"lifereel_api.modules.billing.{name}": (
+            f"services/billing/src/lifereel_api/modules/billing/{name}.py"
+        )
+        for name in ("alipay", "recharge", "router", "models")
+    },
+    "lifereel_api.modules.auth.dependencies": (
+        "services/identity/src/lifereel_api/modules/auth/dependencies.py"
+    ),
+    "lifereel_api.architecture.runtime": "apps/api/src/lifereel_api/architecture/runtime.py",
     "lifereel_api.modules.evidence.router": (
         "services/media/src/lifereel_api/modules/evidence/router.py"
     ),
@@ -228,9 +238,16 @@ def prepare():
 
 def build(release):
     previous = json.loads((BACKUP / "rollback.json").read_text())["commit"]
-    assert not out(
-        "git", "diff", previous, release, "--", "apps/api/requirements.lock", "apps/api/uv.lock"
-    ), "Dependencies changed"
+    # Direct dependency promotion may change lock annotations without changing artifacts.
+    def artifacts(content):
+        return [
+            line.strip() for line in content.splitlines()
+            if line.strip() and not line.lstrip().startswith("#")
+        ]
+
+    assert artifacts(out("git", "show", f"{previous}:apps/api/requirements.lock")) == artifacts(
+        (ROOT / "apps/api/requirements.lock").read_text()
+    ), "Locked dependency artifacts changed; rebuild the dependency seed first"
     dockerfile = RECORD / "Dockerfile.backend"
     dockerfile.write_text(f"""FROM lifereel/d4-dependency-seed:{RELEASE_NAME}
 ARG RELEASE

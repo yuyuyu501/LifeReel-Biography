@@ -136,6 +136,11 @@ class RechargeOrder(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     payment_method: Mapped[str] = mapped_column(
         String(16), default="alipay", server_default="wechat"
     )
+    settlement: Mapped[str] = mapped_column(
+        String(24), default="manual_review", server_default="manual_review"
+    )
+    alipay_app_id: Mapped[str | None] = mapped_column(String(32))
+    payment_checked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     amount_cents: Mapped[int] = mapped_column(Integer)
     status: Mapped[str] = mapped_column(String(20), default="pending")
     payer_reference: Mapped[str | None] = mapped_column(String(64))
